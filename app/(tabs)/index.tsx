@@ -1,7 +1,10 @@
+import { useRouter } from 'expo-router';
 import React from 'react';
 import { Image, ImageBackground, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function HomeScreen() {
+  const router = useRouter();
+  
   return (
     <ImageBackground
       source={require('@/assets/images/background.png')}
@@ -15,12 +18,12 @@ export default function HomeScreen() {
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.mainTitle}>Digital Mentor</Text>
-            <Text style={styles.subTitle}>ЦИФРОВОЙ НАСТАВНИК</Text>
+            <Text style={styles.subTitle}>ЦИФРОВОЙ НАСТАВНИК ДЛЯ ЗУБНЫХ ТЕХНИКОВ</Text>
           </View>
           
           {/* Cards */}
           <View style={styles.cardsContainer}>
-            <TouchableOpacity style={styles.card}>
+            <TouchableOpacity style={styles.card} onPress={() => router.push('/chat')}>
               <Image
                 source={require('@/assets/images/chat.png')}
                 style={{ flex: 1, width: '100%' }}

@@ -49,7 +49,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <Ionicons size={22} name="settings" color={color} />,
         }}
       />
-      <Tabs.Screen
+            <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
