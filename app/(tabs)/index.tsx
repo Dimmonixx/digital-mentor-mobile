@@ -1,45 +1,60 @@
 import React from 'react';
-import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, ImageBackground, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function HomeScreen() {
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#031427" />
-      
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.mainTitle}>Digital Mentor</Text>
-          <Text style={styles.subTitle}>ЦИФРОВОЙ НАСТАВНИК</Text>
-        </View>
+    <ImageBackground
+      source={require('@/assets/images/background.png')}
+      style={{ flex: 1 }}
+      resizeMode="cover"
+    >
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#031427" />
         
-        {/* Cards */}
-        <View style={styles.cardsContainer}>
-          <TouchableOpacity style={styles.card}>
-            <View style={styles.imagePlaceholder} />
-            <Text style={styles.cardTitle}>Чат Техников</Text>
-            <TouchableOpacity style={styles.arrowButton}>
-              <Text style={styles.arrowText}>→</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.mainTitle}>Digital Mentor</Text>
+            <Text style={styles.subTitle}>ЦИФРОВОЙ НАСТАВНИК</Text>
+          </View>
           
-          <TouchableOpacity style={styles.card}>
-            <View style={styles.imagePlaceholder} />
-            <Text style={styles.cardTitle}>Тех-Карта</Text>
-            <TouchableOpacity style={styles.arrowButton}>
-              <Text style={styles.arrowText}>→</Text>
+          {/* Cards */}
+          <View style={styles.cardsContainer}>
+            <TouchableOpacity style={styles.card}>
+              <Image
+                source={require('@/assets/images/chat.png')}
+                style={{ flex: 1, width: '100%' }}
+                resizeMode="cover"
+              />
+              <View style={styles.labelContainer}>
+                <View style={styles.label}>
+                  <Text style={styles.labelText}>Чат Техников</Text>
+                </View>
+              </View>
             </TouchableOpacity>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </View>
+            
+            <TouchableOpacity style={styles.card}>
+              <Image
+                source={require('@/assets/images/techcard.png')}
+                style={{ flex: 1, width: '100%' }}
+                resizeMode="cover"
+              />
+              <View style={styles.labelContainer}>
+                <View style={styles.label}>
+                  <Text style={styles.labelText}>Тех-Карта</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </View>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#031427',
   },
   scrollView: {
     flex: 1,
@@ -72,39 +87,49 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   card: {
-    backgroundColor: '#0a2342',
-    borderWidth: 2,
+    borderWidth: 4,
     borderColor: '#f2ca50',
-    borderRadius: 12,
-    aspectRatio: 4/3,
-    padding: 20,
-    justifyContent: 'space-between',
+    borderRadius: 16,
+    height: 220,
+    padding: 0,
+    position: 'relative',
+    overflow: 'hidden',
+    shadowColor: '#f2ca50',
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    shadowOpacity: 1,
+    shadowRadius: 30,
+    elevation: 20,
+    marginBottom: 3,
   },
-  imagePlaceholder: {
-    flex: 1,
-    backgroundColor: '#666666',
+  labelContainer: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+  },
+  label: {
+    backgroundColor: 'rgba(10, 22, 40, 0.8)',
+    borderWidth: 1,
+    borderColor: '#f2ca50',
     borderRadius: 8,
-    marginBottom: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    shadowColor: '#f2ca50',
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  cardTitle: {
-    fontSize: 18,
+  labelText: {
+    fontSize: 11,
     fontWeight: '600',
-    color: '#ffffff',
-    textAlign: 'center',
-    marginBottom: 16,
+    color: '#f2ca50',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
-  arrowButton: {
-    width: 50,
-    height: 50,
-    backgroundColor: '#f2ca50',
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    alignSelf: 'center',
-  },
-  arrowText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#031427',
-  },
-});
+  });
