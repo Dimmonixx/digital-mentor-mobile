@@ -2,8 +2,9 @@ import { OPENAI_API_KEY } from '@/constants/config';
 import { database } from '@/constants/firebase';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import { off, onValue, push, ref, remove } from 'firebase/database';
+import { get, off, onValue, push, ref, remove, set } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -29,6 +30,7 @@ interface Message {
   username: string;
   text: string;
   timestamp: number;
+  reactions?: { [emoji: string]: number };
 }
 
 export default function ChatScreen() {
@@ -106,14 +108,14 @@ export default function ChatScreen() {
     const unsubscribe = onValue(messagesRef, (snapshot: any) => {
       const data = snapshot.val();
       if (data) {
-        const messageList: Message[] = Object.entries(data)
-          .map(([key, value]: [string, any]) => ({
-            id: key,
-            username: value.username,
-            text: value.text,
-            timestamp: value.timestamp,
-          }))
-          .sort((a, b) => a.timestamp - b.timestamp);
+        const messageList: Message[] = Object.entries(data).map(([key, value]: [string, any]) => ({
+          id: key,
+          username: value.username,
+          text: value.text,
+          timestamp: value.timestamp,
+          reactions: value.reactions || {},
+        }))
+        .sort((a, b) => a.timestamp - b.timestamp);
         setMessages(messageList);
       }
     });
@@ -130,21 +132,19 @@ export default function ChatScreen() {
         },
         body: JSON.stringify({
           model: 'gpt-4o-mini',
+          stream: false,
           messages: [
             {
               role: 'system',
-              content: 'Ты AI наставник для зубных техников. Отвечай кратко и профессионально на русском языке. Помогай с вопросами о керамике, CAD/CAM, цвете зубов, технологиях протезирования.'
+              content: 'Ты AI наставник для зубных техников. Отвечай кратко и профессионально на русском языке.'
             },
             ...history.slice(-10).map(msg => ({
               role: msg.username === 'AI Наставник 🤖' ? 'assistant' : 'user',
               content: msg.text,
             })),
-            {
-              role: 'user',
-              content: userMessage,
-            }
+            { role: 'user', content: userMessage }
           ],
-          max_tokens: 300,
+          max_tokens: 500,
         }),
       });
       const data = await response.json();
@@ -158,6 +158,7 @@ export default function ChatScreen() {
   const sendMessage = async () => {
     if (newMessage.trim() && username.trim()) {
       try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         const messagesRef = ref(database, 'chat_messages');
         await push(messagesRef, {
           username: username,
@@ -185,8 +186,17 @@ export default function ChatScreen() {
     }
   };
 
+  const addReaction = async (messageId: string, emoji: string) => {
+    const messageRef = ref(database, `chat_messages/${messageId}/reactions/${emoji}`);
+    const snapshot = await get(messageRef);
+    const current = snapshot.val() || 0;
+    await set(messageRef, current + 1);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
   const deleteMessage = async (messageId: string) => {
     try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const messageRef = ref(database, `chat_messages/${messageId}`);
       await remove(messageRef);
     } catch (error) {
@@ -206,7 +216,11 @@ export default function ChatScreen() {
 
     return (
       <TouchableOpacity 
-        onLongPress={() => { setSelectedMessage(item); setShowMenu(true); }}
+        onLongPress={() => { 
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          setSelectedMessage(item); 
+          setShowMenu(true); 
+        }}
         delayLongPress={500}
         activeOpacity={isMyMessage ? 0.7 : 1}
         style={[
@@ -248,7 +262,36 @@ export default function ChatScreen() {
           ]}>
             {timeString}
           </Text>
+          {item.reactions && (
+            <View style={{
+              position: 'absolute',
+              bottom: 4,
+              right: 4,
+              flexDirection: 'row',
+              flexWrap: 'wrap'
+            }}>
+              {Object.entries(item.reactions).map(([emoji, count]) => (
+                <TouchableOpacity 
+                  key={emoji} 
+                  onPress={() => addReaction(item.id, emoji)}
+                  style={{
+                    flexDirection: 'row',
+                    backgroundColor: '#ffffff15',
+                    borderRadius: 12,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    marginRight: 4,
+                    marginBottom: 4,
+                    borderWidth: 1,
+                    borderColor: '#ffffff20'
+                  }}>
+                  <Text style={{fontSize: 14, color: '#ffffff'}}>{emoji} {count as number}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -345,6 +388,17 @@ export default function ChatScreen() {
             backgroundColor:'#0a1628', borderRadius:16, 
             borderWidth:1, borderColor:'#f2ca50', overflow:'hidden'
           }}>
+            <View style={{flexDirection:'row', justifyContent:'space-around', 
+              padding:12, borderBottomWidth:1, borderBottomColor:'#f2ca5030'}}>
+              {['👍','❤️','🔥','😂','😮'].map(emoji => (
+                <TouchableOpacity key={emoji} onPress={() => {
+                  addReaction(selectedMessage!.id, emoji);
+                  setShowMenu(false);
+                }}>
+                  <Text style={{fontSize:28}}>{emoji}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <TouchableOpacity onPress={() => {
               Clipboard.setString(selectedMessage?.text || '');
               setShowMenu(false);
