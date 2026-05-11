@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { get, off, onValue, push, ref, remove, set } from 'firebase/database';
+import { TrendingUpDown } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -32,6 +33,32 @@ interface Message {
   timestamp: number;
   reactions?: { [emoji: string]: number };
 }
+
+const AnimatedMessage = ({ children }: { children: React.ReactNode }) => {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  return (
+    <Animated.View style={{ opacity, transform: [{ translateY }] }}>
+      {children}
+    </Animated.View>
+  );
+};
 
 export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -215,84 +242,85 @@ export default function ChatScreen() {
     const timeString = new Date(item.timestamp).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
 
     return (
-      <TouchableOpacity 
-        onLongPress={() => { 
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          setSelectedMessage(item); 
-          setShowMenu(true); 
-        }}
-        delayLongPress={500}
-        activeOpacity={isMyMessage ? 0.7 : 1}
-        style={[
-          styles.messageContainer,
-          isMyMessage ? styles.myMessageContainer : styles.otherMessageContainer,
-        ]}
-      >
-        <View style={[
-          styles.messageBubble,
-          isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble,
-        ]}>
-          {!isMyMessage && (
-            <Text style={styles.messageUsername}>{item.username}</Text>
-          )}
-          {item.username === 'AI Наставник 🤖' ? (
-            <Markdown style={{
-              body: { color: '#ffffff', fontSize: 15 },
-              strong: { color: '#f2ca50' },
-              bullet_list: { color: '#ffffff' },
-              ordered_list: { color: '#ffffff' },
-              code_inline: { backgroundColor: '#ffffff20', color: '#f2ca50', borderRadius: 4 },
-              fence: { backgroundColor: '#ffffff10', borderRadius: 8 },
-              heading1: { color: '#f2ca50' },
-              heading2: { color: '#f2ca50' },
-            }}>
-              {item.text}
-            </Markdown>
-          ) : (
-            <Text style={[
-              styles.messageText,
-              isMyMessage ? styles.myMessageText : styles.otherMessageText,
-            ]}>
-              {item.text}
-            </Text>
-          )}
-          <Text style={[
-            styles.messageTime,
-            { textAlign: isMyMessage ? 'right' : 'left' }
+      <AnimatedMessage>
+        <TouchableOpacity 
+          onLongPress={() => { 
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setSelectedMessage(item); 
+            setShowMenu(true); 
+          }}
+          delayLongPress={500}
+          activeOpacity={isMyMessage ? 0.7 : 1}
+          style={[
+            styles.messageContainer,
+            isMyMessage ? styles.myMessageContainer : styles.otherMessageContainer,
+          ]}
+        >
+          <View style={[
+            styles.messageBubble,
+            isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble,
           ]}>
-            {timeString}
-          </Text>
-          {item.reactions && (
-            <View style={{
-              position: 'absolute',
-              bottom: 4,
-              right: 4,
-              flexDirection: 'row',
-              flexWrap: 'wrap'
-            }}>
-              {Object.entries(item.reactions).map(([emoji, count]) => (
-                <TouchableOpacity 
-                  key={emoji} 
-                  onPress={() => addReaction(item.id, emoji)}
-                  style={{
-                    flexDirection: 'row',
-                    backgroundColor: '#ffffff15',
-                    borderRadius: 12,
-                    paddingHorizontal: 8,
-                    paddingVertical: 4,
-                    marginRight: 4,
-                    marginBottom: 4,
-                    borderWidth: 1,
-                    borderColor: '#ffffff20'
-                  }}>
-                  <Text style={{fontSize: 14, color: '#ffffff'}}>{emoji} {count as number}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
-        )}
-      </TouchableOpacity>
+            {!isMyMessage && (
+              <Text style={styles.messageUsername}>{item.username}</Text>
+            )}
+            {item.username === 'AI Наставник 🤖' ? (
+              <Markdown style={{
+                body: { color: '#ffffff', fontSize: 15 },
+                strong: { color: '#f2ca50' },
+                bullet_list: { color: '#ffffff' },
+                ordered_list: { color: '#ffffff' },
+                code_inline: { backgroundColor: '#ffffff20', color: '#f2ca50', borderRadius: 4 },
+                fence: { backgroundColor: '#ffffff10', borderRadius: 8 },
+                heading1: { color: '#f2ca50' },
+                heading2: { color: '#f2ca50' },
+              }}>
+                {item.text}
+              </Markdown>
+            ) : (
+              <Text style={[
+                styles.messageText,
+                isMyMessage ? styles.myMessageText : styles.otherMessageText,
+              ]}>
+                {item.text}
+              </Text>
+            )}
+            <Text style={[
+              styles.messageTime,
+              { textAlign: isMyMessage ? 'right' : 'left' }
+            ]}>
+              {timeString}
+            </Text>
+            {item.reactions && (
+              <View style={{
+                position: 'absolute',
+                bottom: 4,
+                right: 4,
+                flexDirection: 'row',
+                flexWrap: 'wrap'
+              }}>
+                {Object.entries(item.reactions).map(([emoji, count]) => (
+                  <TouchableOpacity 
+                    key={emoji} 
+                    onPress={() => addReaction(item.id, emoji)}
+                    style={{
+                      flexDirection: 'row',
+                      backgroundColor: '#ffffff15',
+                      borderRadius: 12,
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      marginRight: 4,
+                      marginBottom: 4,
+                      borderWidth: 1,
+                      borderColor: '#ffffff20'
+                    }}>
+                    <Text style={{fontSize: 14, color: '#ffffff'}}>{emoji} {count as number}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      </AnimatedMessage>
     );
   };
 
@@ -465,7 +493,7 @@ export default function ChatScreen() {
               onPress={sendMessage}
               disabled={!newMessage.trim()}
             >
-              <Ionicons name="send" size={20} color="#031427" />
+              <TrendingUpDown size={24} color="#031427" />
             </TouchableOpacity>
           </View>
         </View>
