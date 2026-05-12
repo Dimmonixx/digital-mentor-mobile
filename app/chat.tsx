@@ -3,6 +3,7 @@ import { database } from '@/constants/firebase';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { get, off, onValue, push, ref, remove, set } from 'firebase/database';
 import { TrendingUpDown } from 'lucide-react-native';
@@ -11,6 +12,7 @@ import {
   Animated,
   Clipboard,
   FlatList,
+  Image,
   ImageBackground,
   Modal,
   StatusBar,
@@ -20,7 +22,6 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { KeyboardStickyView } from 'react-native-keyboard-controller';
 import Markdown from 'react-native-markdown-display';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -32,6 +33,7 @@ interface Message {
   text: string;
   timestamp: number;
   reactions?: { [emoji: string]: number };
+  photoURL?: string;
 }
 
 const AnimatedMessage = ({ children }: { children: React.ReactNode }) => {
@@ -69,9 +71,10 @@ export default function ChatScreen() {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
-  const insets = useSafeAreaInsets();
-  console.log('insets.bottom:', insets.bottom);
+  const { bottom, top } = useSafeAreaInsets();
+  console.log('bottom:', bottom);
   
   // Animation for AI thinking text
   const thinkingOpacity = useRef(new Animated.Value(1)).current;
@@ -138,9 +141,10 @@ export default function ChatScreen() {
         const messageList: Message[] = Object.entries(data).map(([key, value]: [string, any]) => ({
           id: key,
           username: value.username,
-          text: value.text,
+          text: value.text || '',
           timestamp: value.timestamp,
           reactions: value.reactions || {},
+          photoURL: value.photoURL || null,
         }))
         .sort((a, b) => a.timestamp - b.timestamp);
         setMessages(messageList);
@@ -231,6 +235,48 @@ export default function ChatScreen() {
     }
   };
 
+  const sendPhoto = async () => {
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    quality: 0.7,
+    base64: true,
+  });
+  
+  if (!result.canceled && result.assets[0]) {
+    try {
+      const base64 = result.assets[0].base64;
+      
+      const formData = new FormData();
+      formData.append('key', 'baf4665c8590576c2b7b1b4cfa2502e3');
+      formData.append('image', base64 as string);
+      
+      const response = await fetch('https://api.imgbb.com/1/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      const data = await response.json();
+      console.log('ImgBB response:', JSON.stringify(data));
+      const photoURL = data.data?.url;
+      
+      if (!photoURL) {
+        console.error('ImgBB error:', data);
+        return;
+      }
+      
+      const messagesRef = ref(database, 'chat_messages');
+      await push(messagesRef, {
+        username: username,
+        text: '',
+        photoURL: photoURL,
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      console.error('Photo upload error:', error);
+    }
+  }
+};
+
   const scrollToBottom = () => {
     if (flatListRef.current && messages.length > 0) {
       flatListRef.current.scrollToEnd({ animated: true });
@@ -259,9 +305,26 @@ export default function ChatScreen() {
           <View style={[
             styles.messageBubble,
             isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble,
+            item.photoURL && !item.text ? { backgroundColor: 'transparent', padding: 0 } : {}
           ]}>
             {!isMyMessage && (
               <Text style={styles.messageUsername}>{item.username}</Text>
+            )}
+            {item.photoURL && (
+              <TouchableOpacity onPress={() => setSelectedPhoto(item.photoURL!)}>
+                <Image
+                  source={{ uri: item.photoURL }}
+                  style={{ 
+                    width: 220, 
+                    height: 220, 
+                    borderRadius: 12, 
+                    marginBottom: 4 
+                  }}
+                  resizeMode="cover"
+                  onError={(e) => console.log('Image error:', e.nativeEvent.error)}
+                  onLoad={() => console.log('Image loaded!')}
+                />
+              </TouchableOpacity>
             )}
             {item.username === 'AI Наставник 🤖' ? (
               <Markdown style={{
@@ -286,7 +349,7 @@ export default function ChatScreen() {
             )}
             <Text style={[
               styles.messageTime,
-              { textAlign: isMyMessage ? 'right' : 'left' }
+              { textAlign: isMyMessage ? 'right' : 'left', marginTop: item.photoURL && !item.text ? 2 : 8 }
             ]}>
               {timeString}
             </Text>
@@ -354,16 +417,47 @@ export default function ChatScreen() {
     );
   }
 
+  if (showUsernameInput) {
+    return (
+      <View style={{flex:1}}>
+      <ImageBackground
+        source={require('@/assets/images/background.png')}
+        style={{ flex: 1 }}
+        resizeMode="cover"
+      >
+        <StatusBar barStyle="light-content" backgroundColor="#031427" />
+        <View style={styles.usernameSetup}>
+          <Text style={styles.usernameTitle}>Введите ваше имя</Text>
+          <TextInput
+            style={styles.usernameInput}
+            placeholder="Ваше имя"
+            placeholderTextColor="#ffffff60"
+            value={username}
+            onChangeText={setUsername}
+            maxLength={20}
+          />
+          <TouchableOpacity
+            style={styles.usernameButton}
+            onPress={() => saveUsername(username)}
+            disabled={!username.trim()}
+          >
+            <Text style={styles.usernameButtonText}>Продолжить</Text>
+          </TouchableOpacity>
+        </View>
+      </ImageBackground>
+      </View>
+    );
+  }
+
   return (
+    <View style={{flex:1}}>
     <ImageBackground
       source={require('@/assets/images/background.png')}
       style={{ flex: 1 }}
       resizeMode="cover"
     >
-      <StatusBar barStyle="light-content" backgroundColor="#031427" />
-
       {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      <View style={[styles.header, { paddingTop: top + 8 }]}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#f2ca50" />
         </TouchableOpacity>
@@ -386,7 +480,7 @@ export default function ChatScreen() {
             renderItem={renderMessage}
             keyExtractor={(item) => item.id}
             style={styles.messagesList}
-            contentContainerStyle={[styles.messagesContainer, { paddingBottom: 128 }]}
+            contentContainerStyle={[styles.messagesContainer, { paddingBottom: 80 }]}
             onContentSizeChange={scrollToBottom}
             onScroll={(event) => {
               const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
@@ -468,17 +562,14 @@ export default function ChatScreen() {
       )}
 
       {/* Input Area */}
-      <KeyboardStickyView 
-        offset={{ closed: -25, opened: 0 }}
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-        }}
-      >
-        <View style={[styles.inputContainer, { paddingBottom: 12 }]}>
+      <View style={[styles.inputContainer, { bottom: bottom > 0 ? bottom + 16 : 24 }]}>
           <View style={styles.inputWrapper}>
+            <TouchableOpacity 
+              onPress={sendPhoto} 
+              style={{ paddingHorizontal: 8 }}
+            >
+              <Ionicons name="image-outline" size={24} color="#f2ca50" />
+            </TouchableOpacity>
             <TextInput
               style={styles.textInput}
               placeholder="Сообщение..."
@@ -496,9 +587,23 @@ export default function ChatScreen() {
               <TrendingUpDown size={24} color="#031427" />
             </TouchableOpacity>
           </View>
-        </View>
-      </KeyboardStickyView>
-    </ImageBackground>
+      </View>
+
+      {/* Photo Modal */}
+      <Modal visible={!!selectedPhoto} transparent animationType="fade">
+        <TouchableOpacity 
+            style={{flex:1, backgroundColor:'rgba(0,0,0,0.9)', justifyContent:'center', alignItems:'center'}}
+            onPress={() => setSelectedPhoto(null)}
+          >
+            <Image 
+              source={{uri: selectedPhoto || ''}} 
+              style={{width:'100%', height:'70%'}}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+        </Modal>
+      </ImageBackground>
+    </View>
   );
 }
 

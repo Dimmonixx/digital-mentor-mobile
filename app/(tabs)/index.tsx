@@ -17,8 +17,15 @@ export default function HomeScreen() {
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.mainTitle}>Digital Mentor</Text>
-            <Text style={styles.subTitle}>ЦИФРОВОЙ НАСТАВНИК ДЛЯ ЗУБНЫХ ТЕХНИКОВ</Text>
+            <ImageBackground
+              source={require('@/assets/images/header-logo.png')}
+              style={styles.headerImage}
+              resizeMode="cover"
+            >
+              <View style={styles.headerOverlay}>
+                <Text style={styles.headerTitle}>Digital Mentor</Text>
+              </View>
+            </ImageBackground>
           </View>
           
           {/* Cards */}
@@ -66,23 +73,33 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   header: {
-    alignItems: 'center',
-    paddingTop: 80,
-    paddingBottom: 40,
+    width: '100%',
   },
-  mainTitle: {
+  headerImage: {
+    width: '100%',
+    height: 320,
+    justifyContent: 'flex-end',
+  },
+  headerOverlay: {
+    alignItems: 'center',
+    paddingBottom: 24,
+  },
+  headerTitle: {
+    color: '#f2ca50',
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#f2ca50',
     fontStyle: 'italic',
-    marginBottom: 12,
-    textAlign: 'center',
+    letterSpacing: 1,
+    textShadowColor: '#f2ca5080',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 20,
   },
-  subTitle: {
-    fontSize: 12,
+  headerSubtitle: {
     color: '#f2ca50',
-    letterSpacing: 4,
-    textAlign: 'center',
+    fontSize: 11,
+    letterSpacing: 3,
+    opacity: 0.8,
+    marginTop: 6,
   },
   cardsContainer: {
     paddingHorizontal: 20,
