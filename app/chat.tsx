@@ -311,20 +311,34 @@ export default function ChatScreen() {
               <Text style={styles.messageUsername}>{item.username}</Text>
             )}
             {item.photoURL && (
-              <TouchableOpacity onPress={() => setSelectedPhoto(item.photoURL!)}>
-                <Image
-                  source={{ uri: item.photoURL }}
-                  style={{ 
-                    width: 220, 
-                    height: 220, 
-                    borderRadius: 12, 
-                    marginBottom: 4 
-                  }}
-                  resizeMode="cover"
-                  onError={(e) => console.log('Image error:', e.nativeEvent.error)}
-                  onLoad={() => console.log('Image loaded!')}
-                />
-              </TouchableOpacity>
+              <View style={{position:'relative'}}>
+                <TouchableOpacity onPress={() => setSelectedPhoto(item.photoURL!)}>
+                  <Image
+                    source={{ uri: item.photoURL }}
+                    style={{ 
+                      width: 220, 
+                      height: 220, 
+                      borderRadius: 12
+                    }}
+                    resizeMode="cover"
+                    onError={(e) => console.log('Image error:', e.nativeEvent.error)}
+                    onLoad={() => console.log('Image loaded!')}
+                  />
+                </TouchableOpacity>
+                <Text style={{
+                  position:'absolute',
+                  bottom: 8,
+                  right: 8,
+                  color:'#ffffff',
+                  fontSize: 11,
+                  backgroundColor:'rgba(0,0,0,0.4)',
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  borderRadius: 8,
+                }}>
+                  {timeString}
+                </Text>
+              </View>
             )}
             {item.username === 'AI Наставник 🤖' ? (
               <Markdown style={{
@@ -347,12 +361,14 @@ export default function ChatScreen() {
                 {item.text}
               </Text>
             )}
-            <Text style={[
-              styles.messageTime,
-              { textAlign: isMyMessage ? 'right' : 'left', marginTop: item.photoURL && !item.text ? 2 : 8 }
-            ]}>
-              {timeString}
-            </Text>
+            {!item.photoURL && (
+              <Text style={[
+                styles.messageTime,
+                { textAlign: isMyMessage ? 'right' : 'left', marginTop: 8 }
+              ]}>
+                {timeString}
+              </Text>
+            )}
             {item.reactions && (
               <View style={{
                 position: 'absolute',
