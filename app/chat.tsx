@@ -73,8 +73,7 @@ export default function ChatScreen() {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
-  const { bottom, top } = useSafeAreaInsets();
-  console.log('bottom:', bottom);
+  const insets = useSafeAreaInsets();
   
   // Animation for AI thinking text
   const thinkingOpacity = useRef(new Animated.Value(1)).current;
@@ -236,46 +235,46 @@ export default function ChatScreen() {
   };
 
   const sendPhoto = async () => {
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    quality: 0.7,
-    base64: true,
-  });
-  
-  if (!result.canceled && result.assets[0]) {
-    try {
-      const base64 = result.assets[0].base64;
-      
-      const formData = new FormData();
-      formData.append('key', 'baf4665c8590576c2b7b1b4cfa2502e3');
-      formData.append('image', base64 as string);
-      
-      const response = await fetch('https://api.imgbb.com/1/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      
-      const data = await response.json();
-      console.log('ImgBB response:', JSON.stringify(data));
-      const photoURL = data.data?.url;
-      
-      if (!photoURL) {
-        console.error('ImgBB error:', data);
-        return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+      base64: true,
+    });
+    
+    if (!result.canceled && result.assets[0]) {
+      try {
+        const base64 = result.assets[0].base64;
+        
+        const formData = new FormData();
+        formData.append('key', 'baf4665c8590576c2b7b1b4cfa2502e3');
+        formData.append('image', base64 as string);
+        
+        const response = await fetch('https://api.imgbb.com/1/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        const data = await response.json();
+        console.log('ImgBB response:', JSON.stringify(data));
+        const photoURL = data.data?.url;
+        
+        if (!photoURL) {
+          console.error('ImgBB error:', data);
+          return;
+        }
+        
+        const messagesRef = ref(database, 'chat_messages');
+        await push(messagesRef, {
+          username: username,
+          text: '',
+          photoURL: photoURL,
+          timestamp: Date.now(),
+        });
+      } catch (error) {
+        console.error('Photo upload error:', error);
       }
-      
-      const messagesRef = ref(database, 'chat_messages');
-      await push(messagesRef, {
-        username: username,
-        text: '',
-        photoURL: photoURL,
-        timestamp: Date.now(),
-      });
-    } catch (error) {
-      console.error('Photo upload error:', error);
     }
-  }
-};
+  };
 
   const scrollToBottom = () => {
     if (flatListRef.current && messages.length > 0) {
@@ -340,7 +339,7 @@ export default function ChatScreen() {
                 </Text>
               </View>
             )}
-            {item.username === 'AI Наставник 🤖' ? (
+            {!item.photoURL && item.username === 'AI Наставник 🤖' ? (
               <Markdown style={{
                 body: { color: '#ffffff', fontSize: 15 },
                 strong: { color: '#f2ca50' },
@@ -353,7 +352,7 @@ export default function ChatScreen() {
               }}>
                 {item.text}
               </Markdown>
-            ) : (
+            ) : !item.photoURL && (
               <Text style={[
                 styles.messageText,
                 isMyMessage ? styles.myMessageText : styles.otherMessageText,
@@ -369,7 +368,7 @@ export default function ChatScreen() {
                 {timeString}
               </Text>
             )}
-            {item.reactions && (
+            {item.reactions && Object.keys(item.reactions).length > 0 && (
               <View style={{
                 position: 'absolute',
                 bottom: 4,
@@ -433,152 +432,134 @@ export default function ChatScreen() {
     );
   }
 
-  if (showUsernameInput) {
-    return (
-      <View style={{flex:1}}>
+  return (
+    <View style={{flex:1}}>
       <ImageBackground
         source={require('@/assets/images/background.png')}
         style={{ flex: 1 }}
         resizeMode="cover"
       >
-        <StatusBar barStyle="light-content" backgroundColor="#031427" />
-        <View style={styles.usernameSetup}>
-          <Text style={styles.usernameTitle}>Введите ваше имя</Text>
-          <TextInput
-            style={styles.usernameInput}
-            placeholder="Ваше имя"
-            placeholderTextColor="#ffffff60"
-            value={username}
-            onChangeText={setUsername}
-            maxLength={20}
-          />
-          <TouchableOpacity
-            style={styles.usernameButton}
-            onPress={() => saveUsername(username)}
-            disabled={!username.trim()}
-          >
-            <Text style={styles.usernameButtonText}>Продолжить</Text>
+        {/* Header */}
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color="#f2ca50" />
           </TouchableOpacity>
-        </View>
-      </ImageBackground>
-      </View>
-    );
-  }
 
-  return (
-    <View style={{flex:1}}>
-    <ImageBackground
-      source={require('@/assets/images/background.png')}
-      style={{ flex: 1 }}
-      resizeMode="cover"
-    >
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: top + 8 }]}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#f2ca50" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Чат Техников</Text>
-        <Ionicons name="person-circle" size={32} color="#f2ca50" />
-      </View>
+          <View style={styles.onlineIndicator}>
+            <View style={styles.onlineDot} />
+            <Text style={styles.onlineText}>12 онлайн</Text>
+          </View>
 
-      {/* Messages List */}
-      {messages.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="chatbubbles" size={60} color="#f2ca5080" />
-          <Text style={styles.emptyStateTitle}>Начните общение</Text>
-          <Text style={styles.emptyStateSubtitle}>Задайте вопрос AI наставнику</Text>
-        </View>
-      ) : (
-        <>
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            renderItem={renderMessage}
-            keyExtractor={(item) => item.id}
-            style={styles.messagesList}
-            contentContainerStyle={[styles.messagesContainer, { paddingBottom: 80 }]}
-            onContentSizeChange={scrollToBottom}
-            onScroll={(event) => {
-              const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
-              const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
-              setShowScrollButton(distanceFromBottom > 100);
-            }}
-            scrollEventThrottle={16}
-            ListFooterComponent={aiThinking ? (
-              <View style={styles.aiThinkingContainer}>
-                <View style={styles.aiThinkingBubble}>
-                  <Text style={styles.aiThinkingText}>AI думает...</Text>
-                </View>
-              </View>
-            ) : null}
-          />
-        </>
-      )}
-
-      {/* Context Menu Modal */}
-      <Modal visible={showMenu} transparent animationType="fade">
-        <TouchableOpacity 
-          style={{flex:1, backgroundColor:'rgba(0,0,0,0.5)'}}
-          onPress={() => setShowMenu(false)}
-        >
-          <View style={{
-            position:'absolute', bottom: 100, alignSelf:'center',
-            backgroundColor:'#0a1628', borderRadius:16, 
-            borderWidth:1, borderColor:'#f2ca50', overflow:'hidden'
-          }}>
-            <View style={{flexDirection:'row', justifyContent:'space-around', 
-              padding:12, borderBottomWidth:1, borderBottomColor:'#f2ca5030'}}>
-              {['👍','❤️','🔥','😂','😮'].map(emoji => (
-                <TouchableOpacity key={emoji} onPress={() => {
-                  addReaction(selectedMessage!.id, emoji);
-                  setShowMenu(false);
-                }}>
-                  <Text style={{fontSize:28}}>{emoji}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <TouchableOpacity onPress={() => {
-              Clipboard.setString(selectedMessage?.text || '');
-              setShowMenu(false);
-            }} style={{padding:16, flexDirection:'row', gap:12}}>
-              <Ionicons name="copy" size={20} color="#f2ca50"/>
-              <Text style={{color:'#ffffff', fontSize:16}}>Копировать</Text>
+          <View style={styles.headerRight}>
+            <TouchableOpacity style={styles.headerIconBtn}>
+              <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
             </TouchableOpacity>
-            <View style={{height:1, backgroundColor:'#f2ca5030'}}/>
-            <TouchableOpacity onPress={() => {
-              if(selectedMessage) deleteMessage(selectedMessage.id);
-              setShowMenu(false);
-            }} style={{padding:16, flexDirection:'row', gap:12}}>
-              <Ionicons name="trash" size={20} color="#ff4444"/>
-              <Text style={{color:'#ff4444', fontSize:16}}>Удалить</Text>
+            <TouchableOpacity style={styles.headerIconBtn}>
+              <Ionicons name="ellipsis-vertical" size={24} color="#f2ca50" />
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
-      </Modal>
+        </View>
 
-      {/* Scroll Down Button */}
-      {showScrollButton && (
-        <TouchableOpacity
-          style={{
-            position: 'absolute',
-            bottom: 105,
-            right: 20,
-            backgroundColor: '#f2ca50',
-            borderRadius: 25,
-            width: 44,
-            height: 44,
-            justifyContent: 'center',
-            alignItems: 'center',
-            elevation: 5,
-          }}
-          onPress={() => flatListRef.current?.scrollToEnd({ animated: true })}
-        >
-          <Ionicons name="chevron-down" size={24} color="#031427" />
-        </TouchableOpacity>
-      )}
+        {/* Messages List */}
+        {messages.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="chatbubbles" size={60} color="#f2ca5080" />
+            <Text style={styles.emptyStateTitle}>Начните общение</Text>
+            <Text style={styles.emptyStateSubtitle}>Задайте вопрос AI наставнику</Text>
+          </View>
+        ) : (
+          <>
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              renderItem={renderMessage}
+              keyExtractor={(item) => item.id}
+              style={styles.messagesList}
+              contentContainerStyle={[styles.messagesContainer, { paddingBottom: 80 }]}
+              onContentSizeChange={scrollToBottom}
+              onScroll={(event) => {
+                const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+                const distanceFromBottom = contentSize.height - (contentOffset.y || 0) - layoutMeasurement.height;
+                setShowScrollButton(distanceFromBottom > 100);
+              }}
+              scrollEventThrottle={16}
+              ListFooterComponent={aiThinking ? (
+                <View style={styles.aiThinkingContainer}>
+                  <View style={styles.aiThinkingBubble}>
+                    <Animated.Text style={[styles.aiThinkingText, { opacity: thinkingOpacity }]}>
+                      AI думает...
+                    </Animated.Text>
+                  </View>
+                </View>
+              ) : null}
+            />
+          </>
+        )}
 
-      {/* Input Area */}
-      <View style={[styles.inputContainer, { bottom: bottom > 0 ? bottom + 16 : 24 }]}>
+        {/* Context Menu Modal */}
+        <Modal visible={showMenu} transparent animationType="fade">
+          <TouchableOpacity 
+            style={{flex:1, backgroundColor:'rgba(0,0,0,0.5)'}}
+            onPress={() => setShowMenu(false)}
+          >
+            <View style={{
+              position:'absolute', bottom: 100, alignSelf:'center',
+              backgroundColor:'#0a1628', borderRadius:16, 
+              borderWidth:1, borderColor:'#f2ca50', overflow:'hidden'
+            }}>
+              <View style={{flexDirection:'row', justifyContent:'space-around', 
+                padding:12, borderBottomWidth:1, borderBottomColor:'#f2ca5030'}}>
+                {['👍','❤️','🔥','😂','😮'].map(emoji => (
+                  <TouchableOpacity key={emoji} onPress={() => {
+                    addReaction(selectedMessage!.id, emoji);
+                    setShowMenu(false);
+                  }}>
+                    <Text style={{fontSize:28}}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity onPress={() => {
+                Clipboard.setString(selectedMessage?.text || '');
+                setShowMenu(false);
+              }} style={{padding:16, flexDirection:'row', gap:12}}>
+                <Ionicons name="copy" size={20} color="#f2ca50"/>
+                <Text style={{color:'#ffffff', fontSize:16}}>Копировать</Text>
+              </TouchableOpacity>
+              <View style={{height:1, backgroundColor:'#f2ca5030'}}/>
+              <TouchableOpacity onPress={() => {
+                if(selectedMessage) deleteMessage(selectedMessage.id);
+                setShowMenu(false);
+              }} style={{padding:16, flexDirection:'row', gap:12}}>
+                <Ionicons name="trash" size={20} color="#ff4444"/>
+                <Text style={{color:'#ff4444', fontSize:16}}>Удалить</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* Scroll Down Button */}
+        {showScrollButton && (
+          <TouchableOpacity
+            style={{
+              position: 'absolute',
+              bottom: 105,
+              right: 20,
+              backgroundColor: '#f2ca50',
+              borderRadius: 25,
+              width: 44,
+              height: 44,
+              justifyContent: 'center',
+              alignItems: 'center',
+              elevation: 5,
+            }}
+            onPress={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          >
+            <Ionicons name="chevron-down" size={24} color="#031427" />
+          </TouchableOpacity>
+        )}
+
+        {/* Input Area */}
+        <View style={[styles.inputContainer, { paddingBottom: insets.bottom > 0 ? insets.bottom + 16 : 24 }]}>
           <View style={styles.inputWrapper}>
             <TouchableOpacity 
               onPress={sendPhoto} 
@@ -603,11 +584,11 @@ export default function ChatScreen() {
               <TrendingUpDown size={24} color="#031427" />
             </TouchableOpacity>
           </View>
-      </View>
+        </View>
 
-      {/* Photo Modal */}
-      <Modal visible={!!selectedPhoto} transparent animationType="fade">
-        <TouchableOpacity 
+        {/* Photo Modal */}
+        <Modal visible={!!selectedPhoto} transparent animationType="fade">
+          <TouchableOpacity 
             style={{flex:1, backgroundColor:'rgba(0,0,0,0.9)', justifyContent:'center', alignItems:'center'}}
             onPress={() => setSelectedPhoto(null)}
           >
@@ -637,10 +618,29 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 8,
   },
-  headerTitle: {
-    color: '#f2ca50',
-    fontSize: 20,
-    fontWeight: 'bold',
+  onlineIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  onlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4caf50',
+  },
+  onlineText: {
+    color: '#ffffff',
+    fontSize: 12,
+    opacity: 0.8,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  headerIconBtn: {
+    padding: 4,
   },
   usernameSetup: {
     flex: 1,
@@ -725,8 +725,11 @@ const styles = StyleSheet.create({
   inputContainer: {
     paddingHorizontal: 12,
     paddingTop: 8,
-    paddingBottom: 12,
     backgroundColor: 'transparent',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
   },
   inputWrapper: {
     backgroundColor: '#0a1628',

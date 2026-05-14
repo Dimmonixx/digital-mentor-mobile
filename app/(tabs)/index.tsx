@@ -1,155 +1,152 @@
-import { useRouter } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { router } from 'expo-router';
 import React from 'react';
-import { Image, ImageBackground, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Image,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 export default function HomeScreen() {
-  const router = useRouter();
-  
   return (
-    <ImageBackground
-      source={require('@/assets/images/background.png')}
-      style={{ flex: 1 }}
-      resizeMode="cover"
-    >
-      <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#031427" />
-        
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-          {/* Header */}
-          <View style={styles.header}>
-            <ImageBackground
-              source={require('@/assets/images/header-logo.png')}
-              style={styles.headerImage}
-              resizeMode="cover"
-            >
-              <View style={styles.headerOverlay}>
-                <Text style={styles.headerTitle}>Digital Mentor</Text>
-              </View>
-            </ImageBackground>
-          </View>
-          
-          {/* Cards */}
-          <View style={styles.cardsContainer}>
-            <TouchableOpacity style={styles.card} onPress={() => router.push('/chat')}>
-              <Image
-                source={require('@/assets/images/chat.png')}
-                style={{ flex: 1, width: '100%' }}
-                resizeMode="cover"
-              />
-              <View style={styles.labelContainer}>
-                <View style={styles.label}>
-                  <Text style={styles.labelText}>Чат Техников</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={styles.card}>
-              <Image
-                source={require('@/assets/images/techcard.png')}
-                style={{ flex: 1, width: '100%' }}
-                resizeMode="cover"
-              />
-              <View style={styles.labelContainer}>
-                <View style={styles.label}>
-                  <Text style={styles.labelText}>Тех-Карта</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </View>
-    </ImageBackground>
+    <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.heroWrap, Platform.OS === 'ios' && styles.heroGlowIos]}>
+          <Image
+            source={require('@/assets/images/hero-tooth.png')}
+            style={styles.heroImage}
+            resizeMode="contain"
+          />
+        </View>
+
+        <View style={styles.cardsContainer}>
+          <TouchableOpacity
+            style={styles.card}
+            onPress={() => router.push('/chat')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.iconBox}>
+              <Ionicons name="chatbubbles-outline" size={22} color="#f2ca50" />
+            </View>
+            <Text style={styles.labelText}>Чат Техников</Text>
+            <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.card}
+            activeOpacity={0.8}
+            onPress={() => {/* Добавьте переход для тех-карты */}}
+          >
+            <View style={styles.iconBox}>
+              <Ionicons name="layers-outline" size={22} color="#f2ca50" />
+            </View>
+            <Text style={styles.labelText}>Тех-Карта</Text>
+            <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.card, styles.cardVita]}
+            onPress={() => router.push('/color-analyzer')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.iconBox}>
+              <MaterialCommunityIcons name="tooth-outline" size={22} color="#f2ca50" />
+            </View>
+            <Text style={styles.labelText}>Анализ цвета</Text>
+            <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 100,
+    paddingTop: 0,
+    paddingBottom: 120,
   },
-  header: {
+  heroWrap: {
+    alignSelf: 'center',
     width: '100%',
-  },
-  headerImage: {
-    width: '100%',
-    height: 320,
-    justifyContent: 'flex-end',
-  },
-  headerOverlay: {
+    maxWidth: 340,
+    height: 240,
+    marginTop: -20,
+    paddingHorizontal: 20,
     alignItems: 'center',
-    paddingBottom: 24,
+    justifyContent: 'center',
   },
-  headerTitle: {
-    color: '#f2ca50',
-    fontSize: 36,
-    fontWeight: 'bold',
-    fontStyle: 'italic',
-    letterSpacing: 1,
-    textShadowColor: '#f2ca5080',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 20,
+  heroGlowIos: {
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 15,
   },
-  headerSubtitle: {
-    color: '#f2ca50',
-    fontSize: 11,
-    letterSpacing: 3,
-    opacity: 0.8,
-    marginTop: 6,
+  heroImage: {
+    width: '150%',
+    height: '150%',
   },
   cardsContainer: {
     paddingHorizontal: 20,
-    gap: 30,
-    flex: 1,
+    gap: 0,
   },
   card: {
-    borderWidth: 4,
-    borderColor: '#f2ca50',
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 64,
+    marginBottom: 10,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(20, 30, 45, 0.8)',
     borderRadius: 16,
-    height: 220,
-    padding: 0,
-    position: 'relative',
-    overflow: 'hidden',
-    shadowColor: '#f2ca50',
-    shadowOffset: {
-      width: 0,
-      height: 0,
-    },
-    shadowOpacity: 1,
-    shadowRadius: 30,
-    elevation: 20,
-    marginBottom: 3,
-  },
-  labelContainer: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-  },
-  label: {
-    backgroundColor: 'rgba(10, 22, 40, 0.8)',
     borderWidth: 1,
     borderColor: '#f2ca50',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    shadowColor: '#f2ca50',
-    shadowOffset: {
-      width: 0,
-      height: 0,
-    },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.8,
+    shadowRadius: 5,
+    elevation: 10,
+  },
+  iconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 5,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderWidth: 1.5,
+    borderColor: '#FFD700',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   labelText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#f2ca50',
-    letterSpacing: 0.5,
+    flex: 1,
+    marginLeft: 15,
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '400',
     textTransform: 'uppercase',
+    letterSpacing: 2.0,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: -1, height: 1 },
+    textShadowRadius: 10,
   },
-  });
+  cardVita: {
+    marginBottom: 32,
+  },
+});
