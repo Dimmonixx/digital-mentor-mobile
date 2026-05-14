@@ -2,20 +2,20 @@ import { ANTHROPIC_API_KEY } from '@/constants/config';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  ImageBackground,
-  Modal,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Dimensions,
+    Image,
+    ImageBackground,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -56,13 +56,13 @@ function getPhotoQualityColor(quality: string): string {
 }
 
 const PHOTO_TIPS_STEPS = [
-  '1. 📍 Расстояние 15–20 см от зуба',
-  '2. 💡 Естественный дневной свет или нейтральное освещение',
-  '3. 🚫 Избегай вспышки — даёт блики и искажает цвет',
-  '4. 🦷 Зуб должен быть чистым и слегка влажным',
-  '5. 📐 Снимай прямо, без угла',
-  '6. 🎨 Держи рядом эталон VITA если есть',
-  '7. 📷 Используй основную камеру, не фронтальную',
+  '📍 Расстояние 15–20 см от зуба',
+  '💡 Естественный дневной свет',
+  '🚫 Без вспышки — искажает цвет',
+  '🦷 Зуб чистый и слегка влажный',
+  '📐 Снимай прямо, без угла',
+  '📷 Основная камера, не фронтальная',
+  '✂️ При кадрировании оставь только зуб',
 ];
 
 function parseVitaJson(raw: string): VitaAnalysis | null {
@@ -134,7 +134,7 @@ async function analyzeWithClaude(base64: string, mediaType: 'image/jpeg' | 'imag
 
   const data = (await res.json()) as {
     error?: { message?: string };
-    content?: Array<{ type: string; text?: string }>;
+    content?: Array<{ type: string; text?: string }>; 
   };
 
   if (!res.ok) {
@@ -162,6 +162,17 @@ export default function ColorAnalyzerScreen() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VitaAnalysis | null>(null);
   const [tipsModalVisible, setTipsModalVisible] = useState(false);
+  const [showImageModal, setShowImageModal] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setSelectedImage(null);
+        setResult(null);
+        setLoading(false);
+      };
+    }, [])
+  );
 
   const reset = useCallback(() => {
     setSelectedImage(null);
@@ -221,6 +232,31 @@ export default function ColorAnalyzerScreen() {
     setPendingPayload({ base64: b64, mime });
   }, []);
 
+  const mainShade = result ? result.zone_cervical || result.shade : '';
+
+  const launchCamera = useCallback(async () => {
+    const res = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 1,
+      exif: false,
+      base64: true,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    await pickAsset(res.assets[0]);
+  }, [pickAsset]);
+
+  const launchGallery = useCallback(async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.75,
+      base64: true,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    await pickAsset(res.assets[0]);
+  }, [pickAsset]);
+
   const takePhoto = useCallback(async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
@@ -228,36 +264,8 @@ export default function ColorAnalyzerScreen() {
       return;
     }
 
-    const confirmed = await new Promise<boolean>((resolve) => {
-      let settled = false;
-      const finish = (value: boolean) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-      Alert.alert(
-        '',
-        'Для точного результата:\n\n- Естественный свет, без вспышки\n- Расстояние 15-20 см\n- Зуб чистый и влажный',
-        [
-          { text: 'Отмена', style: 'cancel', onPress: () => finish(false) },
-          { text: 'Готов, снимаю', onPress: () => finish(true) },
-        ],
-        { cancelable: true, onDismiss: () => finish(false) }
-      );
-    });
-    if (!confirmed) return;
-
-    const res = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 1,
-      exif: false,
-      base64: true,
-    });
-    if (res.canceled || !res.assets[0]) return;
-    await pickAsset(res.assets[0]);
-  }, [pickAsset]);
+    await launchCamera();
+  }, [launchCamera]);
 
   const pickFromGallery = useCallback(async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -266,27 +274,8 @@ export default function ColorAnalyzerScreen() {
       return;
     }
 
-    await new Promise<void>((resolve) => {
-      Alert.alert(
-        'Совет по выбору зоны',
-        'После выбора фото вы сможете обрезать область — выделите ТОЛЬКО зуб, исключите расцветку VITA рядом. Это повысит точность результата.',
-        [{ text: 'Понятно', onPress: () => resolve() }],
-        { cancelable: false }
-      );
-    });
-
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.75,
-      base64: true,
-    });
-    if (res.canceled || !res.assets[0]) return;
-    await pickAsset(res.assets[0]);
-  }, [pickAsset]);
-
-  const mainShade = result ? result.zone_cervical || result.shade : '';
+    await launchGallery();
+  }, [launchGallery]);
 
   return (
     <ImageBackground
@@ -294,7 +283,7 @@ export default function ColorAnalyzerScreen() {
       style={styles.bg}
       resizeMode="cover"
     >
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar style="light" backgroundColor="#0a0a1a" />
       <View style={[styles.safe, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
@@ -330,6 +319,9 @@ export default function ColorAnalyzerScreen() {
                   <Text style={styles.secondaryBtnText}>Из галереи</Text>
                 </TouchableOpacity>
               </View>
+              <Text style={styles.croppingHint}>
+                После выбора нажмите ✓ чтобы сохранить область
+              </Text>
               <TouchableOpacity
                 style={styles.recommendationsBtn}
                 onPress={() => setTipsModalVisible(true)}
@@ -339,10 +331,26 @@ export default function ColorAnalyzerScreen() {
                   💡 Рекомендации для точного результата
                 </Text>
               </TouchableOpacity>
+              <Text style={styles.importantHint}>
+                ⚠️ Важно: фотографируйте ТОЛЬКО зуб
+                {'\n'}При кадрировании оставь только зуб
+              </Text>
             </>
           ) : (
             <>
-              <Image source={{ uri: selectedImage }} style={styles.preview} resizeMode="cover" />
+              <TouchableOpacity onPress={() => setShowImageModal(true)}>
+                <Image 
+                  source={{ uri: selectedImage || '' }} 
+                  style={{
+                    width: '100%',
+                    height: undefined,
+                    aspectRatio: 4/3,
+                    resizeMode: 'contain',
+                    borderRadius: 16,
+                    backgroundColor: 'rgba(0,0,0,0.3)',
+                  }}
+                />
+              </TouchableOpacity>
               {pendingPayload && !result && !loading ? (
                 <TouchableOpacity
                   style={styles.analyzeBtn}
@@ -407,6 +415,56 @@ export default function ColorAnalyzerScreen() {
             </>
           )}
         </ScrollView>
+
+        <Modal
+          visible={showImageModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowImageModal(false)}
+        >
+          <View style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.95)',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}>
+            <TouchableOpacity
+              style={{
+                position: 'absolute',
+                top: 50,
+                right: 20,
+                zIndex: 10,
+                padding: 10,
+              }}
+              onPress={() => setShowImageModal(false)}
+            >
+              <Text style={{ color: 'white', fontSize: 28 }}>✕</Text>
+            </TouchableOpacity>
+
+            <ScrollView
+              style={{ width: '100%' }}
+              contentContainerStyle={{
+                flexGrow: 1,
+                justifyContent: 'center',
+                alignItems: 'center',
+                paddingVertical: 80,
+              }}
+              maximumZoomScale={3}
+              minimumZoomScale={1}
+              centerContent={true}
+              showsVerticalScrollIndicator={false}
+            >
+              <Image
+                source={{ uri: selectedImage || '' }}
+                style={{
+                  width: Dimensions.get('window').width,
+                  height: Dimensions.get('window').width,
+                  resizeMode: 'contain',
+                }}
+              />
+            </ScrollView>
+          </View>
+        </Modal>
 
         <Modal
           visible={tipsModalVisible}
@@ -490,19 +548,6 @@ const styles = StyleSheet.create({
     borderColor: '#f2ca50',
     marginBottom: 16,
     backgroundColor: '#03142780',
-  },
-  analyzeBtn: {
-    backgroundColor: '#f2ca50',
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  analyzeBtnText: {
-    color: '#1a1a2e',
-    fontSize: 18,
-    fontWeight: '700',
   },
   loadingBox: {
     alignItems: 'center',
@@ -674,6 +719,26 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     textAlign: 'center',
   },
+  importantHint: {
+    color: 'rgba(242, 202, 80, 0.6)',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 12,
+    paddingHorizontal: 24,
+  },
+  analyzeBtn: {
+    backgroundColor: '#f2ca50',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  analyzeBtnText: {
+    color: '#1a1a2e',
+    fontSize: 18,
+    fontWeight: '700',
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.55)',
@@ -720,5 +785,35 @@ const styles = StyleSheet.create({
     color: '#f2ca50',
     fontSize: 16,
     fontWeight: '600',
+  },
+  modeSelection: {
+    gap: 12,
+  },
+  modeCard: {
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.3)',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  modeCardSelected: {
+    borderColor: 'rgba(242,202,80,0.9)',
+    backgroundColor: 'rgba(242,202,80,0.1)',
+  },
+  modeCardTitle: {
+    color: '#f2ca50',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  modeCardSubtitle: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+  },
+  croppingHint: {
+    color: 'rgba(242,202,80,0.5)',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 8,
   },
 });
