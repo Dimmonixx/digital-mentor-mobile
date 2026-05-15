@@ -1,4 +1,8 @@
+import { database } from '@/constants/firebase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { child, get, ref, set } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -33,13 +37,13 @@ export default function AuthScreen() {
       Animated.sequence([
         Animated.timing(scaleAnim, {
           toValue: 1.15,
-          duration: 1500,
+          duration: 2000,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
         Animated.timing(scaleAnim, {
           toValue: 1,
-          duration: 1500,
+          duration: 2000,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
@@ -50,13 +54,13 @@ export default function AuthScreen() {
       Animated.sequence([
         Animated.timing(rotateAnim, {
           toValue: 1,
-          duration: 3000,
+          duration: 4000,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
         Animated.timing(rotateAnim, {
           toValue: 0,
-          duration: 3000,
+          duration: 4000,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
@@ -67,12 +71,12 @@ export default function AuthScreen() {
       Animated.sequence([
         Animated.timing(opacityAnim, {
           toValue: 1,
-          duration: 1500,
+          duration: 2000,
           useNativeDriver: true,
         }),
         Animated.timing(opacityAnim, {
           toValue: 0.3,
-          duration: 1500,
+          duration: 2000,
           useNativeDriver: true,
         }),
       ])
@@ -84,14 +88,9 @@ export default function AuthScreen() {
     outputRange: ['-8deg', '8deg'],
   });
 
-  const handleAuth = async () => {
-    if (!email || !password) {
+  const handleRegister = async () => {
+    if (!email || !password || !name) {
       setError('Заполните все поля');
-      return;
-    }
-
-    if (tab === 'register' && !name) {
-      setError('Введите имя');
       return;
     }
 
@@ -99,46 +98,58 @@ export default function AuthScreen() {
     setError('');
 
     try {
-      if (tab === 'login') {
-        // Вход
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        router.replace('/(tabs)');
-      } else {
-        // Регистрация
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        
-        // Обновляем профиль с именем
-        await updateProfile(userCredential.user, {
-          displayName: name
-        });
-
-        // Сохраняем в Database
-        const userRef = ref(database, `users/${userCredential.user.uid}`);
-        await set(userRef, {
-          name,
-          email,
-          role,
-          createdAt: Date.now()
-        });
-
-        router.replace('/(tabs)');
+      const usersRef = ref(database, 'users');
+      const snapshot = await get(child(usersRef, email.replace('.','_')));
+      if (snapshot.exists()) {
+        setError('Пользователь уже существует');
+        return;
       }
-    } catch (err: any) {
-      let errorMessage = 'Ошибка авторизации';
-      
-      if (err.code === 'auth/email-already-in-use') {
-        errorMessage = 'Этот email уже используется';
-      } else if (err.code === 'auth/weak-password') {
-        errorMessage = 'Пароль должен содержать минимум 6 символов';
-      } else if (err.code === 'auth/invalid-email') {
-        errorMessage = 'Некорректный email';
-      } else if (err.code === 'auth/user-not-found') {
-        errorMessage = 'Пользователь не найден';
-      } else if (err.code === 'auth/wrong-password') {
-        errorMessage = 'Неверный пароль';
+      const userData = {
+        name,
+        email,
+        password,
+        role,
+        createdAt: Date.now(),
+      };
+      await set(ref(database, 
+        'users/' + email.replace(/\./g, '_')), userData);
+      await AsyncStorage.setItem('user', JSON.stringify(userData));
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      console.log('Register error:', error.code, error.message);
+      setError(error.message || 'Ошибка регистрации');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      setError('Заполните все поля');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const snapshot = await get(
+        ref(database, 'users/' + email.replace(/\./g, '_'))
+      );
+      if (!snapshot.exists()) {
+        setError('Пользователь не найден');
+        return;
       }
-      
-      setError(errorMessage);
+      const userData = snapshot.val();
+      if (userData.password !== password) {
+        setError('Неверный пароль');
+        return;
+      }
+      await AsyncStorage.setItem('user', JSON.stringify(userData));
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      console.log('Login error:', error.code, error.message);
+      setError(error.message || 'Ошибка входа');
     } finally {
       setLoading(false);
     }
@@ -156,33 +167,19 @@ export default function AuthScreen() {
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={{ alignItems: 'center', marginBottom: 40 }}>
-            <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-              <Animated.View style={{
-                position: 'absolute',
-                width: 400,
-                height: 400,
-                borderRadius: 200,
-                backgroundColor: 'rgba(242,202,80,0.08)',
-                opacity: opacityAnim,
-              }} />
-              <Animated.View style={{
-                position: 'absolute',
-                width: 440,
-                height: 440,
-                borderRadius: 170,
-                backgroundColor: 'rgba(242,202,80,0.12)',
-                opacity: opacityAnim,
-              }} />
-              <Animated.Image
-                source={require('@/assets/images/header-logo.png')}
-                style={{
-                  width: 220,
-                  height: 110,
-                  resizeMode: 'contain',
-                  transform: [{ scale: scaleAnim }, { rotate }],
-                }}
-              />
-            </View>
+            <Animated.Image
+              source={require('@/assets/images/header-logo.png')}
+              style={{
+                width: 220,
+                height: 110,
+                resizeMode: 'contain',
+                transform: [{ scale: scaleAnim }, { rotate }],
+                shadowColor: '#f2ca50',
+                shadowOffset: { width: 0, height: 0 },
+                shadowOpacity: opacityAnim,
+                shadowRadius: 25,
+              }}
+            />
             <View style={{
               width: 60, height: 1,
               backgroundColor: 'rgba(242,202,80,0.4)',
@@ -314,7 +311,7 @@ export default function AuthScreen() {
             {/* Кнопка входа/регистрации */}
             <TouchableOpacity
               style={styles.primaryBtn}
-              onPress={handleAuth}
+              onPress={tab === 'login' ? handleLogin : handleRegister}
               disabled={loading}
             >
               <Text style={styles.primaryBtnText}>

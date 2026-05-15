@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
-import React from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Redirect, Tabs } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import { Image, ImageBackground, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -8,7 +9,15 @@ import { HapticTab } from '@/components/haptic-tab';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-  const { user, loading } = useAuth();
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    AsyncStorage.getItem('user').then((data) => {
+      if (data) setUser(JSON.parse(data));
+      setLoading(false);
+    });
+  }, []);
 
   if (loading) return null;
   if (!user) return <Redirect href="/auth" />;

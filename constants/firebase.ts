@@ -1,5 +1,4 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getApps, initializeApp } from 'firebase/app';
 import { getDatabase } from 'firebase/database';
 import { getStorage } from 'firebase/storage';
 
@@ -13,29 +12,11 @@ const firebaseConfig = {
   appId: "1:937962102520:web:3ea7d6529804c4fef5a50d"
 };
 
-const app = initializeApp(firebaseConfig);
+const app = getApps().length === 0 
+  ? initializeApp(firebaseConfig) 
+  : getApps()[0];
 
-let auth: any = null;
-let database: any = null;
-let storage: any = null;
+export const database = getDatabase(app);
+export const storage = getStorage(app);
+export { app };
 
-export const getFirebaseAuth = () => {
-  if (!auth) {
-    auth = getAuth(app);
-  }
-  return auth;
-};
-
-export const getFirebaseDatabase = () => {
-  if (!database) {
-    database = getDatabase(app);
-  }
-  return database;
-};
-
-export const getFirebaseStorage = () => {
-  if (!storage) {
-    storage = getStorage(app);
-  }
-  return storage;
-};
