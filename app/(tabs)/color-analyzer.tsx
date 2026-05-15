@@ -6,33 +6,83 @@ import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useState } from 'react';
 import {
-    ActivityIndicator,
-    Dimensions,
-    Image,
-    ImageBackground,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Dimensions,
+  Image,
+  ImageBackground,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const CLAUDE_MODEL = 'claude-opus-4-5';
 
-const VITA_PROMPT = `Ты эксперт по цвету зубов. Проанализируй фото зуба и определи его оттенок по шкале VITA Classic. 
-Шкала VITA: BL1, BL2, BL3, BL4, A1, A2, A3, A3.5, A4, B1, B2, B3, B4, C1, C2, C3, C4, D2, D3, D4.
-Ответь строго в формате JSON:
+const VITA_ORDER: string[] = [
+  'BL1', 'BL2', 'BL3', 'BL4',
+  'A1', 'B1', 'A2', 'B2',
+  'C1', 'D2', 'A3', 'D3',
+  'B3', 'A3.5', 'C2', 'D4',
+  'B4', 'A4', 'C3', 'C4'
+];
+
+const VITA_PROMPT = `Ты эксперт-колорист зубного техника 
+с 20-летним опытом определения оттенков VITA Classic.
+
+Проанализируй фото зуба. ВАЖНЫЕ ПРАВИЛА:
+
+1. ОСВЕЩЕНИЕ: Если фото тёмное или с тёплым освещением — 
+   зуб реально ТЕМНЕЕ чем кажется, сдвигай оттенок 
+   на 1 ступень темнее.
+
+2. ЖЕЛТИЗНА: Выраженная желтизна = группа A (A3-A4) 
+   или B. Не занижай оттенок если видишь явную желтизну.
+
+3. ПРИОРИТЕТ ЗОН: Основной оттенок определяется 
+   по ШЕЙКЕ зуба — она является главным ориентиром 
+   для зубного техника.
+
+4. КАЧЕСТВО ФОТО: При плохом/среднем качестве фото 
+   confidence = "низкая", при хорошем = "высокая".
+
+5. ЗОНЫ: zone_cervical, zone_middle, zone_incisal 
+   должны содержать ТОЛЬКО оттенок без описаний!
+
+6. BLEACH-ГРУППА — КРИТИЧЕСКИ ВАЖНО:
+Если зуб белый, очень светлый, без кремовой 
+или жёлтой теплоты — это ОБЯЗАТЕЛЬНО BL1-BL4.
+НИКОГДА не называй белый холодный зуб A1 или A2!
+
+Разница:
+BL = чисто белый, холодный/нейтральный, 
+     яркий, без желтизны
+A1 = чуть тёплый, лёгкий кремовый подтон
+A2 = заметная кремовая теплота, не белый
+
+Если видишь яркий белый зуб → BL2 или BL3.
+Виниры, коронки, отбеленные зубы = почти всегда BL.
+
+7. ПРАВИЛО ШЕЙКИ: zone_cervical возвращай 
+ТОЛЬКО как код оттенка например "BL2" или "A3"
+БЕЗ какого-либо описания после!
+
+Шкала VITA Classic по возрастанию темноты:
+BL1 < BL2 < BL3 < BL4 < A1 < B1 < A2 < B2 < C1 < 
+D2 < A3 < D3 < B3 < A3.5 < C2 < D4 < B4 < A4 < C3 < C4
+
+Ответь СТРОГО в формате JSON без лишнего текста:
 {
-  "shade": "A2",
+  "shade": "A3",
   "confidence": "высокая/средняя/низкая",
   "photo_quality": "отличное/хорошее/среднее/плохое",
-  "photo_quality_reason": "причина если качество плохое",
+  "photo_quality_reason": "причина если не отличное",
   "description": "краткое описание цвета",
-  "zone_cervical": "оттенок шейки",
-  "zone_middle": "оттенок середины",
-  "zone_incisal": "оттенок края"
+  "zone_cervical": "только оттенок например A3",
+  "zone_middle": "только оттенок например A2",
+  "zone_incisal": "только оттенок например A1"
 }`;
 
 interface VitaAnalysis {
@@ -54,6 +104,28 @@ function getPhotoQualityColor(quality: string): string {
   if (q === 'плохое' || q.startsWith('плох')) return '#F44336';
   return '#ffffff99';
 }
+
+const shadeOnly = (text: string) => {
+  if (!text) return '';
+  const s = text.split('(')[0].split('—')[0].split('/')[0].trim();
+  return s;
+};
+
+const getMainShade = (result: any): string => {
+  const raw = result.zone_cervical || result.shade || '';
+  return raw.split('(')[0].split('—')[0].split('-')[0]
+            .split('/')[0].trim();
+};
+
+
+const getShadeRange = (shade: string, confidence: string) => {
+  if (confidence === 'высокая') return null;
+  const idx = VITA_ORDER.indexOf(shade);
+  if (idx === -1) return null;
+  const from = VITA_ORDER[Math.max(0, idx - 1)];
+  const to = VITA_ORDER[Math.min(VITA_ORDER.length - 1, idx + 1)];
+  return from + ' — ' + to;
+};
 
 const PHOTO_TIPS_STEPS = [
   '📍 Расстояние 15–20 см от зуба',
@@ -82,6 +154,7 @@ function parseVitaJson(raw: string): VitaAnalysis | null {
     ) {
       const photo_quality_reason =
         typeof parsed.photo_quality_reason === 'string' ? parsed.photo_quality_reason : '';
+      
       return {
         shade: parsed.shade,
         confidence: parsed.confidence,
@@ -232,8 +305,7 @@ export default function ColorAnalyzerScreen() {
     setPendingPayload({ base64: b64, mime });
   }, []);
 
-  const mainShade = result ? result.zone_cervical || result.shade : '';
-
+  
   const launchCamera = useCallback(async () => {
     const res = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -284,16 +356,28 @@ export default function ColorAnalyzerScreen() {
       resizeMode="cover"
     >
       <StatusBar style="light" backgroundColor="#0a0a1a" />
-      <View style={[styles.safe, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }]}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={24} color="#f2ca50" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            Анализ цвета VITA
-          </Text>
-          <View style={styles.headerSpacer} />
-        </View>
+      <View style={[styles.safe, { paddingTop: 0, paddingBottom: insets.bottom + 16 }]}>
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 16,
+            paddingTop: insets.top + 8,
+            paddingBottom: 12,
+          }}>
+            <TouchableOpacity onPress={() => router.back()}>
+              <Ionicons name="arrow-back" size={24} color="#f2ca50" />
+            </TouchableOpacity>
+            <Text style={{
+              flex: 1,
+              textAlign: 'center',
+              color: '#f2ca50',
+              fontSize: 18,
+              fontWeight: '700',
+              marginRight: 24,
+            }}>
+              Анализ цвета VITA
+            </Text>
+          </View>
 
         <ScrollView
           style={styles.scroll}
@@ -319,9 +403,6 @@ export default function ColorAnalyzerScreen() {
                   <Text style={styles.secondaryBtnText}>Из галереи</Text>
                 </TouchableOpacity>
               </View>
-              <Text style={styles.croppingHint}>
-                После выбора нажмите ✓ чтобы сохранить область
-              </Text>
               <TouchableOpacity
                 style={styles.recommendationsBtn}
                 onPress={() => setTipsModalVisible(true)}
@@ -331,10 +412,6 @@ export default function ColorAnalyzerScreen() {
                   💡 Рекомендации для точного результата
                 </Text>
               </TouchableOpacity>
-              <Text style={styles.importantHint}>
-                ⚠️ Важно: фотографируйте ТОЛЬКО зуб
-                {'\n'}При кадрировании оставь только зуб
-              </Text>
             </>
           ) : (
             <>
@@ -369,7 +446,39 @@ export default function ColorAnalyzerScreen() {
               {result ? (
                 <View style={styles.resultCard}>
                   <Text style={styles.resultLabel}>Оттенок VITA</Text>
-                  <Text style={styles.shade}>{mainShade}</Text>
+                  <Text
+                    style={{
+                      fontSize: 72,
+                      fontWeight: 'bold',
+                      color: '#f2ca50',
+                      letterSpacing: 2,
+                      marginVertical: 8,
+                      textAlign: 'center',
+                    }}
+                  >
+                    {(() => {
+                    const mainShade = getMainShade(result);
+                    const range = getShadeRange(mainShade, result.confidence);
+                    return (
+                      <>
+                        {mainShade}
+                      </>
+                    );
+                  })()}
+                  </Text>
+                  {(() => {
+                    const mainShade = getMainShade(result);
+                    const range = getShadeRange(mainShade, result.confidence);
+                    return range && (
+                      <Text style={{
+                        fontSize: 16,
+                        color: 'rgba(242,202,80,0.7)',
+                        marginBottom: 8,
+                      }}>
+                        Разброс: {range}
+                      </Text>
+                    );
+                  })()}
                   <View style={styles.row}>
                     <Text style={styles.metaLabel}>Уверенность</Text>
                     <Text style={styles.metaValue}>{result.confidence}</Text>
@@ -395,15 +504,30 @@ export default function ColorAnalyzerScreen() {
                   <Text style={styles.sectionTitle}>Зоны</Text>
                   <View style={styles.zoneRow}>
                     <Text style={styles.zoneKey}>Шейка</Text>
-                    <Text style={styles.zoneVal}>{result.zone_cervical}</Text>
+                    <Text 
+                      style={styles.zoneVal}
+                      numberOfLines={2}
+                    >
+                      {shadeOnly(result.zone_cervical)}
+                    </Text>
                   </View>
                   <View style={styles.zoneRow}>
                     <Text style={styles.zoneKey}>Середина</Text>
-                    <Text style={styles.zoneVal}>{result.zone_middle}</Text>
+                    <Text 
+                      style={styles.zoneVal}
+                      numberOfLines={2}
+                    >
+                      {shadeOnly(result.zone_middle)}
+                    </Text>
                   </View>
                   <View style={styles.zoneRow}>
                     <Text style={styles.zoneKey}>Край</Text>
-                    <Text style={styles.zoneVal}>{result.zone_incisal}</Text>
+                    <Text 
+                      style={styles.zoneVal}
+                      numberOfLines={2}
+                    >
+                      {shadeOnly(result.zone_incisal)}
+                    </Text>
                   </View>
                 </View>
               ) : null}
@@ -522,14 +646,7 @@ const styles = StyleSheet.create({
     padding: 8,
     width: 44,
   },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    color: '#f2ca50',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  headerSpacer: {
+    headerSpacer: {
     width: 44,
   },
   scroll: {
@@ -580,41 +697,44 @@ const styles = StyleSheet.create({
     borderColor: '#f2ca5040',
   },
   resultLabel: {
-    color: '#ffffff99',
-    fontSize: 13,
+    fontSize: 11,
+    letterSpacing: 2,
+    color: 'rgba(255,255,255,0.4)',
+    fontWeight: '400',
     marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
   },
   shade: {
+    fontSize: 72,
+    fontWeight: 'bold',
     color: '#f2ca50',
-    fontSize: 48,
-    fontWeight: '800',
-    marginBottom: 16,
+    letterSpacing: 2,
+    marginVertical: 8,
+    textAlign: 'center',
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
-    paddingBottom: 16,
+    marginBottom: 12,
+    paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#ffffff18',
+    borderBottomColor: 'rgba(255,255,255,0.06)',
   },
   metaLabel: {
-    color: '#ffffff80',
-    fontSize: 14,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.5)',
+    fontWeight: '400',
   },
   metaValue: {
-    color: '#f2ca50',
     fontSize: 15,
     fontWeight: '600',
+    color: '#f2ca50',
   },
   qualityBlock: {
     marginBottom: 16,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#ffffff18',
+    borderBottomColor: 'rgba(255,255,255,0.06)',
   },
   rowFlat: {
     flexDirection: 'row',
@@ -622,41 +742,42 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   photoQualityReason: {
-    marginTop: 8,
     fontSize: 12,
-    lineHeight: 17,
-    color: 'rgba(255, 255, 255, 0.5)',
+    color: 'rgba(255,255,255,0.4)',
+    marginTop: 4,
+    fontWeight: '400',
   },
   sectionTitle: {
+    fontSize: 13,
+    letterSpacing: 1.5,
     color: '#f2ca50',
-    fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '500',
+    marginTop: 16,
     marginBottom: 8,
-    marginTop: 4,
   },
   bodyText: {
-    color: '#ffffffdd',
     fontSize: 15,
+    color: 'rgba(255,255,255,0.75)',
     lineHeight: 22,
-    marginBottom: 12,
+    fontWeight: '400',
   },
   zoneRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ffffff20',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
   },
   zoneKey: {
-    color: '#ffffff90',
-    fontSize: 14,
-    flex: 1,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.45)',
+    fontWeight: '400',
   },
   zoneVal: {
-    color: '#ffffff',
-    fontSize: 14,
-    flex: 1.2,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.9)',
+    fontWeight: '500',
     textAlign: 'right',
   },
   actions: {

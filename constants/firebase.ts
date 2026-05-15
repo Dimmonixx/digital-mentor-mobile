@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
 import { getStorage } from 'firebase/storage';
 
@@ -13,5 +14,28 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const database = getDatabase(app);
-export const storage = getStorage(app);
+
+let auth: any = null;
+let database: any = null;
+let storage: any = null;
+
+export const getFirebaseAuth = () => {
+  if (!auth) {
+    auth = getAuth(app);
+  }
+  return auth;
+};
+
+export const getFirebaseDatabase = () => {
+  if (!database) {
+    database = getDatabase(app);
+  }
+  return database;
+};
+
+export const getFirebaseStorage = () => {
+  if (!storage) {
+    storage = getStorage(app);
+  }
+  return storage;
+};
