@@ -1,19 +1,38 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { router } from 'expo-router';
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
-  Image,
+  Animated,
   Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 
 export default function HomeScreen() {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scaleAnim, {
+          toValue: 1.08,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
   return (
     <View style={{ flex: 1, backgroundColor: 'transparent' }}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
@@ -24,9 +43,9 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.heroWrap, Platform.OS === 'ios' && styles.heroGlowIos]}>
-          <Image
+          <Animated.Image
             source={require('@/assets/images/hero-tooth.png')}
-            style={styles.heroImage}
+            style={[styles.heroImage, { transform: [{ scale: scaleAnim }] }]}
             resizeMode="contain"
           />
         </View>
@@ -68,6 +87,31 @@ export default function HomeScreen() {
             <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
           </TouchableOpacity>
         </View>
+
+        <TouchableOpacity
+          onPress={() => router.push('/new-order')}
+          style={{
+            borderWidth: 1,
+            borderColor: '#f2ca50',
+            borderRadius: 16,
+            padding: 16,
+            marginTop: 12,
+            marginHorizontal: 20,
+            backgroundColor: 'rgba(242,202,80,0.1)',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+          }}
+        >
+          <Ionicons name="document-text-outline" 
+            size={20} color="#f2ca50" />
+          <Text style={{
+            color: '#f2ca50',
+            fontSize: 16,
+            fontWeight: '600',
+          }}>📋 Новый наряд</Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );

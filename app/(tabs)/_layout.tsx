@@ -14,6 +14,7 @@ export default function TabLayout() {
 
   useEffect(() => {
     AsyncStorage.getItem('user').then((data) => {
+      console.log('Stored user:', data);
       if (data) setUser(JSON.parse(data));
       setLoading(false);
     });
@@ -94,6 +95,14 @@ export default function TabLayout() {
           />
           <Tabs.Screen
             name="color-analyzer"
+            options={{
+              headerShown: false,
+              tabBarButton: () => null,
+              tabBarItemStyle: { display: 'none' },
+            }}
+          />
+          <Tabs.Screen
+            name="new-order"
             options={{
               headerShown: false,
               tabBarButton: () => null,
