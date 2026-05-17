@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DiLabs — Privacy Policy</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #040f1c;
+      --bg2: #071828;
+      --gold: #f2ca50;
+      --gold-dim: rgba(242,202,80,0.15);
+      --gold-border: rgba(242,202,80,0.25);
+      --text: #e8e8f0;
+      --text-dim: rgba(232,232,240,0.55);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
+      line-height: 1.75;
+      min-height: 100vh;
+    }
+
+    /* Stars background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 20% 20%, rgba(242,202,80,0.04) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 80%, rgba(242,202,80,0.03) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .wrapper {
+      position: relative;
+      z-index: 1;
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+
+    /* Logo */
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 40px;
+    }
+    .logo-icon {
+      width: 36px; height: 36px;
+      background: var(--gold);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .logo-text {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--gold);
+      letter-spacing: 1px;
+    }
+
+    /* Lang switcher */
+    .lang-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 40px;
+    }
+    .lang-btn {
+      padding: 6px 18px;
+      border-radius: 20px;
+      border: 1px solid var(--gold-border);
+      background: transparent;
+      color: var(--text-dim);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .lang-btn:hover { color: var(--gold); border-color: var(--gold); }
+    .lang-btn.active {
+      background: var(--gold);
+      color: #031427;
+      border-color: var(--gold);
+      font-weight: 500;
+    }
+
+    /* Content */
+    .content { display: none; }
+    .content.active { display: block; }
+
+    h1 {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(28px, 5vw, 42px);
+      font-weight: 700;
+      color: var(--gold);
+      line-height: 1.2;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: var(--text-dim);
+      font-size: 13px;
+      margin-bottom: 40px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--gold-border);
+    }
+
+    .section {
+      background: var(--bg2);
+      border: 1px solid var(--gold-border);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      margin-bottom: 16px;
+    }
+
+    h2 {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--gold);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    h2 .ico { font-size: 18px; }
+
+    p { color: var(--text-dim); margin-bottom: 10px; }
+    p:last-child { margin-bottom: 0; }
+
+    ul {
+      list-style: none;
+      padding: 0;
+      margin: 10px 0 0;
+    }
+    ul li {
+      color: var(--text-dim);
+      padding: 5px 0 5px 20px;
+      position: relative;
+    }
+    ul li::before {
+      content: '→';
+      position: absolute;
+      left: 0;
+      color: var(--gold);
+      font-size: 12px;
+    }
+
+    .highlight {
+      background: var(--gold-dim);
+      border-left: 3px solid var(--gold);
+      border-radius: 0 8px 8px 0;
+      padding: 12px 16px;
+      margin-top: 12px;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .contact-box {
+      background: var(--gold-dim);
+      border: 1px solid var(--gold-border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-top: 32px;
+      text-align: center;
+    }
+    .contact-box a {
+      color: var(--gold);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .contact-box a:hover { text-decoration: underline; }
+
+    .updated {
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 12px;
+      margin-top: 32px;
+      opacity: 0.6;
+    }
+
+    @media (max-width: 480px) {
+      .wrapper { padding: 32px 16px 60px; }
+      .section { padding: 18px 16px; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <div class="logo">
+    <div class="logo-icon">🦷</div>
+    <span class="logo-text">DiLabs</span>
+  </div>
+
+  <div class="lang-bar">
+    <button class="lang-btn active" onclick="setLang('uk')">🇺🇦 UA</button>
+    <button class="lang-btn" onclick="setLang('en')">🇬🇧 EN</button>
+    <button class="lang-btn" onclick="setLang('ru')">🇷🇺 RU</button>
+  </div>
+
+  <!-- ═══════════════ UKRAINIAN ═══════════════ -->
+  <div class="content active" id="lang-uk">
+    <h1>Політика конфіденційності</h1>
+    <p class="subtitle">Набрала чинності: 1 червня 2025 р. &nbsp;·&nbsp; Оператор: DiLabs, Україна</p>
+
+    <div class="section">
+      <h2><span class="ico">📋</span> Загальні положення</h2>
+      <p>DiLabs («ми», «нас», «наш») — мобільний застосунок для зубних техніків і стоматологів. Ми поважаємо вашу конфіденційність і зобов'язуємося захищати ваші персональні дані відповідно до Закону України «Про захист персональних даних» та Регламенту ЄС 2016/679 (GDPR).</p>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">📦</span> Які дані ми збираємо</h2>
+      <ul>
+        <li><strong>Дані акаунту:</strong> email-адреса, зашифрований пароль</li>
+        <li><strong>Дані профілю:</strong> ім'я, прізвище, посада, назва лабораторії, місто, стаж, спеціалізація (заповнюються добровільно)</li>
+        <li><strong>Фотографії зубів:</strong> завантажуються для AI-аналізу кольору VITA, обробляються в реальному часі та не зберігаються постійно на наших серверах</li>
+        <li><strong>Аватар профілю:</strong> фото з галереї або один із готових зображень (зберігається у Firebase Storage)</li>
+        <li><strong>Наряди та аналізи:</strong> дані про замовлення та результати аналізу кольору (Firebase Realtime Database)</li>
+        <li><strong>Технічні дані:</strong> тип пристрою, версія ОС, журнали помилок — для діагностики та покращення застосунку</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">🎯</span> Мета обробки даних</h2>
+      <ul>
+        <li>Надання функцій застосунку: аналіз кольору VITA, управління нарядами, профіль техніка</li>
+        <li>Ідентифікація та автентифікація користувача</li>
+        <li>Покращення якості та безпеки застосунку</li>
+        <li>Технічна підтримка користувачів</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">🤝</span> Треті сторони</h2>
+      <p>Для роботи застосунку ми використовуємо такі сервіси:</p>
+      <ul>
+        <li><strong>Google Firebase</strong> (Auth, Realtime Database, Storage) — зберігання даних акаунту та файлів</li>
+        <li><strong>Anthropic Claude API</strong> — AI-аналіз фотографій зубів для визначення кольору VITA. Фотографії передаються для обробки і не зберігаються Anthropic після аналізу</li>
+        <li><strong>Cloudinary</strong> — обробка зображень</li>
+      </ul>
+      <div class="highlight">Ми не продаємо, не передаємо і не розкриваємо ваші персональні дані третім особам у комерційних цілях.</div>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">📸</span> Фотографії зубів</h2>
+      <p>Фотографії зубів, що завантажуються для аналізу кольору VITA, обробляються виключно в медичних/професійних цілях. Зображення передаються до AI-сервісу Anthropic Claude для визначення відтінку та одразу після аналізу не зберігаються на наших серверах. Ви самостійно контролюєте, які фотографії завантажувати.</p>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">⚖️</span> Ваші права (GDPR)</h2>
+      <ul>
+        <li>Право на доступ до своїх даних</li>
+        <li>Право на виправлення неточних даних</li>
+        <li>Право на видалення («право бути забутим»)</li>
+        <li>Право на обмеження обробки</li>
+        <li>Право на перенесення даних</li>
+        <li>Право на заперечення проти обробки</li>
+      </ul>
+      <div class="highlight">Для видалення акаунту та всіх пов'язаних даних напишіть нам на email нижче. Запит буде виконано протягом 30 днів.</div>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">🔒</span> Безпека даних</h2>
+      <p>Ми використовуємо галузеві стандарти безпеки: шифрування даних у спокої та при передачі (TLS/HTTPS), Firebase Security Rules для обмеження доступу, захищена автентифікація через Firebase Auth.</p>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">👶</span> Діти</h2>
+      <p>DiLabs призначений виключно для професійного використання особами віком від 18 років. Ми свідомо не збираємо дані осіб молодше 18 років. Якщо вам стало відомо, що дитина надала нам персональні дані, зверніться до нас для їх видалення.</p>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">🔄</span> Зміни до цієї Політики</h2>
+      <p>Ми можемо оновлювати цю Політику конфіденційності. У разі суттєвих змін ви отримаєте повідомлення через застосунок. Дата останнього оновлення вказана на початку документа.</p>
+    </div>
+
+    <div class="contact-box">
+      <p style="color: var(--text); margin-bottom: 6px; font-weight: 500;">Контакт з оператором даних</p>
+      <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 8px;">DiLabs · Україна</p>
+      <a href="mailto:privacy@dilabs.app">privacy@dilabs.app</a>
+    </div>
+  </div>
+
+  <!-- ═══════════════ ENGLISH ═══════════════ -->
+  <div class="content" id="lang-en">
+    <h1>Privacy Policy</h1>
+    <p class="subtitle">Effective date: June 1, 2025 &nbsp;·&nbsp; Operator: DiLabs, Ukraine</p>
+
+    <div class="section">
+      <h2><span class="ico">📋</span> Overview</h2>
+      <p>DiLabs ("we", "us", "our") is a mobile application designed for dental technicians and dentists. We respect your privacy and are committed to protecting your personal data in accordance with Ukrainian Law on Personal Data Protection and EU Regulation 2016/679 (GDPR).</p>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">📦</span> Data We Collect</h2>
+      <ul>
+        <li><strong>Account data:</strong> email address, encrypted password</li>
+        <li><strong>Profile data:</strong> first name, last name, position, laboratory name, city, experience, specialization (provided voluntarily)</li>
+        <li><strong>Dental photos:</strong> uploaded for VITA shade AI analysis, processed in real-time and not permanently stored on our servers</li>
+        <li><strong>Profile avatar:</strong> photo from gallery or a preset image (stored in Firebase Storage)</li>
+        <li><strong>Orders & analyses:</strong> work order data and color analysis results (Firebase Realtime Database)</li>
+        <li><strong>Technical data:</strong> device type, OS version, error logs — for diagnostics and improvement</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">🎯</span> Purpose of Processing</h2>
+      <ul>
+        <li>Providing app features: VITA shade analysis, order management, technician profile</li>
+        <li>User identification and authentication</li>
+        <li>Improving app quality and security</li>
+        <li>User technical support</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">🤝</span> Third Parties</h2>
+      <p>We use the following services to operate the app:</p>
+      <ul>
+        <li><strong>Google Firebase</strong> (Auth, Realtime Database, Storage) — account data and file storage</li>
+        <li><strong>Anthropic Claude API</strong> — AI analysis of dental photos for VITA shade determination. Photos are sent for processing and are not retained by Anthropic after analysis</li>
+        <li><strong>Cloudinary</strong> — image processing</li>
+      </ul>
+      <div class="highlight">We do not sell, transfer, or disclose your personal data to third parties for commercial purposes.</div>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">📸</span> Dental Photos</h2>
+      <p>Dental photos uploaded for VITA color analysis are processed exclusively for medical/professional purposes. Images are sent to the Anthropic Claude AI service for shade determination and are not stored on our servers after analysis. You have full control over which photos you upload.</p>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">⚖️</span> Your Rights (GDPR)</h2>
+      <ul>
+        <li>Right of access to your personal data</li>
+        <li>Right to rectification of inaccurate data</li>
+        <li>Right to erasure ("right to be forgotten")</li>
+        <li>Right to restriction of processing</li>
+        <li>Right to data portability</li>
+        <li>Right to object to processing</li>
+      </ul>
+      <div class="highlight">To delete your account and all associated data, contact us at the email below. Requests will be fulfilled within 30 days.</div>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">🔒</span> Data Security</h2>
+      <p>We use industry-standard security measures: encryption at rest and in transit (TLS/HTTPS), Firebase Security Rules for access control, secure authentication via Firebase Auth.</p>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">👶</span> Children</h2>
+      <p>DiLabs is intended exclusively for professional use by persons aged 18 and over. We do not knowingly collect data from persons under 18. If you become aware that a child has provided us with personal data, please contact us for deletion.</p>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">🔄</span> Changes to This Policy</h2>
+      <p>We may update this Privacy Policy from time to time. For significant changes, you will be notified via the app. The date of the last update is shown at the top of this document.</p>
+    </div>
+
+    <div class="contact-box">
+      <p style="color: var(--text); margin-bottom: 6px; font-weight: 500;">Data Controller Contact</p>
+      <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 8px;">DiLabs · Ukraine</p>
+      <a href="mailto:privacy@dilabs.app">privacy@dilabs.app</a>
+    </div>
+  </div>
+
+  <!-- ═══════════════ RUSSIAN ═══════════════ -->
+  <div class="content" id="lang-ru">
+    <h1>Политика конфиденциальности</h1>
+    <p class="subtitle">Вступила в силу: 1 июня 2025 г. &nbsp;·&nbsp; Оператор: DiLabs, Украина</p>
+
+    <div class="section">
+      <h2><span class="ico">📋</span> Общие положения</h2>
+      <p>DiLabs («мы», «нас», «наш») — мобильное приложение для зубных техников и стоматологов. Мы уважаем вашу конфиденциальность и обязуемся защищать ваши персональные данные в соответствии с Законом Украины «О защите персональных данных» и Регламентом ЕС 2016/679 (GDPR).</p>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">📦</span> Какие данные мы собираем</h2>
+      <ul>
+        <li><strong>Данные аккаунта:</strong> email-адрес, зашифрованный пароль</li>
+        <li><strong>Данные профиля:</strong> имя, фамилия, должность, название лаборатории, город, стаж, специализация (заполняются добровольно)</li>
+        <li><strong>Фотографии зубов:</strong> загружаются для AI-анализа цвета VITA, обрабатываются в реальном времени и не хранятся постоянно на наших серверах</li>
+        <li><strong>Аватар профиля:</strong> фото из галереи или одно из готовых изображений (хранится в Firebase Storage)</li>
+        <li><strong>Наряды и анализы:</strong> данные о заказах и результаты анализа цвета (Firebase Realtime Database)</li>
+        <li><strong>Технические данные:</strong> тип устройства, версия ОС, журналы ошибок — для диагностики и улучшения приложения</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">🎯</span> Цель обработки данных</h2>
+      <ul>
+        <li>Предоставление функций приложения: анализ цвета VITA, управление нарядами, профиль техника</li>
+        <li>Идентификация и аутентификация пользователя</li>
+        <li>Улучшение качества и безопасности приложения</li>
+        <li>Техническая поддержка пользователей</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">🤝</span> Третьи стороны</h2>
+      <p>Для работы приложения мы используем следующие сервисы:</p>
+      <ul>
+        <li><strong>Google Firebase</strong> (Auth, Realtime Database, Storage) — хранение данных аккаунта и файлов</li>
+        <li><strong>Anthropic Claude API</strong> — AI-анализ фотографий зубов для определения цвета VITA. Фотографии передаются для обработки и не сохраняются Anthropic после анализа</li>
+        <li><strong>Cloudinary</strong> — обработка изображений</li>
+      </ul>
+      <div class="highlight">Мы не продаём, не передаём и не раскрываем ваши персональные данные третьим лицам в коммерческих целях.</div>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">📸</span> Фотографии зубов</h2>
+      <p>Фотографии зубов, загружаемые для анализа цвета VITA, обрабатываются исключительно в медицинских/профессиональных целях. Изображения передаются в AI-сервис Anthropic Claude для определения оттенка и сразу после анализа не хранятся на наших серверах. Вы самостоятельно контролируете, какие фотографии загружать.</p>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">⚖️</span> Ваши права (GDPR)</h2>
+      <ul>
+        <li>Право на доступ к своим данным</li>
+        <li>Право на исправление неточных данных</li>
+        <li>Право на удаление («право быть забытым»)</li>
+        <li>Право на ограничение обработки</li>
+        <li>Право на перенос данных</li>
+        <li>Право на возражение против обработки</li>
+      </ul>
+      <div class="highlight">Для удаления аккаунта и всех связанных данных напишите нам на email ниже. Запрос будет выполнен в течение 30 дней.</div>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">🔒</span> Безопасность данных</h2>
+      <p>Мы используем отраслевые стандарты безопасности: шифрование данных в покое и при передаче (TLS/HTTPS), Firebase Security Rules для ограничения доступа, защищённая аутентификация через Firebase Auth.</p>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">👶</span> Дети</h2>
+      <p>DiLabs предназначен исключительно для профессионального использования лицами в возрасте от 18 лет. Мы сознательно не собираем данные лиц младше 18 лет. Если вам стало известно, что ребёнок предоставил нам персональные данные, обратитесь к нам для их удаления.</p>
+    </div>
+
+    <div class="section">
+      <h2><span class="ico">🔄</span> Изменения в этой Политике</h2>
+      <p>Мы можем обновлять настоящую Политику конфиденциальности. В случае существенных изменений вы получите уведомление через приложение. Дата последнего обновления указана в начале документа.</p>
+    </div>
+
+    <div class="contact-box">
+      <p style="color: var(--text); margin-bottom: 6px; font-weight: 500;">Контакт с оператором данных</p>
+      <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 8px;">DiLabs · Украина</p>
+      <a href="mailto:privacy@dilabs.app">privacy@dilabs.app</a>
+    </div>
+  </div>
+
+  <p class="updated">© 2025 DiLabs. All rights reserved.</p>
+
+</div>
+
+<script>
+  function setLang(lang) {
+    document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.lang-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById('lang-' + lang).classList.add('active');
+    event.target.classList.add('active');
+    document.documentElement.lang = lang;
+  }
+</script>
+</body>
+</html>
