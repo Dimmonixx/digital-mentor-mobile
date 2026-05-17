@@ -141,11 +141,10 @@ const getMainShade = (result: any): string => {
 
 
 const PHOTO_TIPS_STEPS = [
+  '⚠️ Делайте захват широко — рамка должна включать десну сверху, боковые грани и краешки соседних зубов (10–15%). Не обводите зуб точно по контуру — чем шире захват, тем точнее результат.',
   '📍 Расстояние 15–20 см от зуба',
-  '💡 Естественный дневной свет',
+  '💡 Естественный дневний свет',
   '🚫 Без вспышки — искажает цвет',
-  '🦷 Зуб чистый и слегка влажный',
-  '📐 Снимай прямо, без угла',
   '📷 Основная камера, не фронтальная',
   '✂️ При кадрировании оставь только зуб',
 ];
@@ -610,15 +609,18 @@ const reset = useCallback(() => {
                   <Text style={styles.resultLabel}>Оттенок VITA</Text>
                   <Text
                     style={{
-                      fontSize: 72,
+                      fontSize: 56,
                       fontWeight: 'bold',
                       color: '#f2ca50',
-                      letterSpacing: 2,
-                      marginVertical: 8,
+                      letterSpacing: 1,
                       textAlign: 'center',
+                      marginVertical: 8,
                     }}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.6}
                   >
-                    {result.primary_range}
+                    {result.primary_range.includes('-') ? result.primary_range.split('-').reverse().join('-') : result.primary_range}
                   </Text>
                   <View style={styles.row}>
                     <Text style={styles.metaLabel}>Уверенность</Text>
@@ -638,7 +640,27 @@ const reset = useCallback(() => {
                     </View>
                                       </View>
                   <Text style={styles.sectionTitle}>Описание</Text>
-                  <Text style={styles.bodyText}>{result.description}</Text>
+                  <View style={{ marginBottom: 12 }}>
+                    {result.description
+                      .split('. ')
+                      .filter((s: string) => s.trim().length > 0)
+                      .map((sentence: string, index: number) => (
+                        <Text 
+                          key={index}
+                          style={{
+                            color: 'rgba(255,255,255,0.75)',
+                            fontSize: 14,
+                            lineHeight: 22,
+                            marginBottom: 6,
+                          }}
+                        >
+                          {sentence.trim().endsWith('.') 
+                            ? sentence.trim() 
+                            : sentence.trim() + '.'}
+                        </Text>
+                      ))
+                    }
+                  </View>
                   {result.secondary_subtones && (
                     <Text style={{
                       fontSize: 14,
@@ -989,8 +1011,9 @@ const styles = StyleSheet.create({
   zoneRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingVertical: 8,
+    marginBottom: 4,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.06)',
   },
@@ -1000,10 +1023,13 @@ const styles = StyleSheet.create({
     fontWeight: '400',
   },
   zoneVal: {
-    fontSize: 15,
+    fontSize: 14,
     color: 'rgba(255,255,255,0.9)',
     fontWeight: '500',
     textAlign: 'right',
+    flex: 1,
+    flexWrap: 'wrap',
+    marginLeft: 8,
   },
   actions: {
     gap: 12,

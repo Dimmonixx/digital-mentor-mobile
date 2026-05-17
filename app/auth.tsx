@@ -1,4 +1,5 @@
 import { database } from '@/constants/firebase';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -23,9 +24,12 @@ export default function AuthScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState<'doctor' | 'technician'>('doctor');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
@@ -94,6 +98,25 @@ export default function AuthScreen() {
       return;
     }
 
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      Alert.alert('Ошибка', 'Введите корректный email адрес');
+      return;
+    }
+
+    // Password validation
+    if (password.length < 6) {
+      Alert.alert('Ошибка', 'Пароль должен быть не менее 6 символов');
+      return;
+    }
+
+    // Password confirmation
+    if (password !== confirmPassword) {
+      Alert.alert('Ошибка', 'Пароли не совпадают');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
@@ -123,9 +146,44 @@ export default function AuthScreen() {
     }
   };
 
-  const handleLogin = async () => {
+  const handleForgotPassword = async () => {
+  if (!email.trim()) {
+    Alert.alert(
+      'Введите email', 
+      'Укажите email в поле выше, мы отправим ссылку для сброса пароля'
+    );
+    return;
+  }
+  try {
+    const { sendPasswordResetEmail } = await import('firebase/auth');
+    const { getAuth } = await import('firebase/auth');
+    const auth = getAuth();
+    await sendPasswordResetEmail(auth, email.trim());
+    Alert.alert(
+      '✅ Письмо отправлено',
+      'Проверьте вашу почту и следуйте инструкциям для сброса пароля'
+    );
+  } catch (error: any) {
+    Alert.alert('Ошибка', 'Пользователь с таким email не найден');
+  }
+};
+
+const handleLogin = async () => {
     if (!email || !password) {
       setError('Заполните все поля');
+      return;
+    }
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      Alert.alert('Ошибка', 'Введите корректный email адрес');
+      return;
+    }
+
+    // Password validation
+    if (password.length < 6) {
+      Alert.alert('Ошибка', 'Пароль должен быть не менее 6 символов');
       return;
     }
 
@@ -275,14 +333,60 @@ export default function AuthScreen() {
               autoCapitalize="none"
             />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Пароль"
-              placeholderTextColor="rgba(255,255,255,0.4)"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
+            <View style={{ position: 'relative' }}>
+              <TextInput
+                style={styles.input}
+                placeholder="Пароль"
+                placeholderTextColor="rgba(255,255,255,0.4)"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+              />
+              <TouchableOpacity
+                style={{
+                  position: 'absolute',
+                  right: 15,
+                  top: '50%',
+                  transform: [{ translateY: -12 }],
+                }}
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={22}
+                  color="rgba(255,255,255,0.5)"
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* Подтверждение пароля для регистрации */}
+            {tab === 'register' && (
+              <View style={{ position: 'relative' }}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Подтвердите пароль"
+                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry={!showConfirmPassword}
+                />
+                <TouchableOpacity
+                  style={{
+                    position: 'absolute',
+                    right: 15,
+                    top: '50%',
+                    transform: [{ translateY: -12 }],
+                  }}
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                >
+                  <Ionicons
+                    name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={22}
+                    color="rgba(255,255,255,0.5)"
+                  />
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Выбор роли при регистрации */}
             {tab === 'register' && (
@@ -318,6 +422,21 @@ export default function AuthScreen() {
                 {loading ? 'Загрузка...' : (tab === 'login' ? 'Войти' : 'Зарегистрироваться')}
               </Text>
             </TouchableOpacity>
+
+            {/* Забыли пароль (только для входа) */}
+            {tab === 'login' && (
+              <TouchableOpacity 
+                onPress={handleForgotPassword}
+                style={{ marginTop: 12, alignItems: 'center' }}
+              >
+                <Text style={{ 
+                  color: 'rgba(255,215,0,0.7)', 
+                  fontSize: 14 
+                }}>
+                  Забыли пароль?
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

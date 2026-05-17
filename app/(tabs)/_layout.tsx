@@ -6,6 +6,7 @@ import { Image, ImageBackground, StyleSheet, TouchableOpacity, View } from 'reac
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
+import { HeaderHeightProvider } from '../../context/HeaderHeightContext';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
@@ -24,27 +25,32 @@ export default function TabLayout() {
   if (!user) return <Redirect href="/auth" />;
 
   return (
-    <ImageBackground
-      source={require('@/assets/images/background.png')}
-      style={{ flex: 1 }}
-      resizeMode="cover"
-    >
-      <View style={{ flex: 1, backgroundColor: 'transparent' }}>
-        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <TouchableOpacity style={styles.headerIconBtn}>
-            <Ionicons name="menu-outline" size={28} color="#f2ca50" />
-          </TouchableOpacity>
-          <Image
-            source={require('@/assets/images/header-logo.png')}
-            style={styles.headerLogo}
-            resizeMode="contain"
-          />
-          <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.headerIconBtn}>
-              <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
-            </TouchableOpacity>
-          </View>
-        </View>
+    <HeaderHeightProvider>
+      {({ setHeaderHeight }) => (
+        <ImageBackground
+          source={require('@/assets/images/background.png')}
+          style={{ flex: 1 }}
+          resizeMode="cover"
+        >
+          <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+            <View 
+              style={[styles.header, { paddingTop: insets.top + 8 }]}
+              onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+            >
+              <TouchableOpacity style={styles.headerIconBtn}>
+                <Ionicons name="menu-outline" size={28} color="#f2ca50" />
+              </TouchableOpacity>
+              <Image
+                source={require('@/assets/images/header-logo.png')}
+                style={styles.headerLogo}
+                resizeMode="contain"
+              />
+              <View style={styles.headerRight}>
+                <TouchableOpacity style={styles.headerIconBtn}>
+                  <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
+                </TouchableOpacity>
+              </View>
+            </View>
         <Tabs
           screenOptions={{
             tabBarActiveTintColor: '#f2ca50',
@@ -90,7 +96,7 @@ export default function TabLayout() {
             name="profile"
             options={{
               title: 'Profile',
-              tabBarIcon: ({ color }) => <Ionicons size={22} name="person" color={color} />,
+              tabBarIcon: ({ color }) => <Ionicons size={22} name="person-outline" color={color} />,
             }}
           />
           <Tabs.Screen
@@ -111,7 +117,9 @@ export default function TabLayout() {
           />
         </Tabs>
       </View>
-    </ImageBackground>
+        </ImageBackground>
+      )}
+    </HeaderHeightProvider>
   );
 }
 
