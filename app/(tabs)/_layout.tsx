@@ -27,7 +27,9 @@ export default function TabLayout() {
   return (
     <HeaderHeightProvider>
       {({ setHeaderHeight }) => (
-        <ImageBackground
+        <>
+          <StatusBar style="light" backgroundColor="#031427" />
+          <ImageBackground
           source={require('@/assets/images/background.png')}
           style={{ flex: 1 }}
           resizeMode="cover"
@@ -57,8 +59,8 @@ export default function TabLayout() {
             tabBarInactiveTintColor: '#ffffff60',
             sceneStyle: { backgroundColor: 'transparent' },
             tabBarStyle: {
-              backgroundColor: '#000000',
-              borderTopColor: '#f2ca5020',
+              backgroundColor: '#031427',
+              borderTopColor: '#ffffff10',
               paddingBottom: (insets?.bottom || 0) + 8,
               height: 60 + (insets?.bottom || 0),
               position: 'absolute',
@@ -116,6 +118,7 @@ export default function TabLayout() {
         </Tabs>
       </View>
         </ImageBackground>
+        </>
       )}
     </HeaderHeightProvider>
   );

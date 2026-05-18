@@ -4,8 +4,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React from 'react';
 import {
-    ScrollView, StatusBar, StyleSheet,
-    Switch, Text, TouchableOpacity, View,
+  Linking,
+  ScrollView, StatusBar, StyleSheet,
+  Switch, Text, TouchableOpacity, View,
 } from 'react-native';
 
 export default function SettingsScreen() {
@@ -98,11 +99,17 @@ export default function SettingsScreen() {
             label={t('version')}
             right={<Text style={{ color: theme.textDim }}>1.0.0</Text>}
           />
-          <SettingRow
-            icon="document-text-outline"
-            label={t('privacyPolicy')}
-            right={<Ionicons name="chevron-forward" size={20} color={theme.textDim} />}
-          />
+          <TouchableOpacity 
+  onPress={() => Linking.openURL(
+    'https://dimmonixx.github.io/digital-mentor-mobile/privacy.html'
+  )}
+>
+  <SettingRow
+    icon="document-text-outline"
+    label={t('privacyPolicy')}
+    right={<Ionicons name="chevron-forward" size={20} color={theme.textDim} />}
+  />
+</TouchableOpacity>
           <SettingRow
             icon="mail-outline"
             label={t('support')}
