@@ -1,3 +1,5 @@
+import { useLanguage } from '@/context/LanguageContext';
+import { useTheme } from '@/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
@@ -68,6 +70,8 @@ interface Statistics {
 export default function ProfileScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { theme, themeType } = useTheme();
+  const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<'upload' | 'preset'>('upload');
@@ -76,7 +80,7 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<ProfileData>({
     firstName: '',
     lastName: '',
-    position: 'Зубной техник',
+    position: t('posDentist'),
     laboratory: '',
     city: '',
     experience: '',
@@ -238,8 +242,8 @@ export default function ProfileScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#031427" />
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      <StatusBar barStyle={themeType === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.bg} />
       
       <ScrollView 
           style={styles.scrollView}
@@ -255,18 +259,18 @@ export default function ProfileScreen() {
           position: 'relative' 
         }}>
           <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="#f2ca50" />
+            <Ionicons name="arrow-back" size={24} color={theme.accent} />
           </TouchableOpacity>
-          <Text style={{ 
-            position: 'absolute', 
-            left: 0, right: 0, 
-            textAlign: 'center',
-            color: '#f2ca50', 
-            fontSize: 22, 
-            fontWeight: 'bold' 
-          }}>
-            Профиль
-          </Text>
+            <Text style={{ 
+              position: 'absolute', 
+              left: 0, right: 0, 
+              textAlign: 'center',
+              color: theme.accent, 
+              fontSize: 22, 
+              fontWeight: 'bold' 
+            }}>
+              {t('profile')}
+            </Text>
         </View>
 
         {/* Avatar Block */}
@@ -276,43 +280,43 @@ export default function ProfileScreen() {
               <Image source={getAvatarSource()} style={styles.avatar} />
             ) : (
               <View style={[styles.avatar, { justifyContent: 'center', alignItems: 'center' }]}>
-                <Ionicons name="person-circle-outline" size={120} color="#f2ca50" />
+                <Ionicons name="person-circle-outline" size={120} color={theme.accent} />
               </View>
             )}
             <View style={styles.editIcon}>
-              <Ionicons name="pencil" size={20} color="#031427" />
+              <Ionicons name="pencil" size={20} color={theme.bg} />
             </View>
           </TouchableOpacity>
         </View>
 
         {/* Personal Data */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Личные данные</Text>
+          <Text style={[styles.sectionTitle, { color: theme.accent }]}>{t('personalData')}</Text>
           
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Имя</Text>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>{t('firstName')}</Text>
             <TextInput
               style={styles.input}
               value={profile.firstName}
               onChangeText={(text) => setProfile(prev => ({ ...prev, firstName: text }))}
-              placeholder="Введите имя"
-              placeholderTextColor="rgba(255,255,255,0.3)"
+              placeholder={t('firstName')}
+              placeholderTextColor={theme.textDim}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Фамилия</Text>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>{t('lastName')}</Text>
             <TextInput
               style={styles.input}
               value={profile.lastName}
               onChangeText={(text) => setProfile(prev => ({ ...prev, lastName: text }))}
-              placeholder="Введите фамилию"
-              placeholderTextColor="rgba(255,255,255,0.3)"
+              placeholder={t('lastName')}
+              placeholderTextColor={theme.textDim}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Должность</Text>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>{t('position')}</Text>
             <View style={styles.pickerContainer}>
               {POSITIONS.map((position) => (
                 <TouchableOpacity
