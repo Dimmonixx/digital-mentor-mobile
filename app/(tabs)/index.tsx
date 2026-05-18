@@ -297,6 +297,26 @@ export default function HomeScreen() {
               <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
             </TouchableOpacity>
           </View>
+
+          <View style={{
+            shadowColor: '#4fc3f7',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.6,
+            shadowRadius: 12,
+            marginBottom: 12,
+          }}>
+            <TouchableOpacity 
+              style={styles.card} 
+              onPress={() => router.push('/morphology')}
+              activeOpacity={0.8}
+            >
+              <View style={styles.iconBox}>
+                <Ionicons name="scan" size={24} color="#f2ca50" />
+              </View>
+              <Text style={styles.labelText}>МОРФОЛОГИЯ</Text>
+              <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <TouchableOpacity

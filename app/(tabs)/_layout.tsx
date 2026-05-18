@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Redirect, Tabs } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Image, ImageBackground, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Image, ImageBackground, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
@@ -28,7 +28,7 @@ export default function TabLayout() {
     <HeaderHeightProvider>
       {({ setHeaderHeight }) => (
         <>
-          <StatusBar style="light" backgroundColor="#031427" />
+          <StatusBar barStyle="light-content" backgroundColor="#031427" />
           <ImageBackground
           source={require('@/assets/images/background.png')}
           style={{ flex: 1 }}
