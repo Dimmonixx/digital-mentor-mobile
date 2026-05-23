@@ -238,6 +238,28 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.cardsContainer}>
+          {/* 1. Новый наряд */}
+          <View style={{
+            shadowColor: '#4fc3f7',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.6,
+            shadowRadius: 12,
+            marginBottom: 12,
+          }}>
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => router.push('/new-order')}
+              activeOpacity={0.8}
+            >
+              <View style={styles.iconBox}>
+                <Ionicons name="document-text-outline" size={20} color="#f2ca50" />
+              </View>
+              <Text style={styles.labelText}>{t('newOrder')}</Text>
+              <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
+            </TouchableOpacity>
+          </View>
+
+          {/* 2. Чат техников */}
           <View style={{
             shadowColor: '#4fc3f7',
             shadowOffset: { width: 0, height: 4 },
@@ -258,26 +280,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={{
-            shadowColor: '#4fc3f7',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.6,
-            shadowRadius: 12,
-            marginBottom: 12,
-          }}>
-            <TouchableOpacity
-              style={styles.card}
-              activeOpacity={0.8}
-              onPress={() => {/* Добавьте переход для тех-карты */}}
-            >
-              <View style={styles.iconBox}>
-                <Ionicons name="layers-outline" size={20} color="#f2ca50" />
-              </View>
-              <Text style={styles.labelText}>{t('techCard')}</Text>
-              <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
-            </TouchableOpacity>
-          </View>
-
+          {/* 3. Анализ цвета */}
           <View style={{
             shadowColor: '#4fc3f7',
             shadowOffset: { width: 0, height: 4 },
@@ -298,12 +301,34 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* 4. Тех-карта */}
           <View style={{
             shadowColor: '#4fc3f7',
             shadowOffset: { width: 0, height: 4 },
             shadowOpacity: 0.6,
             shadowRadius: 12,
-            marginBottom: 12,
+            marginBottom: 24,
+          }}>
+            <TouchableOpacity
+              style={styles.card}
+              activeOpacity={0.8}
+              onPress={() => {/* Добавьте переход для тех-карты */}}
+            >
+              <View style={styles.iconBox}>
+                <Ionicons name="layers-outline" size={20} color="#f2ca50" />
+              </View>
+              <Text style={styles.labelText}>{t('techCard')}</Text>
+              <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
+            </TouchableOpacity>
+          </View>
+
+          {/* 5. Морфология */}
+          <View style={{
+            shadowColor: '#4fc3f7',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.6,
+            shadowRadius: 12,
+            marginBottom: 24,
           }}>
             <TouchableOpacity 
               style={styles.card} 
@@ -317,33 +342,28 @@ export default function HomeScreen() {
               <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
             </TouchableOpacity>
           </View>
-        </View>
 
-        <TouchableOpacity
-          onPress={() => router.push('/new-order')}
-          style={{
-            borderWidth: 1,
-            borderColor: theme.accent,
-            borderRadius: 16,
-            padding: 16,
-            marginTop: 0,
-            marginBottom: 20,
-            marginHorizontal: 20,
-            backgroundColor: theme.accentDim,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 10,
-          }}
-        >
-          <Ionicons name="document-text-outline" 
-            size={20} color={theme.accent} />
-          <Text style={{
-            color: theme.accent,
-            fontSize: 16,
-            fontWeight: '600',
-          }}>{t('newOrder')}</Text>
-        </TouchableOpacity>
+          {/* 6. Рецепты масс */}
+          <View style={{
+            shadowColor: '#4fc3f7',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.6,
+            shadowRadius: 12,
+            marginBottom: 24,
+          }}>
+            <TouchableOpacity 
+              style={styles.card} 
+              onPress={() => router.push('/mass-calculator')}
+              activeOpacity={0.8}
+            >
+              <View style={styles.iconBox}>
+                <Ionicons name="flask" size={24} color="#f2ca50" />
+              </View>
+              <Text style={styles.labelText}>РЕЦЕПТЫ МАСС</Text>
+              <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
+            </TouchableOpacity>
+          </View>
+        </View>
       </ScrollView>
     </ImageBackground>
   );

@@ -19,7 +19,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { database, storage } from '../../constants/firebase';
 import { useAuth } from '../../hooks/useAuth';
@@ -347,36 +347,53 @@ export default function ProfileScreen() {
           
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Название лаборатории</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.laboratory}
-              onChangeText={(text) => setProfile(prev => ({ ...prev, laboratory: text }))}
-              placeholder="Введите название"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-            />
+            <TouchableOpacity
+              onLongPress={() => {
+                Alert.alert('Копирование', 'Текст доступен для выбора и копирования');
+              }}
+            >
+              <TextInput
+                style={styles.input}
+                value={profile.laboratory}
+                onChangeText={(text) => setProfile(prev => ({ ...prev, laboratory: text }))}
+                placeholder="Введите название"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+              />
+            </TouchableOpacity>
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Город</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.city}
-              onChangeText={(text) => setProfile(prev => ({ ...prev, city: text }))}
-              placeholder="Введите город"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-            />
+            <TouchableOpacity
+              onLongPress={() => {
+                Alert.alert('Копирование', 'Текст доступен для выбора и копирования');
+              }}
+            >
+              <TextInput
+                style={styles.input}
+                value={profile.city}
+                onChangeText={(text) => setProfile(prev => ({ ...prev, city: text }))}
+                placeholder="Введите город"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+              />
+            </TouchableOpacity>
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Стаж работы (лет)</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.experience}
-              onChangeText={(text) => setProfile(prev => ({ ...prev, experience: text }))}
-              placeholder="Введите стаж"
-              placeholderTextColor="rgba(255,255,255,0.3)"
-              keyboardType="numeric"
-            />
+            <TouchableOpacity
+              onLongPress={() => {
+                Alert.alert('Копирование', 'Текст доступен для выбора и копирования');
+              }}
+            >
+              <TextInput
+                style={styles.input}
+                value={profile.experience}
+                onChangeText={(text) => setProfile(prev => ({ ...prev, experience: text }))}
+                placeholder="Введите стаж"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+              />
+            </TouchableOpacity>
           </View>
 
           <View style={styles.inputGroup}>

@@ -8,7 +8,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -22,6 +22,7 @@ import {
   View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import DraggableZones, { Zone } from '../../components/DraggableZones';
 
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
 
@@ -115,6 +116,11 @@ interface VitaAnalysis {
     body: string;
     incisal: string;
   };
+  layering_recipe: {
+    body: string;
+    enamel_incisal: string;
+    internal_effects: string;
+  };
 }
 
 function getPhotoQualityColor(quality: string): string {
@@ -133,20 +139,24 @@ const shadeOnly = (text: string) => {
 };
 
 const getMainShade = (result: any): string => {
-  const raw = result.primary_range || result.zones?.cervical || '';
+  if (!result) return '';
+  const raw = result?.primary_range || (result?.zones?.cervical ?? '');
   return raw.split('(')[0].split('—')[0].split('-')[0]
             .split('/')[0].trim();
 };
 
-
+const getCropY = (jaw: 'upper' | 'lower') => {
+  return jaw === 'upper' ? 0.35 : 0.52;
+};
 
 const PHOTO_TIPS_STEPS = [
   '⚠️ Делайте захват широко — рамка должна включать десну сверху, боковые грани и краешки соседних зубов (10–15%). Не обводите зуб точно по контуру — чем шире захват, тем точнее результат.',
-  '📍 Расстояние 15–20 см от зуба',
-  '💡 Естественный дневний свет',
-  '🚫 Без вспышки — искажает цвет',
+  '� Пришеечная зона (жёлтая рамка) — у десны, верхние 25–35% зуба. Растяните на всю ширину.',
+  '🟢 Тело зуба (зелёная рамка) — центральная часть, 35–65% высоты. Самая широкая зона.',
+  '🔵 Режущий край (голубая рамка) — нижняя кромка, последние 15–25%. Тонкая полоска.',
+  '� Расстояние 15–20 см от зуба',
+  '💡 Естественный дневной свет без вспышки',
   '📷 Основная камера, не фронтальная',
-  '✂️ При кадрировании оставь только зуб',
 ];
 
 function parseVitaJson(raw: string): VitaAnalysis | null {
@@ -223,10 +233,18 @@ A5 (виртуальный эталон) = экстремальный, «нек�
     "cervical": "Оттенок шейки (например, A3.5)",
     "body": "Оттенок середины (например, A3)",
     "incisal": "Оттенок края или слово 'прозрачный'"
-  }
+  },
+  "layering_recipe": {
+    "body": "Цвет для основного тела зуба/дентинного ядра (например, A3.5)",
+    "enamel_incisal": "Рекомендация по прозрачным/эмалевым массам для режущего края (например, TI1, Clear или Opal Enamel с указанием акцентов)",
+    "internal_effects": "Внутренние спец-эффекты, если улавливаются (мамелоны, интенсивный янтарный или белые пятна деминерализации, например: 'Интенсивный мамелоновый оранж' или 'Нет')"
+  },
 }
 
-ВАЖНО: В поле secondary_subtones записывай только сопутствующие оттенки других групп, которые слегка улавливаются в структуре зуба. Категорически запрещено дублировать те оттенки, которые уже указаны в основном диапазоне primary_range!`;
+ВАЖНО: В поле secondary_subtones записывай только сопутствующие оттенки других групп, которые слегка улавливаются в структуре зуба. Категорически запрещено дублировать те оттенки, которые уже указаны в основном диапазоне primary_range!
+
+### ТРЕБОВАНИЕ К ПОЛЮ layering_recipe:
+Поле layering_recipe должно быть заполнено строго с точки зрения зубного техника, который будет послойно наносить керамическую массу на каркас. Опирайся на выявленный primary_range и особенности зон зуба. Никакой воды, только четкие технологические ориентиры цветов.`;
   
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -283,14 +301,19 @@ A5 (виртуальный эталон) = экстремальный, «нек�
 export default function ColorAnalyzerScreen() {
   const insets = useSafeAreaInsets();
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [originalImage, setOriginalImage] = useState<string | null>(null);
   const [pendingPayload, setPendingPayload] = useState<{
     base64: string;
     mime: 'image/jpeg' | 'image/png';
   } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<VitaAnalysis | null>(null);
+  const [jaw, setJaw] = useState<'upper' | 'lower' | null>(null);
+  const [showJawModal, setShowJawModal] = useState(false);
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [containerSize, setContainerSize] = useState<{
+    width: number; height: number
+  }>({ width: 0, height: 0 });
+    const [result, setResult] = useState<VitaAnalysis | null>(null);
   const [tipsModalVisible, setTipsModalVisible] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
 
@@ -304,7 +327,46 @@ export default function ColorAnalyzerScreen() {
     }, [])
   );
 
-  const calculateToothShade = async (imageUri: string): Promise<string> => {
+  useEffect(() => {
+  if (!jaw) return;
+  setZones([
+    {
+      id: 'cervical',
+      label: 'Пришеечная',
+      color: '#f2ca50',
+      x: 0.35,
+      y: jaw === 'upper' ? 0.05 : 0.65,
+      width: 0.25,
+      height: 0.15,
+    },
+    {
+      id: 'body',
+      label: 'Тело',
+      color: '#4caf50',
+      x: 0.35,
+      y: 0.35,
+      width: 0.25,
+      height: 0.15,
+    },
+    {
+      id: 'incisal',
+      label: 'Режущий край',
+      color: '#29b6f6',
+      x: 0.35,
+      y: jaw === 'upper' ? 0.65 : 0.15,
+      width: 0.25,
+      height: 0.15,
+    },
+  ]);
+}, [jaw]);
+
+  
+  const calculateToothShade = async (
+  imageUri: string,
+  jaw: 'upper' | 'lower',
+  zones: Zone[],
+  containerSize: { width: number; height: number }
+): Promise<string> => {
   try {
     // Сначала узнаем реальные ширину и высоту картинки
     const imageInfo = await ImageManipulator.manipulateAsync(imageUri, [], { format: ImageManipulator.SaveFormat.JPEG });
@@ -312,11 +374,17 @@ export default function ColorAnalyzerScreen() {
     
     console.log(`Размеры изображения: ${imgWidth}x${imgHeight}`);
     
-    // Теперь считаем правильные пиксельные координаты для центра зуба
-    const cropWidth = Math.round(imgWidth * 0.15);
-    const cropHeight = Math.round(imgHeight * 0.15);
-    const cropX = Math.round(imgWidth * 0.42); // чуть смещено к центру
-    const cropY = Math.round(imgHeight * 0.35); // чуть выше центра, ближе к телу зуба
+    // Используем координаты зоны 'cervical' для анализа
+    const cervicalZone = zones.find(z => z.id === 'cervical');
+    const cropXRatio = cervicalZone ? cervicalZone.x + cervicalZone.width * 0.4 : 0.42;
+    const cropYRatio = cervicalZone ? cervicalZone.y + cervicalZone.height * 0.3 : getCropY(jaw);
+    const cropWidthRatio = cervicalZone ? cervicalZone.width * 0.3 : 0.16;
+    const cropHeightRatio = cervicalZone ? cervicalZone.height * 0.4 : 0.12;
+
+    const cropX = Math.round(imgWidth * cropXRatio);
+    const cropY = Math.round(imgHeight * cropYRatio);
+    const cropWidth = Math.round(imgWidth * cropWidthRatio);
+    const cropHeight = Math.round(imgHeight * cropHeightRatio);
     
     console.log(`Кроп координаты: X=${cropX}, Y=${cropY}, W=${cropWidth}, H=${cropHeight}`);
 
@@ -414,7 +482,12 @@ const reset = useCallback(() => {
     setResult(null);
     try {
       // Сначала выполняем математический расчет оттенка
-      const calculatedShade = await calculateToothShade(selectedImage!);
+      const calculatedShade = await calculateToothShade(
+  selectedImage!,
+  jaw || 'upper',
+  zones,
+  containerSize
+);
       console.log("Рассчитанный пиксельный оттенок:", calculatedShade);
       
       // Затем отправляем в Claude с математическим ориентиром
@@ -445,6 +518,8 @@ const reset = useCallback(() => {
     setResult(null);
     setLoading(false);
     setSelectedImage(asset.uri);
+    // Сохраняем base64 обрезанного фото
+    // для передачи в Claude
     const b64 = asset.base64;
     if (!b64) {
       setError('Не удалось получить данные изображения. Включите base64 в настройках выбора.');
@@ -493,8 +568,10 @@ const reset = useCallback(() => {
     base64: true,
   });
   if (result.canceled) return;
-  setOriginalImage(null);
   await pickAsset(result.assets[0]);
+  setShowJawModal(true);
+  setJaw(null);
+  setZones([]);
 };
 
   const pickFromGallery = async () => {
@@ -505,8 +582,10 @@ const reset = useCallback(() => {
     base64: true,
   });
   if (result.canceled) return;
-  setOriginalImage(null);
   await pickAsset(result.assets[0]);
+  setShowJawModal(true);
+  setJaw(null);
+  setZones([]);
 };
 
   return (
@@ -524,7 +603,13 @@ const reset = useCallback(() => {
             paddingTop: insets.top + 8,
             paddingBottom: 12,
           }}>
-            <TouchableOpacity onPress={() => router.back()}>
+            <TouchableOpacity onPress={() => {
+              if (selectedImage) {
+                reset();
+              } else {
+                router.back();
+              }
+            }}>
               <Ionicons name="arrow-back" size={24} color="#f2ca50" />
             </TouchableOpacity>
             <Text style={{
@@ -575,29 +660,99 @@ const reset = useCallback(() => {
             </>
           ) : (
             <>
-              <TouchableOpacity onPress={() => setShowImageModal(true)}>
-                <Image 
-                  source={{ uri: selectedImage || '' }} 
+              <View>
+                <TouchableOpacity onPress={() => setShowImageModal(true)}>
+                <View
                   style={{
+                    position: 'relative',
                     width: '100%',
-                    height: undefined,
                     aspectRatio: 4/3,
-                    resizeMode: 'contain',
                     borderRadius: 16,
+                    overflow: 'hidden',
                     backgroundColor: 'rgba(0,0,0,0.3)',
                   }}
-                />
-              </TouchableOpacity>
-              {selectedImage && !loading && !result && (
-                <TouchableOpacity
-                  style={[styles.analyzeBtn, { marginTop: 16 }]}
-                  onPress={handleAnalyze}
+                  onLayout={(e) => setContainerSize({
+                    width: e.nativeEvent.layout.width,
+                    height: e.nativeEvent.layout.height,
+                  })}
                 >
-                  <Text style={styles.analyzeBtnText}>
-                    🔍 Анализировать
-                  </Text>
-                </TouchableOpacity>
-              )}
+                  <Image
+                    source={{ uri: selectedImage || '' }}
+                    style={{ width: '100%', height: '100%' }}
+                    resizeMode="cover"
+                  />
+                  <DraggableZones
+                    containerWidth={containerSize.width}
+                    containerHeight={containerSize.height}
+                    zones={zones}
+                    onZonesChange={(updatedZones) => setZones(prevZones => updatedZones)}
+                  />
+                </View>
+              </TouchableOpacity>
+
+                {zones.length > 0 && (
+                  <View style={{ 
+                    flexDirection: 'row', 
+                    justifyContent: 'center',
+                    gap: 12,
+                    marginTop: 8,
+                  }}>
+                    {[
+                      { color: '#f2ca50', label: 'Пришеечная' },
+                      { color: '#4caf50', label: 'Тело' },
+                      { color: '#29b6f6', label: 'Режущий край' },
+                    ].map((item) => (
+                      <View key={item.label} style={{ 
+                        flexDirection: 'row', 
+                        alignItems: 'center',
+                        gap: 4,
+                      }}>
+                        <View style={{
+                          width: 8, height: 8,
+                          borderRadius: 4,
+                          backgroundColor: item.color,
+                        }} />
+                        <Text style={{ 
+                          color: item.color, 
+                          fontSize: 11,
+                        }}>
+                          {item.label}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                
+                {zones.length === 0 && selectedImage && !loading && !result && (
+                  <TouchableOpacity
+                    style={{
+                      marginTop: 12,
+                      padding: 12,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: 'rgba(242,202,80,0.4)',
+                      alignItems: 'center',
+                    }}
+                    onPress={() => setShowJawModal(true)}
+                  >
+                    <Text style={{ color: '#f2ca50', fontSize: 14 }}>
+                      🦷 Выбрать челюсть
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {selectedImage && !loading && !result && zones.length > 0 && (
+                  <TouchableOpacity
+                    style={[styles.analyzeBtn, { marginTop: 16 }]}
+                    onPress={handleAnalyze}
+                  >
+                    <Text style={styles.analyzeBtnText}>
+                      🔍 Анализировать
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
               {loading ? (
                 <View style={styles.loadingBox}>
                   <ActivityIndicator size="large" color="#f2ca50" />
@@ -640,94 +795,121 @@ const reset = useCallback(() => {
                     </View>
                                       </View>
                   <Text style={styles.sectionTitle}>Описание</Text>
-                  <View style={{ marginBottom: 12 }}>
+                  <View style={{ marginBottom: 16 }}>
                     {result.description
                       .split('. ')
                       .filter((s: string) => s.trim().length > 0)
                       .map((sentence: string, index: number) => (
-                        <Text 
-                          key={index}
-                          style={{
-                            color: 'rgba(255,255,255,0.75)',
+                        <View key={index} style={{
+                          backgroundColor: 'rgba(255,255,255,0.04)',
+                          borderRadius: 10,
+                          padding: 12,
+                          marginBottom: 8,
+                          borderLeftWidth: 2,
+                          borderLeftColor: '#f2ca50',
+                        }}>
+                          <Text style={{
+                            color: 'rgba(255,255,255,0.85)',
                             fontSize: 14,
-                            lineHeight: 22,
-                            marginBottom: 6,
-                          }}
-                        >
-                          {sentence.trim().endsWith('.') 
-                            ? sentence.trim() 
-                            : sentence.trim() + '.'}
-                        </Text>
-                      ))
-                    }
+                            lineHeight: 20,
+                          }}>
+                            {sentence.trim().endsWith('.')
+                              ? sentence.trim()
+                              : sentence.trim() + '.'}
+                          </Text>
+                        </View>
+                      ))}
                   </View>
                   {result.secondary_subtones && (
-                    <Text style={{
-                      fontSize: 14,
-                      color: 'rgba(242,202,80,0.6)',
-                      marginBottom: 8,
+                    <View style={{
+                      backgroundColor: 'rgba(242,202,80,0.1)',
+                      borderRadius: 10,
+                      padding: 12,
+                      marginBottom: 16,
+                      borderWidth: 1,
+                      borderColor: 'rgba(242,202,80,0.4)',
                     }}>
-                      Сопутствующие субтоны: {result.secondary_subtones}
-                    </Text>
+                      <Text style={{
+                        color: '#f2ca50',
+                        fontSize: 13,
+                        fontWeight: '600',
+                        marginBottom: 4,
+                      }}>
+                        Сопутствующие субтоны
+                      </Text>
+                      <Text style={{
+                        color: 'rgba(255,255,255,0.85)',
+                        fontSize: 14,
+                        lineHeight: 20,
+                      }}>
+                        {result.secondary_subtones}
+                      </Text>
+                    </View>
                   )}
+
+                  
                   <Text style={styles.sectionTitle}>Зоны</Text>
-                  <View style={styles.zoneRow}>
-                    <Text style={styles.zoneKey}>Шейка</Text>
-                    <Text 
-                      style={styles.zoneVal}
-                      numberOfLines={2}
-                    >
-                      {shadeOnly(result.zones?.cervical)}
+                  <View style={{
+                    paddingVertical: 10,
+                    borderBottomWidth: 1,
+                    borderBottomColor: 'rgba(255,255,255,0.06)',
+                  }}>
+                    <Text style={{
+                      fontSize: 13,
+                      color: 'rgba(255,255,255,0.45)',
+                      marginBottom: 4,
+                    }}>
+                      Шейка
+                    </Text>
+                    <Text style={{
+                      fontSize: 15,
+                      color: 'rgba(255,255,255,0.9)',
+                      fontWeight: '500',
+                    }}>
+                      {result?.zones?.cervical ?? ''}
                     </Text>
                   </View>
-                  <View style={styles.zoneRow}>
-                    <Text style={styles.zoneKey}>Тело</Text>
-                    <Text 
-                      style={styles.zoneVal}
-                      numberOfLines={2}
-                    >
-                      {shadeOnly(result.zones?.body)}
+                  <View style={{
+                    paddingVertical: 10,
+                    borderBottomWidth: 1,
+                    borderBottomColor: 'rgba(255,255,255,0.06)',
+                  }}>
+                    <Text style={{
+                      fontSize: 13,
+                      color: 'rgba(255,255,255,0.45)',
+                      marginBottom: 4,
+                    }}>
+                      Тело
+                    </Text>
+                    <Text style={{
+                      fontSize: 15,
+                      color: 'rgba(255,255,255,0.9)',
+                      fontWeight: '500',
+                    }}>
+                      {result?.zones?.body ?? ''}
                     </Text>
                   </View>
-                  <View style={styles.zoneRow}>
-                    <Text style={styles.zoneKey}>Режущий край</Text>
-                    <Text 
-                      style={styles.zoneVal}
-                      numberOfLines={2}
-                    >
-                      {shadeOnly(result.zones?.incisal)}
+                  <View style={{ paddingVertical: 10 }}>
+                    <Text style={{
+                      fontSize: 13,
+                      color: 'rgba(255,255,255,0.45)',
+                      marginBottom: 4,
+                    }}>
+                      Режущий край
+                    </Text>
+                    <Text style={{
+                      fontSize: 15,
+                      color: 'rgba(255,255,255,0.9)',
+                      fontWeight: '500',
+                    }}>
+                      {result?.zones?.incisal ?? ''}
                     </Text>
                   </View>
                 </View>
               ) : null}
-              {result && !originalImage && (
-                <TouchableOpacity
-                  onPress={async () => {
-                    const orig = await ImagePicker.launchImageLibraryAsync({
-                      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                      allowsEditing: false,
-                      quality: 1,
-                    });
-                    if (!orig.canceled) {
-                      setOriginalImage(orig.assets[0].uri);
-                    }
-                  }}
-                  style={{
-                    borderWidth: 1,
-                    borderColor: 'rgba(242,202,80,0.4)',
-                    borderRadius: 14,
-                    padding: 14,
-                    alignItems: 'center',
-                    marginTop: 8,
-                  }}
-                >
-                  <Text style={{
-                    color: '#f2ca50',
-                    fontSize: 15,
-                  }}>📸 Добавить фото улыбки</Text>
-                </TouchableOpacity>
-              )}
-              {result && (
+
+              
+                            {result && (
                 <TouchableOpacity
                   onPress={async () => {
                     await AsyncStorage.setItem(
@@ -739,12 +921,11 @@ const reset = useCallback(() => {
                         description: result.description,
                         secondary_subtones: result.secondary_subtones,
                         zones: {
-                          cervical: shadeOnly(result.zones?.cervical),
-                          body: shadeOnly(result.zones?.body),
-                          incisal: shadeOnly(result.zones?.incisal),
+                          cervical: shadeOnly(result.zones?.cervical ?? ''),
+                          body: shadeOnly(result.zones?.body ?? ''),
+                          incisal: shadeOnly(result.zones?.incisal ?? ''),
                         },
                         imageUri: selectedImage,
-                        originalImageUri: originalImage,
                       })
                     );
                     router.push('/new-order');
@@ -772,18 +953,7 @@ const reset = useCallback(() => {
                 </TouchableOpacity>
               ) : null}
 
-              {result && originalImage && (
-                <TouchableOpacity
-                  onPress={() => setOriginalImage(null)}
-                  style={{ alignItems: 'center', marginTop: 8 }}
-                >
-                  <Text style={{
-                    color: 'rgba(255,255,255,0.4)',
-                    fontSize: 13,
-                  }}>✕ Удалить фото улыбки</Text>
-                </TouchableOpacity>
-              )}
-            </>
+                          </>
           )}
         </ScrollView>
 
@@ -864,6 +1034,110 @@ const reset = useCallback(() => {
               >
                 <Text style={styles.modalCloseBtnText}>Понятно</Text>
               </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={showJawModal}
+          transparent
+          animationType="fade"
+        >
+          <View style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingHorizontal: 30,
+          }}>
+            <View style={{
+              backgroundColor: '#031427',
+              borderRadius: 20,
+              padding: 24,
+              width: '100%',
+              borderWidth: 1,
+              borderColor: 'rgba(242,202,80,0.3)',
+            }}>
+              <Text style={{
+                color: '#f2ca50',
+                fontSize: 20,
+                fontWeight: 'bold',
+                textAlign: 'center',
+                marginBottom: 8,
+              }}>
+                Какая челюсть?
+              </Text>
+              <Text style={{
+                color: 'rgba(255,255,255,0.5)',
+                fontSize: 13,
+                textAlign: 'center',
+                marginBottom: 24,
+              }}>
+                Это влияет на точность определения цвета
+              </Text>
+              <View style={{ gap: 12 }}>
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: 'rgba(242,202,80,0.15)',
+                    borderWidth: 1,
+                    borderColor: '#f2ca50',
+                    borderRadius: 14,
+                    padding: 16,
+                    alignItems: 'center',
+                  }}
+                  onPress={() => {
+                    setJaw('upper');
+                    setShowJawModal(false);
+                  }}
+                >
+                  <Text style={{ fontSize: 28, marginBottom: 4 }}>🦷⬆️</Text>
+                  <Text style={{
+                    color: '#f2ca50',
+                    fontSize: 16,
+                    fontWeight: '600',
+                  }}>
+                    Верхняя челюсть
+                  </Text>
+                  <Text style={{
+                    color: 'rgba(255,255,255,0.4)',
+                    fontSize: 12,
+                    marginTop: 4,
+                  }}>
+                    Десна сверху
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: 'rgba(242,202,80,0.15)',
+                    borderWidth: 1,
+                    borderColor: '#f2ca50',
+                    borderRadius: 14,
+                    padding: 16,
+                    alignItems: 'center',
+                  }}
+                  onPress={() => {
+                    setJaw('lower');
+                    setShowJawModal(false);
+                  }}
+                >
+                  <Text style={{ fontSize: 28, marginBottom: 4 }}>🦷⬇️</Text>
+                  <Text style={{
+                    color: '#f2ca50',
+                    fontSize: 16,
+                    fontWeight: '600',
+                  }}>
+                    Нижняя челюсть
+                  </Text>
+                  <Text style={{
+                    color: 'rgba(255,255,255,0.4)',
+                    fontSize: 12,
+                    marginTop: 4,
+                  }}>
+                    Десна снизу
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </Modal>

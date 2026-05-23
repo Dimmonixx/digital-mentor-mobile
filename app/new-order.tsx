@@ -44,6 +44,8 @@ export default function NewOrderScreen() {
 
   // Цвет VITA (придёт из анализатора)
   const [vitaResult, setVitaResult] = useState<any>(null);
+  const [showVitaDetails, setShowVitaDetails] = useState(false);
+  const [showClearModal, setShowClearModal] = useState(false);
 
   // Календарь
   const [showWorkDatePicker, setShowWorkDatePicker] = useState(false);
@@ -52,16 +54,110 @@ export default function NewOrderScreen() {
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
   const [showWorkTypes, setShowWorkTypes] = useState(false);
 
-  // ЗАГРУЗКА СОХРАНЁННЫХ ДАННЫХ при старте
-  useEffect(() => {
-    AsyncStorage.getItem('doctorName').then(v => v && setDoctorName(v));
-    AsyncStorage.getItem('techName').then(v => v && setTechName(v));
-    AsyncStorage.getItem('pendingVitaResult').then((data) => {
-      if (data) {
-        setVitaResult(JSON.parse(data));
-        AsyncStorage.removeItem('pendingVitaResult');
+  // Импланты
+  const [implantsEnabled, setImplantsEnabled] = useState(false);
+  const [toothTypes, setToothTypes] = useState<Record<number, 'crown' | 'implant'>>({});
+  const [implantData, setImplantData] = useState<Record<number, {
+    system: 'AnyOne' | 'AnyRidge' | 'Straumann BLX' | null;
+    diameter: string | null;
+  }>>({});
+  const [selectedToothForImplant, setSelectedToothForImplant] = useState<number | null>(null);
+  const [showImplantModal, setShowImplantModal] = useState(false);
+
+  const IMPLANT_SYSTEMS = {
+    'AnyOne': ['3.0', '3.5', '4.0', '4.5', '5.0'],
+    'AnyRidge': ['3.5', '4.0', '4.5', '5.0', '5.5', '6.0'],
+    'Straumann BLX': ['3.5', '3.75', '4.0', '4.5', '5.0', '5.5', '6.5'],
+  };
+
+  const [bridges, setBridges] = useState<Array<number[]>>([]);
+
+  const isBridged = (t1: number, t2: number) => 
+    bridges.some(b => b.includes(t1) && b.includes(t2));
+
+  const toggleBridge = (t1: number, t2: number) => {
+    const existing = bridges.findIndex(
+      b => b.includes(t1) && b.includes(t2)
+    );
+    if (existing !== -1) {
+      // Убрать связь
+      setBridges(prev => {
+        const updated = [...prev];
+        const bridge = updated[existing].filter(
+          t => t !== t1 && t !== t2
+        );
+        if (bridge.length < 2) {
+          updated.splice(existing, 1);
+        } else {
+          updated[existing] = bridge;
+        }
+        return updated;
+      });
+    } else {
+      // Добавить связь — найти существующий мост или создать новый
+      const bridgeWithT1 = bridges.findIndex(b => b.includes(t1));
+      const bridgeWithT2 = bridges.findIndex(b => b.includes(t2));
+      
+      if (bridgeWithT1 !== -1) {
+        setBridges(prev => {
+          const updated = [...prev];
+          updated[bridgeWithT1] = [...updated[bridgeWithT1], t2];
+          return updated;
+        });
+      } else if (bridgeWithT2 !== -1) {
+        setBridges(prev => {
+          const updated = [...prev];
+          updated[bridgeWithT2] = [...updated[bridgeWithT2], t1];
+          return updated;
+        });
+      } else {
+        setBridges(prev => [...prev, [t1, t2]]);
       }
-    });
+    }
+  };
+
+  // ЗАГРУЗКА VITA РЕЗУЛЬТАТА при старте
+  useEffect(() => {
+    const loadVitaResult = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('pendingVitaResult');
+        if (stored) {
+          setVitaResult(JSON.parse(stored));
+          console.log('=== VITA RESULT ===', stored);
+          await AsyncStorage.removeItem('pendingVitaResult');
+        }
+      } catch (e) {
+        console.error('Error loading vita result:', e);
+      }
+    };
+    loadVitaResult();
+  }, []);
+
+  // ЗАГРУЗКА ЧЕРНОВИКА при монтировании
+  useEffect(() => {
+    const loadDraft = async () => {
+      try {
+        const draft = await AsyncStorage.getItem('orderDraft');
+        if (draft) {
+          const d = JSON.parse(draft);
+          if (d.doctorName) setDoctorName(d.doctorName);
+          if (d.patientName) setPatientName(d.patientName);
+          if (d.techName) setTechName(d.techName);
+          if (d.workDate) setWorkDate(new Date(d.workDate));
+          if (d.deliveryDate) setDeliveryDate(new Date(d.deliveryDate));
+          if (d.selectedTeeth) setSelectedTeeth(d.selectedTeeth);
+          if (d.workType) setWorkType(d.workType);
+          if (d.workNote) setWorkNote(d.workNote);
+          if (d.implantsEnabled) setImplantsEnabled(d.implantsEnabled);
+          if (d.toothTypes) setToothTypes(d.toothTypes);
+          if (d.implantData) setImplantData(d.implantData);
+          if (d.bridges) setBridges(d.bridges);
+        }
+      } catch (e) {
+        console.error('Error loading draft:', e);
+      }
+    };
+    loadDraft();
   }, []);
 
   // При изменении doctorName — сохранять
@@ -73,6 +169,30 @@ export default function NewOrderScreen() {
   useEffect(() => {
     if (techName) AsyncStorage.setItem('techName', techName);
   }, [techName]);
+
+  // СОХРАНЕНИЕ ЧЕРНОВИКА при изменении данных
+  useEffect(() => {
+    const saveDraft = async () => {
+      const draft = {
+        doctorName,
+        patientName,
+        techName,
+        workDate: workDate.toISOString(),
+        deliveryDate: deliveryDate.toISOString(),
+        selectedTeeth,
+        workType,
+        workNote,
+        implantsEnabled,
+        toothTypes,
+        implantData,
+        bridges,
+      };
+      await AsyncStorage.setItem('orderDraft', JSON.stringify(draft));
+    };
+    saveDraft();
+  }, [doctorName, patientName, techName, workDate, 
+      deliveryDate, selectedTeeth, workType, workNote, 
+      implantsEnabled, toothTypes, implantData, bridges]);
 
   // ФОРМУЛА ЗУБОВ
   const upperJaw = [18,17,16,15,14,13,12,11, 21,22,23,24,25,26,27,28];
@@ -139,6 +259,7 @@ export default function NewOrderScreen() {
       createdAt: Date.now(),
     };
     await push(ref(database, 'orders'), order);
+    await AsyncStorage.removeItem('orderDraft');
     setLoading(false);
     Alert.alert('Успешно!', 'Наряд отправлен технику', [
       { text: 'OK', onPress: () => router.back() }
@@ -260,6 +381,61 @@ export default function NewOrderScreen() {
           </TouchableOpacity>
         </View>
 
+        <TouchableOpacity
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 16,
+            paddingVertical: 12,
+            backgroundColor: implantsEnabled 
+              ? 'rgba(242,202,80,0.1)' 
+              : 'rgba(255,255,255,0.03)',
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: implantsEnabled 
+              ? 'rgba(242,202,80,0.4)' 
+              : 'rgba(255,255,255,0.1)',
+            marginBottom: 12,
+          }}
+          onPress={() => {
+            setImplantsEnabled(!implantsEnabled);
+            if (implantsEnabled) {
+              setToothTypes({});
+              setImplantData({});
+            }
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Text style={{ fontSize: 20 }}>🔩</Text>
+            <Text style={{
+              color: implantsEnabled ? '#f2ca50' : 'rgba(255,255,255,0.5)',
+              fontSize: 15,
+              fontWeight: '500',
+            }}>
+              Импланты
+            </Text>
+          </View>
+          <View style={{
+            width: 44,
+            height: 24,
+            borderRadius: 12,
+            backgroundColor: implantsEnabled 
+              ? '#f2ca50' 
+              : 'rgba(255,255,255,0.15)',
+            justifyContent: 'center',
+            paddingHorizontal: 2,
+          }}>
+            <View style={{
+              width: 20,
+              height: 20,
+              borderRadius: 10,
+              backgroundColor: '#fff',
+              alignSelf: implantsEnabled ? 'flex-end' : 'flex-start',
+            }} />
+          </View>
+        </TouchableOpacity>
+
         {/* Зубы */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>ЗУБЫ</Text>
@@ -328,6 +504,99 @@ export default function NewOrderScreen() {
             </View>
           </ScrollView>
         </View>
+
+        {implantsEnabled && selectedTeeth.length > 0 && (
+          <View style={{ marginTop: 12 }}>
+            <Text style={{
+              color: 'rgba(255,255,255,0.4)',
+              fontSize: 11,
+              letterSpacing: 1,
+              marginBottom: 8,
+            }}>
+              ТИП ДЛЯ КАЖДОГО ЗУБА
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 0 }}>
+              {selectedTeeth.sort((a, b) => a - b).map((tooth, index) => {
+                const nextTooth = selectedTeeth.sort((a,b) => a-b)[index + 1];
+                const linked = nextTooth && isBridged(tooth, nextTooth);
+                return (
+                  <View key={tooth} style={{ 
+                    flexDirection: 'row', 
+                    alignItems: 'flex-start',
+                  }}>
+                    {/* Карточка зуба */}
+                    <TouchableOpacity
+                      onPress={() => {
+                        setSelectedToothForImplant(tooth);
+                        setShowImplantModal(true);
+                      }}
+                      style={{
+                        borderRadius: 10,
+                        borderWidth: 1.5,
+                        borderColor: 'rgba(242,202,80,0.5)',
+                        backgroundColor: 'rgba(242,202,80,0.08)',
+                        paddingVertical: 8,
+                        paddingHorizontal: 10,
+                        alignItems: 'center',
+                        minWidth: 64,
+                      }}
+                    >
+                      <Text style={{
+                        color: '#f2ca50',
+                        fontSize: 16,
+                        fontWeight: '700',
+                        marginBottom: 4,
+                      }}>
+                        {tooth}
+                      </Text>
+                      {toothTypes[tooth] === 'implant' ? (
+                        <>
+                          <Text style={{ fontSize: 14 }}>🔩</Text>
+                          <Text style={{
+                            color: 'rgba(242,202,80,0.8)',
+                            fontSize: 9,
+                            textAlign: 'center',
+                          }}>
+                            {implantData[tooth]?.system ?? '?'}
+                          </Text>
+                          <Text style={{
+                            color: 'rgba(242,202,80,0.8)',
+                            fontSize: 9,
+                          }}>
+                            {implantData[tooth]?.diameter
+                              ? `∅${implantData[tooth].diameter}` 
+                              : '∅?'}
+                          </Text>
+                        </>
+                      ) : (
+                        <Text style={{ fontSize: 16 }}>👑</Text>
+                      )}
+                    </TouchableOpacity>
+
+                    {/* Цепочка между соседними зубами */}
+                    {nextTooth && (
+                      <TouchableOpacity
+                        onPress={() => toggleBridge(tooth, nextTooth)}
+                        style={{
+                          justifyContent: 'flex-start',
+                          alignItems: 'center',
+                          paddingTop: 6,
+                          paddingHorizontal: 2,
+                        }}
+                      >
+                        <Ionicons
+                          name="link"
+                          size={16}
+                          color={linked ? '#f2ca50' : 'rgba(255,255,255,0.15)'}
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
 
         {/* Вид работы */}
         <View style={styles.section}>
@@ -408,147 +677,154 @@ export default function NewOrderScreen() {
     borderWidth: 1,
     borderColor: '#f2ca50',
     borderRadius: 12,
-    padding: 16,
+    overflow: 'hidden',
   }}>
-    <View style={{
-      flexDirection: 'row',
-      gap: 8,
-      marginBottom: 12,
-    }}>
-      {vitaResult.imageUri && (
-        <TouchableOpacity
-          onPress={() => {
-            setActivePhoto(vitaResult.imageUri);
-            setShowPhotoModal(true);
-          }}
-          style={{ flex: 1 }}
-        >
-          <Image
-            source={{ uri: vitaResult.imageUri }}
-            style={{
-              width: '100%',
-              height: 100,
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: '#f2ca50',
-            }}
-            resizeMode="cover"
-          />
-          <Text style={{
-            color: 'rgba(255,255,255,0.4)',
-            fontSize: 10,
-            textAlign: 'center',
-            marginTop: 4,
-          }}>Анализ</Text>
-        </TouchableOpacity>
-      )}
-      {vitaResult.originalImageUri && (
-        <TouchableOpacity
-          onPress={() => {
-            setActivePhoto(vitaResult.originalImageUri);
-            setShowPhotoModal(true);
-          }}
-          style={{ flex: 1 }}
-        >
-          <Image
-            source={{ uri: vitaResult.originalImageUri }}
-            style={{
-              width: '100%',
-              height: 100,
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.2)',
-            }}
-            resizeMode="cover"
-          />
-          <Text style={{
-            color: 'rgba(255,255,255,0.4)',
-            fontSize: 10,
-            textAlign: 'center',
-            marginTop: 4,
-          }}>Оригинал</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-
-    <View style={{ flex: 1, marginLeft: 12 }}>
-      <Text style={{
-        color: '#f2ca50',
-        fontSize: 36,
-        fontWeight: 'bold',
-      }}>
-        {vitaResult.shade}
-      </Text>
-      <Text style={{
-        color: 'rgba(255,255,255,0.5)',
-        fontSize: 12,
-      }}>
-        Уверенность: {vitaResult.confidence}
-      </Text>
-      <Text style={{
-        color: 'rgba(255,255,255,0.5)',
-        fontSize: 12,
-      }}>
-        Фото: {vitaResult.photo_quality}
-      </Text>
-    </View>
-
-    <Text style={{
-      color: 'rgba(255,255,255,0.4)',
-      fontSize: 11,
-      letterSpacing: 1.5,
-      marginBottom: 8,
-    }}>ЗОНЫ</Text>
-
-    <View style={{
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-    }}>
-      {[
-        { label: 'Шейка', value: vitaResult.zone_cervical },
-        { label: 'Середина', value: vitaResult.zone_middle },
-        { label: 'Край', value: vitaResult.zone_incisal },
-      ].map(zone => (
-        <View key={zone.label} style={{
-          alignItems: 'center',
-          flex: 1,
-        }}>
-          <Text style={{
-            color: 'rgba(255,255,255,0.4)',
-            fontSize: 11,
-          }}>{zone.label}</Text>
-          <Text style={{
-            color: 'white',
-            fontSize: 16,
-            fontWeight: '600',
-          }}>{zone.value}</Text>
-        </View>
-      ))}
-    </View>
-
-    {vitaResult.description ? (
-      <Text style={{
-        color: 'rgba(255,255,255,0.5)',
-        fontSize: 13,
-        marginTop: 10,
-        fontStyle: 'italic',
-      }}>
-        {vitaResult.description}
-      </Text>
-    ) : null}
-
+    {/* Главная строка — всегда видна */}
     <TouchableOpacity
-      onPress={() => {
-        setVitaResult(null);
-        router.push('/color-analyzer');
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 16,
+        backgroundColor: 'rgba(242,202,80,0.08)',
       }}
-      style={{ marginTop: 10, alignItems: 'center' }}
+      onPress={() => setShowVitaDetails(!showVitaDetails)}
     >
       <Text style={{
-        color: 'rgba(242,202,80,0.5)',
-        fontSize: 13,
-      }}>Переопределить цвет</Text>
+        color: '#f2ca50',
+        fontSize: 32,
+        fontWeight: 'bold',
+        letterSpacing: 1,
+      }}>
+        {vitaResult.primary_range ?? vitaResult.shade ?? '—'}
+      </Text>
+      <Ionicons
+        name={showVitaDetails ? 'chevron-up' : 'chevron-down'}
+        size={24}
+        color="#f2ca50"
+      />
     </TouchableOpacity>
+
+    {/* Детали — скрыты по умолчанию */}
+    {showVitaDetails && (
+      <View style={{ padding: 16 }}>
+        
+        {/* Фото */}
+        {(vitaResult.imageUri || vitaResult.originalImageUri) && (
+          <TouchableOpacity
+            onPress={() => {
+              setActivePhoto(
+                vitaResult.imageUri || vitaResult.originalImageUri
+              );
+              setShowPhotoModal(true);
+            }}
+            style={{ marginBottom: 12 }}
+          >
+            <Image
+              source={{ 
+                uri: vitaResult.imageUri || vitaResult.originalImageUri 
+              }}
+              style={{
+                width: '100%',
+                height: 160,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: 'rgba(242,202,80,0.3)',
+              }}
+              resizeMode="cover"
+            />
+            <Text style={{
+              color: 'rgba(255,255,255,0.3)',
+              fontSize: 10,
+              textAlign: 'center',
+              marginTop: 4,
+            }}>
+              Нажмите для увеличения
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Зоны */}
+        <Text style={{
+          color: 'rgba(255,255,255,0.4)',
+          fontSize: 11,
+          letterSpacing: 1.5,
+          marginBottom: 10,
+        }}>ЗОНЫ</Text>
+
+        {[
+          { label: 'Шейка', value: vitaResult.zones?.cervical ?? vitaResult.zone_cervical ?? '—' },
+          { label: 'Тело', value: vitaResult.zones?.body ?? vitaResult.zone_middle ?? '—' },
+          { label: 'Режущий край', value: vitaResult.zones?.incisal ?? vitaResult.zone_incisal ?? '—' },
+        ].map(zone => (
+          <View key={zone.label} style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            paddingVertical: 8,
+            borderBottomWidth: 1,
+            borderBottomColor: 'rgba(255,255,255,0.06)',
+          }}>
+            <Text style={{
+              color: 'rgba(255,255,255,0.4)',
+              fontSize: 13,
+              flex: 1,
+            }}>{zone.label}</Text>
+            <Text style={{
+              color: '#ffffff',
+              fontSize: 13,
+              fontWeight: '600',
+              flex: 2,
+              textAlign: 'right',
+            }}>{zone.value}</Text>
+          </View>
+        ))}
+
+        {/* Описание */}
+        {vitaResult.description ? (
+          <View style={{ marginBottom: 12 }}>
+            {vitaResult.description
+              .split('. ')
+              .filter((s: string) => s.trim().length > 0)
+              .map((sentence: string, index: number) => (
+                <View key={index} style={{
+                  backgroundColor: 'rgba(255,255,255,0.04)',
+                  borderRadius: 8,
+                  padding: 10,
+                  marginBottom: 6,
+                  borderLeftWidth: 2,
+                  borderLeftColor: 'rgba(242,202,80,0.4)',
+                }}>
+                  <Text style={{
+                    color: 'rgba(255,255,255,0.7)',
+                    fontSize: 12,
+                    lineHeight: 18,
+                    fontStyle: 'italic',
+                  }}>
+                    {sentence.trim().endsWith('.')
+                      ? sentence.trim()
+                      : sentence.trim() + '.'}
+                  </Text>
+                </View>
+              ))}
+          </View>
+        ) : null}
+
+        {/* Переопределить */}
+        <TouchableOpacity
+          onPress={() => {
+            setVitaResult(null);
+            router.push('/color-analyzer');
+          }}
+          style={{ alignItems: 'center', paddingVertical: 8 }}
+        >
+          <Text style={{
+            color: 'rgba(242,202,80,0.5)',
+            fontSize: 13,
+          }}>Переопределить цвет →</Text>
+        </TouchableOpacity>
+      </View>
+    )}
   </View>
 ) : (
   <TouchableOpacity
@@ -728,6 +1004,28 @@ export default function NewOrderScreen() {
             <Text style={styles.primaryBtnText}>Отправить наряд</Text>
           )}
         </TouchableOpacity>
+        
+        <TouchableOpacity
+          onPress={() => setShowClearModal(true)}
+          style={{
+            marginTop: 8,
+            marginBottom: 24,
+            paddingVertical: 14,
+            alignItems: 'center',
+            borderWidth: 1,
+            borderColor: 'rgba(255,80,80,0.3)',
+            borderRadius: 14,
+            backgroundColor: 'rgba(255,80,80,0.05)',
+          }}
+        >
+          <Text style={{
+            color: '#ff4444',
+            fontSize: 15,
+            fontWeight: '500',
+          }}>
+            🗑 Очистить наряд
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Модалки календаря */}
@@ -788,6 +1086,327 @@ export default function NewOrderScreen() {
               resizeMode="contain"
             />
           )}
+        </View>
+      </Modal>
+
+      {/* Модалка очистки наряда */}
+      <Modal
+        visible={showClearModal}
+        transparent
+        animationType="fade"
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingHorizontal: 30,
+        }}>
+          <View style={{
+            backgroundColor: '#031427',
+            borderRadius: 20,
+            padding: 24,
+            width: '100%',
+            borderWidth: 1,
+            borderColor: 'rgba(255,80,80,0.3)',
+          }}>
+            <Text style={{
+              fontSize: 40,
+              textAlign: 'center',
+              marginBottom: 12,
+            }}>🗑</Text>
+            <Text style={{
+              color: '#ff4444',
+              fontSize: 20,
+              fontWeight: 'bold',
+              textAlign: 'center',
+              marginBottom: 8,
+            }}>
+              Очистить наряд?
+            </Text>
+            <Text style={{
+              color: 'rgba(255,255,255,0.5)',
+              fontSize: 14,
+              textAlign: 'center',
+              marginBottom: 24,
+              lineHeight: 20,
+            }}>
+              Все данные будут удалены без возможности восстановления
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  paddingVertical: 14,
+                  borderRadius: 12,
+                  backgroundColor: 'rgba(255,255,255,0.05)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(242,202,80,0.3)',
+                  alignItems: 'center',
+                }}
+                onPress={() => setShowClearModal(false)}
+              >
+                <Text style={{ 
+                  color: '#f2ca50', 
+                  fontSize: 15,
+                  fontWeight: '500',
+                }}>
+                  Отмена
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  paddingVertical: 14,
+                  borderRadius: 12,
+                  backgroundColor: 'rgba(255,50,50,0.15)',
+                  borderWidth: 1,
+                  borderColor: '#ff4444',
+                  alignItems: 'center',
+                }}
+                onPress={async () => {
+                  setShowClearModal(false);
+                  setDoctorName('');
+                  setPatientName('');
+                  setTechName('');
+                  setWorkDate(new Date());
+                  setDeliveryDate(new Date());
+                  setSelectedTeeth([]);
+                  setWorkType('');
+                  setWorkNote('');
+                  setVitaResult(null);
+                  setImplantSystem('');
+                  setFixationType(null);
+                  setAnatomyType(null);
+                  setStructureType(null);
+                  setImplantsEnabled(false);
+                  setToothTypes({});
+                  setImplantData({});
+                  setBridges([]);
+                  await AsyncStorage.removeItem('orderDraft');
+                  await AsyncStorage.removeItem('pendingVitaResult');
+                }}
+              >
+                <Text style={{ 
+                  color: '#ff4444', 
+                  fontSize: 15,
+                  fontWeight: '600',
+                }}>
+                  Очистить
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Модалка выбора типа/системы/диаметра импланта */}
+      <Modal
+        visible={showImplantModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowImplantModal(false)}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          justifyContent: 'flex-end',
+        }}>
+          <View style={{
+            backgroundColor: '#031427',
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            padding: 24,
+            borderWidth: 1,
+            borderColor: 'rgba(242,202,80,0.2)',
+          }}>
+            <Text style={{
+              color: '#f2ca50',
+              fontSize: 18,
+              fontWeight: 'bold',
+              textAlign: 'center',
+              marginBottom: 20,
+            }}>
+              Зуб {selectedToothForImplant}
+            </Text>
+
+            {/* Тип */}
+            <Text style={{
+              color: 'rgba(255,255,255,0.4)',
+              fontSize: 11,
+              letterSpacing: 1,
+              marginBottom: 10,
+            }}>ТИП</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+              {(['crown', 'implant'] as const).map(type => (
+                <TouchableOpacity
+                  key={type}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: toothTypes[selectedToothForImplant!] === type
+                      ? '#f2ca50'
+                      : 'rgba(255,255,255,0.15)',
+                    backgroundColor: toothTypes[selectedToothForImplant!] === type
+                      ? 'rgba(242,202,80,0.15)'
+                      : 'transparent',
+                    alignItems: 'center',
+                  }}
+                  onPress={() => {
+                    setToothTypes(prev => ({
+                      ...prev,
+                      [selectedToothForImplant!]: type,
+                    }));
+                    if (type === 'crown') {
+                      setImplantData(prev => ({
+                        ...prev,
+                        [selectedToothForImplant!]: { system: null, diameter: null },
+                      }));
+                    }
+                  }}
+                >
+                  <Text style={{ fontSize: 20, marginBottom: 4 }}>
+                    {type === 'crown' ? '👑' : '🔩'}
+                  </Text>
+                  <Text style={{
+                    color: toothTypes[selectedToothForImplant!] === type
+                      ? '#f2ca50'
+                      : 'rgba(255,255,255,0.5)',
+                    fontSize: 13,
+                    fontWeight: '500',
+                  }}>
+                    {type === 'crown' ? 'Коронка' : 'Имплант'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Система — только если выбран имплант */}
+            {toothTypes[selectedToothForImplant!] === 'implant' && (
+              <>
+                <Text style={{
+                  color: 'rgba(255,255,255,0.4)',
+                  fontSize: 11,
+                  letterSpacing: 1,
+                  marginBottom: 10,
+                }}>СИСТЕМА</Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+                  {(Object.keys(IMPLANT_SYSTEMS) as Array<keyof typeof IMPLANT_SYSTEMS>).map(system => (
+                    <TouchableOpacity
+                      key={system}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 10,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: implantData[selectedToothForImplant!]?.system === system
+                          ? '#f2ca50'
+                          : 'rgba(255,255,255,0.15)',
+                        backgroundColor: implantData[selectedToothForImplant!]?.system === system
+                          ? 'rgba(242,202,80,0.15)'
+                          : 'transparent',
+                        alignItems: 'center',
+                      }}
+                      onPress={() => {
+                        setImplantData(prev => ({
+                          ...prev,
+                          [selectedToothForImplant!]: {
+                            system,
+                            diameter: null,
+                          },
+                        }));
+                      }}
+                    >
+                      <Text style={{
+                        color: implantData[selectedToothForImplant!]?.system === system
+                          ? '#f2ca50'
+                          : 'rgba(255,255,255,0.5)',
+                        fontSize: 11,
+                        fontWeight: '600',
+                        textAlign: 'center',
+                      }}>
+                        {system}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Диаметр */}
+                {implantData[selectedToothForImplant!]?.system && (
+                  <>
+                    <Text style={{
+                      color: 'rgba(255,255,255,0.4)',
+                      fontSize: 11,
+                      letterSpacing: 1,
+                      marginBottom: 10,
+                    }}>ДИАМЕТР (мм)</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+                      {IMPLANT_SYSTEMS[implantData[selectedToothForImplant!]!.system!].map(d => (
+                        <TouchableOpacity
+                          key={d}
+                          style={{
+                            paddingVertical: 10,
+                            paddingHorizontal: 16,
+                            borderRadius: 10,
+                            borderWidth: 1,
+                            borderColor: implantData[selectedToothForImplant!]?.diameter === d
+                              ? '#f2ca50'
+                              : 'rgba(255,255,255,0.15)',
+                            backgroundColor: implantData[selectedToothForImplant!]?.diameter === d
+                              ? 'rgba(242,202,80,0.15)'
+                              : 'transparent',
+                          }}
+                          onPress={() => {
+                            setImplantData(prev => ({
+                              ...prev,
+                              [selectedToothForImplant!]: {
+                                ...prev[selectedToothForImplant!],
+                                diameter: d,
+                              },
+                            }));
+                          }}
+                        >
+                          <Text style={{
+                            color: implantData[selectedToothForImplant!]?.diameter === d
+                              ? '#f2ca50'
+                              : 'rgba(255,255,255,0.5)',
+                            fontSize: 14,
+                            fontWeight: '600',
+                          }}>
+                            ∅{d}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* Готово */}
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#f2ca50',
+                borderRadius: 12,
+                paddingVertical: 14,
+                alignItems: 'center',
+              }}
+              onPress={() => {
+                setShowImplantModal(false);
+                setSelectedToothForImplant(null);
+              }}
+            >
+              <Text style={{
+                color: '#031427',
+                fontSize: 16,
+                fontWeight: '700',
+              }}>
+                Готово
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
     </ImageBackground>
