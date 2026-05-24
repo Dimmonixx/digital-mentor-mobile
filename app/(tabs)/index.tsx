@@ -363,6 +363,27 @@ export default function HomeScreen() {
               <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
             </TouchableOpacity>
           </View>
+
+          {/* 7. Анатомия зубов */}
+          <View style={{
+            shadowColor: '#4fc3f7',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.6,
+            shadowRadius: 12,
+            marginBottom: 24,
+          }}>
+            <TouchableOpacity 
+              style={styles.card} 
+              onPress={() => router.push('/anatomy-viewer')}
+              activeOpacity={0.8}
+            >
+              <View style={styles.iconBox}>
+                <MaterialCommunityIcons name="tooth-outline" size={24} color="#f2ca50" />
+              </View>
+              <Text style={styles.labelText}>АНАТОМИЯ ЗУБОВ</Text>
+              <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </ImageBackground>

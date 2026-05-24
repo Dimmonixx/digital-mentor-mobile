@@ -7,7 +7,6 @@ import { StatusBar } from 'expo-status-bar';
 import { push, ref } from 'firebase/database';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
     Alert,
     Image,
     ImageBackground,
@@ -70,51 +69,35 @@ export default function NewOrderScreen() {
     'Straumann BLX': ['3.5', '3.75', '4.0', '4.5', '5.0', '5.5', '6.5'],
   };
 
-  const [bridges, setBridges] = useState<Array<number[]>>([]);
+  const [bridges, setBridges] = useState<string[]>([]);
 
-  const isBridged = (t1: number, t2: number) => 
-    bridges.some(b => b.includes(t1) && b.includes(t2));
+  const getBridgeKey = (a: number, b: number) => 
+    `${Math.min(a,b)}-${Math.max(a,b)}`;
 
-  const toggleBridge = (t1: number, t2: number) => {
-    const existing = bridges.findIndex(
-      b => b.includes(t1) && b.includes(t2)
+  const toggleBridge = (a: number, b: number) => {
+    const key = getBridgeKey(a, b);
+    setBridges(prev =>
+      prev.includes(key)
+        ? prev.filter(k => k !== key)
+        : [...prev, key]
     );
-    if (existing !== -1) {
-      // Убрать связь
-      setBridges(prev => {
-        const updated = [...prev];
-        const bridge = updated[existing].filter(
-          t => t !== t1 && t !== t2
-        );
-        if (bridge.length < 2) {
-          updated.splice(existing, 1);
-        } else {
-          updated[existing] = bridge;
-        }
-        return updated;
-      });
-    } else {
-      // Добавить связь — найти существующий мост или создать новый
-      const bridgeWithT1 = bridges.findIndex(b => b.includes(t1));
-      const bridgeWithT2 = bridges.findIndex(b => b.includes(t2));
-      
-      if (bridgeWithT1 !== -1) {
-        setBridges(prev => {
-          const updated = [...prev];
-          updated[bridgeWithT1] = [...updated[bridgeWithT1], t2];
-          return updated;
-        });
-      } else if (bridgeWithT2 !== -1) {
-        setBridges(prev => {
-          const updated = [...prev];
-          updated[bridgeWithT2] = [...updated[bridgeWithT2], t1];
-          return updated;
-        });
-      } else {
-        setBridges(prev => [...prev, [t1, t2]]);
-      }
-    }
   };
+
+  const isBridged = (a: number, b: number) =>
+    bridges.includes(getBridgeKey(a, b));
+
+  
+  const areNeighbors = (a: number, b: number): boolean => {
+  const upper = [18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28];
+  const lower = [48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38];
+  const check = (row: number[]) => {
+    const ia = row.indexOf(a);
+    const ib = row.indexOf(b);
+    return ia !== -1 && ib !== -1 && Math.abs(ia - ib) === 1;
+  };
+  return check(upper) || check(lower);
+};
+
 
   // ЗАГРУЗКА VITA РЕЗУЛЬТАТА при старте
   useEffect(() => {
@@ -255,6 +238,7 @@ export default function NewOrderScreen() {
       fixationType,
       anatomyType,
       structureType,
+      bridges,
       status: 'new',
       createdAt: Date.now(),
     };
@@ -327,7 +311,10 @@ export default function NewOrderScreen() {
         <View style={styles.headerBtn} />
       </View>
 
-      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 140 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 16 }}
+      >
         {/* Врач */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>ВРАЧ</Text>
@@ -506,95 +493,254 @@ export default function NewOrderScreen() {
         </View>
 
         {implantsEnabled && selectedTeeth.length > 0 && (
-          <View style={{ marginTop: 12 }}>
-            <Text style={{
-              color: 'rgba(255,255,255,0.4)',
-              fontSize: 11,
-              letterSpacing: 1,
-              marginBottom: 8,
-            }}>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
               ТИП ДЛЯ КАЖДОГО ЗУБА
             </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 0 }}>
-              {selectedTeeth.sort((a, b) => a - b).map((tooth, index) => {
-                const nextTooth = selectedTeeth.sort((a,b) => a-b)[index + 1];
-                const linked = nextTooth && isBridged(tooth, nextTooth);
-                return (
-                  <View key={tooth} style={{ 
-                    flexDirection: 'row', 
-                    alignItems: 'flex-start',
-                  }}>
-                    {/* Карточка зуба */}
-                    <TouchableOpacity
-                      onPress={() => {
-                        setSelectedToothForImplant(tooth);
-                        setShowImplantModal(true);
-                      }}
-                      style={{
-                        borderRadius: 10,
-                        borderWidth: 1.5,
-                        borderColor: 'rgba(242,202,80,0.5)',
-                        backgroundColor: 'rgba(242,202,80,0.08)',
-                        paddingVertical: 8,
-                        paddingHorizontal: 10,
-                        alignItems: 'center',
-                        minWidth: 64,
-                      }}
-                    >
-                      <Text style={{
-                        color: '#f2ca50',
-                        fontSize: 16,
-                        fontWeight: '700',
-                        marginBottom: 4,
-                      }}>
-                        {tooth}
-                      </Text>
-                      {toothTypes[tooth] === 'implant' ? (
-                        <>
-                          <Text style={{ fontSize: 14 }}>🔩</Text>
+            <>
+            {/* Верхняя челюсть */}
+            {(() => {
+              const upperTeeth = selectedTeeth
+                .filter(t => t >= 11 && t <= 28)
+                .sort((a, b) => a - b);
+              
+              return upperTeeth.length > 0 && (
+                <>
+                  <Text style={{
+                    color: 'rgba(255,255,255,0.3)',
+                    fontSize: 11,
+                    letterSpacing: 1,
+                    marginBottom: 8,
+                    marginTop: 4,
+                  }}>ВЕРХНЯЯ</Text>
+                  {/* Верхняя */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {upperTeeth.map((tooth, index) => (
+                      <React.Fragment key={tooth}>
+                        {/* Карточка */}
+                        <TouchableOpacity
+                          onPress={() => {
+                            setSelectedToothForImplant(tooth);
+                            setShowImplantModal(true);
+                          }}
+                          style={{
+                            width: 90,
+                            height: 100,
+                            borderRadius: 12,
+                            borderWidth: 1,
+                            borderColor: '#f2ca50',
+                            backgroundColor: 'rgba(242,202,80,0.08)',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: 6,
+                          }}
+                        >
                           <Text style={{
-                            color: 'rgba(242,202,80,0.8)',
-                            fontSize: 9,
-                            textAlign: 'center',
-                          }}>
-                            {implantData[tooth]?.system ?? '?'}
-                          </Text>
-                          <Text style={{
-                            color: 'rgba(242,202,80,0.8)',
-                            fontSize: 9,
-                          }}>
-                            {implantData[tooth]?.diameter
-                              ? `∅${implantData[tooth].diameter}` 
-                              : '∅?'}
-                          </Text>
-                        </>
-                      ) : (
-                        <Text style={{ fontSize: 16 }}>👑</Text>
-                      )}
-                    </TouchableOpacity>
+                            color: '#f2ca50',
+                            fontSize: 16,
+                            fontWeight: '700',
+                            marginBottom: 4,
+                          }}>{tooth}</Text>
+                          {toothTypes[tooth] === 'implant' ? (
+                            <>
+                              <Text style={{ fontSize: 14 }}>🔩</Text>
+                              <Text style={{
+                                color: 'rgba(242,202,80,0.8)',
+                                fontSize: 8,
+                                textAlign: 'center',
+                              }} numberOfLines={1}>
+                                {implantData[tooth]?.system ?? '?'}
+                              </Text>
+                              <Text style={{
+                                color: 'rgba(242,202,80,0.8)',
+                                fontSize: 8,
+                              }}>
+                                {implantData[tooth]?.diameter
+                                  ? `∅${implantData[tooth].diameter}` 
+                                  : '∅?'}
+                              </Text>
+                            </>
+                          ) : (
+                            <>
+                              <Text style={{ fontSize: 16 }}>👑</Text>
+                              <Text style={{
+                                color: 'rgba(255,255,255,0.35)',
+                                fontSize: 8,
+                                textAlign: 'center',
+                              }}>свой зуб</Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
 
-                    {/* Цепочка между соседними зубами */}
-                    {nextTooth && (
-                      <TouchableOpacity
-                        onPress={() => toggleBridge(tooth, nextTooth)}
-                        style={{
-                          justifyContent: 'flex-start',
-                          alignItems: 'center',
-                          paddingTop: 6,
-                          paddingHorizontal: 2,
-                        }}
-                      >
-                        <Ionicons
-                          name="link"
-                          size={16}
-                          color={linked ? '#f2ca50' : 'rgba(255,255,255,0.15)'}
-                        />
-                      </TouchableOpacity>
-                    )}
+                        {/* Цепочка между карточками */}
+                        {index < upperTeeth.length - 1 && 
+                         areNeighbors(tooth, upperTeeth[index + 1]) && (
+                          <TouchableOpacity
+                            onPress={() => toggleBridge(tooth, upperTeeth[index + 1])}
+                            style={{
+                              width: 32,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <View style={{ 
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                            }}>
+                              <View style={{
+                                width: 8,
+                                height: 2,
+                                backgroundColor: isBridged(tooth, upperTeeth[index + 1])
+                                  ? '#f2ca50' : 'rgba(255,255,255,0.2)',
+                                borderRadius: 1,
+                              }} />
+                              <View style={{
+                                width: 14,
+                                height: 14,
+                                borderRadius: 7,
+                                backgroundColor: isBridged(tooth, upperTeeth[index + 1])
+                                  ? '#f2ca50' : 'transparent',
+                                borderWidth: isBridged(tooth, upperTeeth[index + 1]) ? 0 : 2,
+                                borderColor: 'rgba(255,255,255,0.2)',
+                              }} />
+                              <View style={{
+                                width: 8,
+                                height: 2,
+                                backgroundColor: isBridged(tooth, upperTeeth[index + 1])
+                                  ? '#f2ca50' : 'rgba(255,255,255,0.2)',
+                                borderRadius: 1,
+                              }} />
+                            </View>
+                          </TouchableOpacity>
+                        )}
+                      </React.Fragment>
+                    ))}
                   </View>
-                );
-              })}
-            </View>
+                </>
+              );
+            })()}
+
+            {/* Нижняя челюсть */}
+            {(() => {
+              const lowerTeeth = selectedTeeth
+                .filter(t => t >= 31 && t <= 48)
+                .sort((a, b) => a - b);
+              
+              return lowerTeeth.length > 0 && (
+                <>
+                  <Text style={{
+                    color: 'rgba(255,255,255,0.3)',
+                    fontSize: 11,
+                    letterSpacing: 1,
+                    marginBottom: 8,
+                  }}>НИЖНЯЯ</Text>
+                  {/* Нижняя */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {lowerTeeth.map((tooth, index) => (
+                      <React.Fragment key={tooth}>
+                        {/* Карточка */}
+                        <TouchableOpacity
+                          onPress={() => {
+                            setSelectedToothForImplant(tooth);
+                            setShowImplantModal(true);
+                          }}
+                          style={{
+                            width: 90,
+                            height: 100,
+                            borderRadius: 12,
+                            borderWidth: 1,
+                            borderColor: '#f2ca50',
+                            backgroundColor: 'rgba(242,202,80,0.08)',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: 6,
+                          }}
+                        >
+                          <Text style={{
+                            color: '#f2ca50',
+                            fontSize: 16,
+                            fontWeight: '700',
+                            marginBottom: 4,
+                          }}>{tooth}</Text>
+                          {toothTypes[tooth] === 'implant' ? (
+                            <>
+                              <Text style={{ fontSize: 14 }}>🔩</Text>
+                              <Text style={{
+                                color: 'rgba(242,202,80,0.8)',
+                                fontSize: 8,
+                                textAlign: 'center',
+                              }} numberOfLines={1}>
+                                {implantData[tooth]?.system ?? '?'}
+                              </Text>
+                              <Text style={{
+                                color: 'rgba(242,202,80,0.8)',
+                                fontSize: 8,
+                              }}>
+                                {implantData[tooth]?.diameter
+                                  ? `∅${implantData[tooth].diameter}` 
+                                  : '∅?'}
+                              </Text>
+                            </>
+                          ) : (
+                            <>
+                              <Text style={{ fontSize: 16 }}>👑</Text>
+                              <Text style={{
+                                color: 'rgba(255,255,255,0.35)',
+                                fontSize: 8,
+                                textAlign: 'center',
+                              }}>свой зуб</Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+
+                        {/* Цепочка между карточками */}
+                        {index < lowerTeeth.length - 1 && 
+                         areNeighbors(tooth, lowerTeeth[index + 1]) && (
+                          <TouchableOpacity
+                            onPress={() => toggleBridge(tooth, lowerTeeth[index + 1])}
+                            style={{
+                              width: 32,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <View style={{ 
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                            }}>
+                              <View style={{
+                                width: 8,
+                                height: 2,
+                                backgroundColor: isBridged(tooth, lowerTeeth[index + 1])
+                                  ? '#f2ca50' : 'rgba(255,255,255,0.2)',
+                                borderRadius: 1,
+                              }} />
+                              <View style={{
+                                width: 14,
+                                height: 14,
+                                borderRadius: 7,
+                                backgroundColor: isBridged(tooth, lowerTeeth[index + 1])
+                                  ? '#f2ca50' : 'transparent',
+                                borderWidth: isBridged(tooth, lowerTeeth[index + 1]) ? 0 : 2,
+                                borderColor: 'rgba(255,255,255,0.2)',
+                              }} />
+                              <View style={{
+                                width: 8,
+                                height: 2,
+                                backgroundColor: isBridged(tooth, lowerTeeth[index + 1])
+                                  ? '#f2ca50' : 'rgba(255,255,255,0.2)',
+                                borderRadius: 1,
+                              }} />
+                            </View>
+                          </TouchableOpacity>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </View>
+                </>
+              );
+            })()}
+            </>
           </View>
         )}
 
@@ -993,40 +1139,47 @@ export default function NewOrderScreen() {
             </View>
           )}
         </View>
-      </ScrollView>
 
-      {/* Кнопка отправки */}
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 32 }]}>
-        <TouchableOpacity onPress={handleSubmit} style={styles.primaryBtn} disabled={loading}>
-          {loading ? (
-            <ActivityIndicator color="#031427" />
-          ) : (
-            <Text style={styles.primaryBtnText}>Отправить наряд</Text>
-          )}
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          onPress={() => setShowClearModal(true)}
-          style={{
-            marginTop: 8,
-            marginBottom: 24,
-            paddingVertical: 14,
-            alignItems: 'center',
-            borderWidth: 1,
-            borderColor: 'rgba(255,80,80,0.3)',
-            borderRadius: 14,
-            backgroundColor: 'rgba(255,80,80,0.05)',
-          }}
-        >
-          <Text style={{
-            color: '#ff4444',
-            fontSize: 15,
-            fontWeight: '500',
-          }}>
-            🗑 Очистить наряд
-          </Text>
-        </TouchableOpacity>
-      </View>
+        <View style={{ 
+          paddingTop: 8,
+          paddingBottom: 32,
+          gap: 8,
+        }}>
+          <TouchableOpacity
+            style={{
+              backgroundColor: '#f2ca50',
+              borderRadius: 14,
+              padding: 16,
+              alignItems: 'center',
+            }}
+            onPress={handleSubmit}
+          >
+            <Text style={{
+              color: '#031427',
+              fontSize: 16,
+              fontWeight: '700',
+            }}>Отправить наряд</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={{
+              paddingVertical: 14,
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: 'rgba(255,80,80,0.3)',
+              borderRadius: 14,
+              backgroundColor: 'rgba(255,80,80,0.05)',
+            }}
+            onPress={() => setShowClearModal(true)}
+          >
+            <Text style={{
+              color: '#ff4444',
+              fontSize: 15,
+              fontWeight: '500',
+            }}>🗑 Очистить наряд</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
 
       {/* Модалки календаря */}
       {showWorkDatePicker && (
