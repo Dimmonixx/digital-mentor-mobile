@@ -7,29 +7,30 @@ import { StatusBar } from 'expo-status-bar';
 import { push, ref } from 'firebase/database';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Image,
-    ImageBackground,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  Image,
+  ImageBackground,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function NewOrderScreen() {
   const insets = useSafeAreaInsets();
-  
+
   // Основные
   const [doctorName, setDoctorName] = useState('');
   const [patientName, setPatientName] = useState('');
   const [techName, setTechName] = useState('');
   const [workDate, setWorkDate] = useState<Date>(new Date());
   const [deliveryDate, setDeliveryDate] = useState<Date>(new Date());
-  const [selectedTeeth, setSelectedTeeth] = useState<number[]>([]);
+  const [selectedTeeth, setSelectedTeeth] = useState<{number: number, type: 'crown' | 'pontic'}[]>([]);
   const [workType, setWorkType] = useState('');
   const [workNote, setWorkNote] = useState('');
   const [showExtended, setShowExtended] = useState(false);
@@ -44,6 +45,7 @@ export default function NewOrderScreen() {
   // Цвет VITA (придёт из анализатора)
   const [vitaResult, setVitaResult] = useState<any>(null);
   const [showVitaDetails, setShowVitaDetails] = useState(false);
+  const [showConstructions, setShowConstructions] = useState(true);
   const [showClearModal, setShowClearModal] = useState(false);
 
   // Календарь
@@ -52,6 +54,35 @@ export default function NewOrderScreen() {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
   const [showWorkTypes, setShowWorkTypes] = useState(false);
+
+  // Восстановление состояний при монтировании компонента
+  useEffect(() => {
+    const restoreStates = async () => {
+      try {
+        // Восстанавливаем blockDetails из AsyncStorage
+        const savedBlockDetails = await AsyncStorage.getItem('tempBlockDetails');
+        if (savedBlockDetails) {
+          const parsedBlockDetails = JSON.parse(savedBlockDetails);
+          setBlockDetails(parsedBlockDetails);
+          // Удаляем временные данные
+          await AsyncStorage.removeItem('tempBlockDetails');
+        }
+
+        // Восстанавливаем connections из AsyncStorage
+        const savedConnections = await AsyncStorage.getItem('tempConnections');
+        if (savedConnections) {
+          const parsedConnections = JSON.parse(savedConnections);
+          setConnections(parsedConnections);
+          // Удаляем временные данные
+          await AsyncStorage.removeItem('tempConnections');
+        }
+      } catch (error) {
+        console.error('Error restoring states:', error);
+      }
+    };
+
+    restoreStates();
+  }, []);
 
   // Импланты
   const [implantsEnabled, setImplantsEnabled] = useState(false);
@@ -70,6 +101,22 @@ export default function NewOrderScreen() {
   };
 
   const [bridges, setBridges] = useState<string[]>([]);
+const [connections, setConnections] = useState<string[]>([]); // Храним строки вида "12-11", "21-22"
+const [blockMaterials, setBlockMaterials] = useState<Record<string, string>>({}); // Материалы для каждого блока
+const [selectedBlockIndex, setSelectedBlockIndex] = useState<number | null>(null); // Индекс выбранного блока для dropdown
+const [showImplantSystems, setShowImplantSystems] = useState<Record<string, boolean>>({}); // Состояние для выпадающих списков систем имплантов (ключ: blockId-toothNumber)
+const [showImplantDiameters, setShowImplantDiameters] = useState<Record<string, boolean>>({}); // Состояние для выпадающих списков диаметров (ключ: blockId-toothNumber)
+const [openImplantDropdownId, setOpenImplantDropdownId] = useState<string | null>(null);
+const [blockDetails, setBlockDetails] = useState<Record<string, {
+  material?: string;
+  isImplant?: boolean; // Новый флаг-тумблер
+  fixationType?: 'screw' | 'cement'; // Тип фиксации на весь блок
+  // Теперь это объекты, где ключ — номер конкретного зуба:
+  implantSystems?: Record<number, string>; 
+  implantDiameters?: Record<number, string>;
+  isPontic?: Record<number, boolean>; // Флаг: является ли зуб промежутком
+  isExpanded?: boolean; // Новый флаг: развернута ли детальная карточка
+}>>({});
 
   const getBridgeKey = (a: number, b: number) => 
     `${Math.min(a,b)}-${Math.max(a,b)}`;
@@ -86,7 +133,6 @@ export default function NewOrderScreen() {
   const isBridged = (a: number, b: number) =>
     bridges.includes(getBridgeKey(a, b));
 
-  
   const areNeighbors = (a: number, b: number): boolean => {
   const upper = [18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28];
   const lower = [48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38];
@@ -97,7 +143,6 @@ export default function NewOrderScreen() {
   };
   return check(upper) || check(lower);
 };
-
 
   // ЗАГРУЗКА VITA РЕЗУЛЬТАТА при старте
   useEffect(() => {
@@ -182,11 +227,79 @@ export default function NewOrderScreen() {
   const lowerJaw = [48,47,46,45,44,43,42,41, 31,32,33,34,35,36,37,38];
 
   const toggleTooth = (num: number) => {
-    setSelectedTeeth(prev =>
-      prev.includes(num)
-        ? prev.filter(t => t !== num)
-        : [...prev, num]
-    );
+    setSelectedTeeth(prev => {
+      const existing = prev.find(t => t.number === num);
+      if (existing) {
+        // Remove tooth if it exists
+        return prev.filter(t => t.number !== num);
+      } else {
+        // Add new tooth as crown
+        return [...prev, { number: num, type: 'crown' }];
+      }
+    });
+  };
+
+  const toggleToothType = (num: number) => {
+    setSelectedTeeth(prev => {
+      const tooth = prev.find(t => t.number === num);
+      if (tooth) {
+        // Toggle between crown and pontic
+        return prev.map(t => 
+          t.number === num 
+            ? { ...t, type: t.type === 'crown' ? 'pontic' : 'crown' }
+            : t
+        );
+      }
+      return prev;
+    });
+  };
+
+  // Функции для управления связями
+  const getConnectionKey = (a: number, b: number) => 
+    `${Math.min(a,b)}-${Math.max(a,b)}`;
+
+  const toggleConnection = (connId: string) => {
+  setConnections(prev => 
+    prev.includes(connId) ? prev.filter(c => c !== connId) : [...prev, connId]
+  );
+};
+
+  const isConnectionActive = (a: number, b: number) =>
+    connections.includes(getConnectionKey(a, b));
+
+  // Функция группировки зубов в блоки
+  const getAddonBlocks = () => {
+    if (selectedTeeth.length === 0) return [];
+
+    const sortedTeeth = [...selectedTeeth].sort((a, b) => a.number - b.number);
+    const blocks = [];
+    let currentBlock = [];
+
+    for (let i = 0; i < sortedTeeth.length; i++) {
+      const tooth = sortedTeeth[i];
+      currentBlock.push(tooth);
+
+      // Проверяем, нужно ли завершить текущий блок
+      const nextTooth = sortedTeeth[i + 1];
+      if (!nextTooth) {
+        // Последний зуб - завершаем блок
+        blocks.push([...currentBlock]);
+        break;
+      }
+
+      // Проверяем связь в обе стороны: и "14-13", и "13-14"
+      const connectionKey1 = `${tooth.number}-${nextTooth.number}`;
+      const connectionKey2 = `${nextTooth.number}-${tooth.number}`;
+      const hasConnection = connections.includes(connectionKey1) || connections.includes(connectionKey2);
+
+      if (!hasConnection) {
+        // Нет связи - завершаем текущий блок
+        blocks.push([...currentBlock]);
+        currentBlock = [];
+      }
+    }
+
+    return blocks;
   };
 
   // Виды работ
@@ -208,7 +321,7 @@ export default function NewOrderScreen() {
     } else if (type === 'year') {
       newDate.setFullYear(newDate.getFullYear() + increment);
     }
-    
+
     if (showWorkDatePicker) {
       setWorkDate(newDate);
     } else if (showDeliveryDatePicker) {
@@ -256,7 +369,7 @@ export default function NewOrderScreen() {
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <Text style={styles.modalTitle}>{title}</Text>
-          
+
           <View style={styles.dateRow}>
             <TouchableOpacity onPress={() => changeDate(date, 'day', -1)} style={styles.dateBtn}>
               <Ionicons name="chevron-up" size={20} color="#f2ca50" />
@@ -266,7 +379,7 @@ export default function NewOrderScreen() {
               <Ionicons name="chevron-down" size={20} color="#f2ca50" />
             </TouchableOpacity>
           </View>
-          
+
           <View style={styles.dateRow}>
             <TouchableOpacity onPress={() => changeDate(date, 'month', -1)} style={styles.dateBtn}>
               <Ionicons name="chevron-up" size={20} color="#f2ca50" />
@@ -276,7 +389,7 @@ export default function NewOrderScreen() {
               <Ionicons name="chevron-down" size={20} color="#f2ca50" />
             </TouchableOpacity>
           </View>
-          
+
           <View style={styles.dateRow}>
             <TouchableOpacity onPress={() => changeDate(date, 'year', -1)} style={styles.dateBtn}>
               <Ionicons name="chevron-up" size={20} color="#f2ca50" />
@@ -286,7 +399,7 @@ export default function NewOrderScreen() {
               <Ionicons name="chevron-down" size={20} color="#f2ca50" />
             </TouchableOpacity>
           </View>
-          
+
           <TouchableOpacity onPress={() => setVisible(false)} style={styles.modalBtn}>
             <Text style={styles.modalBtnText}>Готово</Text>
           </TouchableOpacity>
@@ -302,7 +415,7 @@ export default function NewOrderScreen() {
       resizeMode="cover"
     >
       <StatusBar style="light" backgroundColor="#0a0a1a" />
-      
+
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
           <Ionicons name="chevron-back" size={24} color="#f2ca50" />
@@ -317,7 +430,27 @@ export default function NewOrderScreen() {
       >
         {/* Врач */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ВРАЧ</Text>
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 16,
+          }}>
+            <Text style={styles.sectionTitle}>ВРАЧ</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setDoctorName('');
+              }}
+              style={{
+                padding: 4,
+                borderRadius: 4,
+                backgroundColor: 'rgba(255,255,255,0.05)',
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
+            </TouchableOpacity>
+          </View>
           <TextInput
             style={styles.input}
             placeholder="ФИО врача"
@@ -329,7 +462,28 @@ export default function NewOrderScreen() {
 
         {/* Пациент */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ПАЦИЕНТ</Text>
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 16,
+          }}>
+            <Text style={styles.sectionTitle}>ПАЦИЕНТ</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setPatientName('');
+                // Можно добавить и другие поля пациента если они есть
+              }}
+              style={{
+                padding: 4,
+                borderRadius: 4,
+                backgroundColor: 'rgba(255,255,255,0.05)',
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
+            </TouchableOpacity>
+          </View>
           <TextInput
             style={styles.input}
             placeholder="ФИО пациента *"
@@ -341,7 +495,27 @@ export default function NewOrderScreen() {
 
         {/* Техник */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ТЕХНИК</Text>
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 16,
+          }}>
+            <Text style={styles.sectionTitle}>ТЕХНИК</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setTechName('');
+              }}
+              style={{
+                padding: 4,
+                borderRadius: 4,
+                backgroundColor: 'rgba(255,255,255,0.05)',
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
+            </TouchableOpacity>
+          </View>
           <TextInput
             style={styles.input}
             placeholder="ФИО техника *"
@@ -353,7 +527,27 @@ export default function NewOrderScreen() {
 
         {/* Даты */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ДАТЫ</Text>
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 16,
+          }}>
+            <Text style={styles.sectionTitle}>ДАТЫ</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setDeliveryDate(new Date());
+              }}
+              style={{
+                padding: 4,
+                borderRadius: 4,
+                backgroundColor: 'rgba(255,255,255,0.05)',
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity onPress={() => setShowWorkDatePicker(true)} style={styles.dateInput}>
             <Text style={styles.dateText}>
               Дата работы: {workDate.toLocaleDateString('ru-RU')}
@@ -368,456 +562,545 @@ export default function NewOrderScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          style={{
+        <View style={styles.section}>
+  <View style={{
             flexDirection: 'row',
-            alignItems: 'center',
             justifyContent: 'space-between',
-            paddingHorizontal: 16,
-            paddingVertical: 12,
-            backgroundColor: implantsEnabled 
-              ? 'rgba(242,202,80,0.1)' 
-              : 'rgba(255,255,255,0.03)',
-            borderRadius: 12,
-            borderWidth: 1,
-            borderColor: implantsEnabled 
-              ? 'rgba(242,202,80,0.4)' 
-              : 'rgba(255,255,255,0.1)',
-            marginBottom: 12,
-          }}
-          onPress={() => {
-            setImplantsEnabled(!implantsEnabled);
-            if (implantsEnabled) {
-              setToothTypes({});
-              setImplantData({});
-            }
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Text style={{ fontSize: 20 }}>🔩</Text>
-            <Text style={{
-              color: implantsEnabled ? '#f2ca50' : 'rgba(255,255,255,0.5)',
-              fontSize: 15,
-              fontWeight: '500',
-            }}>
-              Импланты
-            </Text>
-          </View>
-          <View style={{
-            width: 44,
-            height: 24,
-            borderRadius: 12,
-            backgroundColor: implantsEnabled 
-              ? '#f2ca50' 
-              : 'rgba(255,255,255,0.15)',
-            justifyContent: 'center',
-            paddingHorizontal: 2,
+            alignItems: 'center',
+            marginBottom: 16,
           }}>
-            <View style={{
-              width: 20,
-              height: 20,
-              borderRadius: 10,
-              backgroundColor: '#fff',
-              alignSelf: implantsEnabled ? 'flex-end' : 'flex-start',
-            }} />
+            <Text style={styles.sectionTitle}>ЗУБНАЯ ФОРМУЛА</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setSelectedTeeth([]);
+                setConnections([]);
+              }}
+              style={{
+                padding: 4,
+                borderRadius: 4,
+                backgroundColor: 'rgba(255,255,255,0.05)',
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
 
-        {/* Зубы */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ЗУБЫ</Text>
-          
-          <Text style={styles.jawTitle}>Верхняя челюсть</Text>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            style={{ marginBottom: 8 }}
-          >
-            <View style={{ flexDirection: 'row', gap: 4 }}>
-              {[18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28].map(num => (
-                <TouchableOpacity key={num} onPress={() => toggleTooth(num)}
-                  style={{
-                    width: 36, height: 36, borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: selectedTeeth.includes(num) 
-                      ? '#f2ca50' : 'rgba(255,255,255,0.2)',
-                    backgroundColor: selectedTeeth.includes(num)
-                      ? 'rgba(242,202,80,0.2)' : 'transparent',
-                    alignItems: 'center', justifyContent: 'center',
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 10,
-                    color: selectedTeeth.includes(num) 
-                      ? '#f2ca50' : 'rgba(255,255,255,0.4)',
-                  }}>{num}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-          
-          <View style={{
-            height: 1,
-            backgroundColor: 'rgba(255,255,255,0.06)',
-            marginVertical: 8,
-          }} />
-          
-          <Text style={styles.jawTitle}>Нижняя челюсть</Text>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            style={{ marginBottom: 8 }}
-          >
-            <View style={{ flexDirection: 'row', gap: 4 }}>
-              {[48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38].map(num => (
-                <TouchableOpacity key={num} onPress={() => toggleTooth(num)}
-                  style={{
-                    width: 36, height: 36, borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: selectedTeeth.includes(num) 
-                      ? '#f2ca50' : 'rgba(255,255,255,0.2)',
-                    backgroundColor: selectedTeeth.includes(num)
-                      ? 'rgba(242,202,80,0.2)' : 'transparent',
-                    alignItems: 'center', justifyContent: 'center',
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 10,
-                    color: selectedTeeth.includes(num) 
-                      ? '#f2ca50' : 'rgba(255,255,255,0.4)',
-                  }}>{num}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
+  <View style={{ marginBottom: 20, width: '100%' }}>
+    <Text style={styles.sectionLabel}>Верхняя челюсть</Text>
 
-        {implantsEnabled && selectedTeeth.length > 0 && (
+  <ScrollView 
+    horizontal 
+    showsHorizontalScrollIndicator={false}
+    contentContainerStyle={{ paddingHorizontal: 15 }}
+  >
+    <View style={{ flexDirection: 'row', paddingVertical: 10 }}>
+      {[18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28].map((toothNumber, idx, arr) => {
+        const isSelected = selectedTeeth.some(t => t.number === toothNumber);
+        const toothData = selectedTeeth.find(t => t.number === toothNumber);
+        const isPontic = toothData?.type === 'pontic';
+
+        const nextTooth = arr[idx + 1];
+        const connId = `${toothNumber}-${nextTooth}`;
+        const isConnected = connections.includes(connId);
+
+        return (
+          <View key={toothNumber} style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {/* Вертикальный блок: Кружок строго НАД своим зубом */}
+            <View style={{ alignItems: 'center', width: 46, marginHorizontal: 2 }}>
+
+              {/* Контейнер для кружка (сдвигаем его вправо, на границу зуба) */}
+              <View style={{ height: 20, justifyContent: 'center', position: 'relative', width: '100%' }}>
+                {nextTooth && (
+                  <TouchableOpacity
+                    onPress={() => toggleConnection(connId)}
+                    style={{
+                      width: 12,
+                      height: 12,
+                      borderRadius: 6,
+                      backgroundColor: isConnected ? '#FFD700' : 'rgba(255,255,255,0.15)',
+                      position: 'absolute',
+                      right: -8, // Выносим кружок ровно на стык между кнопками
+                      zIndex: 10,
+                    }}
+                  />
+                )}
+              </View>
+
+              {/* Кнопка самого зуба */}
+              <TouchableOpacity
+                onPress={() => toggleTooth(toothNumber)}
+                onLongPress={() => toggleToothType(toothNumber)}
+                style={[
+                  styles.toothButton,
+                  { width: 46, height: 44 },
+                  isSelected && styles.toothSelected,
+                  isPontic && styles.toothPontic
+                ]}
+              >
+                <Text style={styles.toothText}>{toothNumber}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  </ScrollView>
+</View>
+
+<View style={{ marginBottom: 20, width: '100%' }}>
+  <Text style={styles.sectionLabel}>Нижняя челюсть</Text>
+
+  <ScrollView 
+    horizontal 
+    showsHorizontalScrollIndicator={false}
+    contentContainerStyle={{ paddingHorizontal: 15 }}
+  >
+    <View style={{ flexDirection: 'row', paddingVertical: 10 }}>
+      {[48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38].map((toothNumber, idx, arr) => {
+        const isSelected = selectedTeeth.some(t => t.number === toothNumber);
+        const toothData = selectedTeeth.find(t => t.number === toothNumber);
+        const isPontic = toothData?.type === 'pontic';
+
+        const nextTooth = arr[idx + 1];
+        const connId = `${toothNumber}-${nextTooth}`;
+        const isConnected = connections.includes(connId);
+
+        return (
+          <View key={toothNumber} style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {/* Вертикальный блок: Кружок строго НАД своим зубом */}
+            <View style={{ alignItems: 'center', width: 46, marginHorizontal: 2 }}>
+
+              {/* Контейнер для кружка (сдвигаем его вправо, на границу зуба) */}
+              <View style={{ height: 20, justifyContent: 'center', position: 'relative', width: '100%' }}>
+                {nextTooth && (
+                  <TouchableOpacity
+                    onPress={() => toggleConnection(connId)}
+                    style={{
+                      width: 12,
+                      height: 12,
+                      borderRadius: 6,
+                      backgroundColor: isConnected ? '#FFD700' : 'rgba(255,255,255,0.15)',
+                      position: 'absolute',
+                      right: -8, // Выносим кружок ровно на стык между кнопками
+                      zIndex: 10,
+                    }}
+                  />
+                )}
+              </View>
+
+              {/* Кнопка самого зуба */}
+              <TouchableOpacity
+                onPress={() => toggleTooth(toothNumber)}
+                onLongPress={() => toggleToothType(toothNumber)}
+                style={[
+                  styles.toothButton,
+                  { width: 46, height: 44 },
+                  isSelected && styles.toothSelected,
+                  isPontic && styles.toothPontic
+                ]}
+              >
+                <Text style={styles.toothText}>{toothNumber}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  </ScrollView>
+</View>
+</View>
+
+        {/* Динамические блоки конструкций */}
+        {getAddonBlocks().length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              ТИП ДЛЯ КАЖДОГО ЗУБА
-            </Text>
-            <>
-            {/* Верхняя челюсть */}
-            {(() => {
-              const upperTeeth = selectedTeeth
-                .filter(t => t >= 11 && t <= 28)
-                .sort((a, b) => a - b);
-              
-              return upperTeeth.length > 0 && (
-                <>
-                  <Text style={{
-                    color: 'rgba(255,255,255,0.3)',
-                    fontSize: 11,
-                    letterSpacing: 1,
-                    marginBottom: 8,
-                    marginTop: 4,
-                  }}>ВЕРХНЯЯ</Text>
-                  {/* Верхняя */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    {upperTeeth.map((tooth, index) => (
-                      <React.Fragment key={tooth}>
-                        {/* Карточка */}
-                        <TouchableOpacity
-                          onPress={() => {
-                            setSelectedToothForImplant(tooth);
-                            setShowImplantModal(true);
-                          }}
-                          style={{
-                            width: 90,
-                            height: 100,
-                            borderRadius: 12,
-                            borderWidth: 1,
-                            borderColor: '#f2ca50',
-                            backgroundColor: 'rgba(242,202,80,0.08)',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            padding: 6,
-                          }}
-                        >
-                          <Text style={{
-                            color: '#f2ca50',
-                            fontSize: 16,
-                            fontWeight: '700',
-                            marginBottom: 4,
-                          }}>{tooth}</Text>
-                          {toothTypes[tooth] === 'implant' ? (
-                            <>
-                              <Text style={{ fontSize: 14 }}>🔩</Text>
-                              <Text style={{
-                                color: 'rgba(242,202,80,0.8)',
-                                fontSize: 8,
-                                textAlign: 'center',
-                              }} numberOfLines={1}>
-                                {implantData[tooth]?.system ?? '?'}
-                              </Text>
-                              <Text style={{
-                                color: 'rgba(242,202,80,0.8)',
-                                fontSize: 8,
-                              }}>
-                                {implantData[tooth]?.diameter
-                                  ? `∅${implantData[tooth].diameter}` 
-                                  : '∅?'}
-                              </Text>
-                            </>
-                          ) : (
-                            <>
-                              <Text style={{ fontSize: 16 }}>👑</Text>
-                              <Text style={{
-                                color: 'rgba(255,255,255,0.35)',
-                                fontSize: 8,
-                                textAlign: 'center',
-                              }}>свой зуб</Text>
-                            </>
-                          )}
-                        </TouchableOpacity>
-
-                        {/* Цепочка между карточками */}
-                        {index < upperTeeth.length - 1 && 
-                         areNeighbors(tooth, upperTeeth[index + 1]) && (
-                          <TouchableOpacity
-                            onPress={() => toggleBridge(tooth, upperTeeth[index + 1])}
-                            style={{
-                              width: 32,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            <View style={{ 
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                            }}>
-                              <View style={{
-                                width: 8,
-                                height: 2,
-                                backgroundColor: isBridged(tooth, upperTeeth[index + 1])
-                                  ? '#f2ca50' : 'rgba(255,255,255,0.2)',
-                                borderRadius: 1,
-                              }} />
-                              <View style={{
-                                width: 14,
-                                height: 14,
-                                borderRadius: 7,
-                                backgroundColor: isBridged(tooth, upperTeeth[index + 1])
-                                  ? '#f2ca50' : 'transparent',
-                                borderWidth: isBridged(tooth, upperTeeth[index + 1]) ? 0 : 2,
-                                borderColor: 'rgba(255,255,255,0.2)',
-                              }} />
-                              <View style={{
-                                width: 8,
-                                height: 2,
-                                backgroundColor: isBridged(tooth, upperTeeth[index + 1])
-                                  ? '#f2ca50' : 'rgba(255,255,255,0.2)',
-                                borderRadius: 1,
-                              }} />
-                            </View>
-                          </TouchableOpacity>
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </View>
-                </>
-              );
-            })()}
-
-            {/* Нижняя челюсть */}
-            {(() => {
-              const lowerTeeth = selectedTeeth
-                .filter(t => t >= 31 && t <= 48)
-                .sort((a, b) => a - b);
-              
-              return lowerTeeth.length > 0 && (
-                <>
-                  <Text style={{
-                    color: 'rgba(255,255,255,0.3)',
-                    fontSize: 11,
-                    letterSpacing: 1,
-                    marginBottom: 8,
-                  }}>НИЖНЯЯ</Text>
-                  {/* Нижняя */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    {lowerTeeth.map((tooth, index) => (
-                      <React.Fragment key={tooth}>
-                        {/* Карточка */}
-                        <TouchableOpacity
-                          onPress={() => {
-                            setSelectedToothForImplant(tooth);
-                            setShowImplantModal(true);
-                          }}
-                          style={{
-                            width: 90,
-                            height: 100,
-                            borderRadius: 12,
-                            borderWidth: 1,
-                            borderColor: '#f2ca50',
-                            backgroundColor: 'rgba(242,202,80,0.08)',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            padding: 6,
-                          }}
-                        >
-                          <Text style={{
-                            color: '#f2ca50',
-                            fontSize: 16,
-                            fontWeight: '700',
-                            marginBottom: 4,
-                          }}>{tooth}</Text>
-                          {toothTypes[tooth] === 'implant' ? (
-                            <>
-                              <Text style={{ fontSize: 14 }}>🔩</Text>
-                              <Text style={{
-                                color: 'rgba(242,202,80,0.8)',
-                                fontSize: 8,
-                                textAlign: 'center',
-                              }} numberOfLines={1}>
-                                {implantData[tooth]?.system ?? '?'}
-                              </Text>
-                              <Text style={{
-                                color: 'rgba(242,202,80,0.8)',
-                                fontSize: 8,
-                              }}>
-                                {implantData[tooth]?.diameter
-                                  ? `∅${implantData[tooth].diameter}` 
-                                  : '∅?'}
-                              </Text>
-                            </>
-                          ) : (
-                            <>
-                              <Text style={{ fontSize: 16 }}>👑</Text>
-                              <Text style={{
-                                color: 'rgba(255,255,255,0.35)',
-                                fontSize: 8,
-                                textAlign: 'center',
-                              }}>свой зуб</Text>
-                            </>
-                          )}
-                        </TouchableOpacity>
-
-                        {/* Цепочка между карточками */}
-                        {index < lowerTeeth.length - 1 && 
-                         areNeighbors(tooth, lowerTeeth[index + 1]) && (
-                          <TouchableOpacity
-                            onPress={() => toggleBridge(tooth, lowerTeeth[index + 1])}
-                            style={{
-                              width: 32,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            <View style={{ 
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                            }}>
-                              <View style={{
-                                width: 8,
-                                height: 2,
-                                backgroundColor: isBridged(tooth, lowerTeeth[index + 1])
-                                  ? '#f2ca50' : 'rgba(255,255,255,0.2)',
-                                borderRadius: 1,
-                              }} />
-                              <View style={{
-                                width: 14,
-                                height: 14,
-                                borderRadius: 7,
-                                backgroundColor: isBridged(tooth, lowerTeeth[index + 1])
-                                  ? '#f2ca50' : 'transparent',
-                                borderWidth: isBridged(tooth, lowerTeeth[index + 1]) ? 0 : 2,
-                                borderColor: 'rgba(255,255,255,0.2)',
-                              }} />
-                              <View style={{
-                                width: 8,
-                                height: 2,
-                                backgroundColor: isBridged(tooth, lowerTeeth[index + 1])
-                                  ? '#f2ca50' : 'rgba(255,255,255,0.2)',
-                                borderRadius: 1,
-                              }} />
-                            </View>
-                          </TouchableOpacity>
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </View>
-                </>
-              );
-            })()}
-            </>
-          </View>
-        )}
-
-        {/* Вид работы */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ВИД РАБОТЫ *</Text>
-          <TouchableOpacity
-            onPress={() => setShowWorkTypes(!showWorkTypes)}
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.06)',
-              borderRadius: 10,
-              padding: 14,
-              borderWidth: 1,
-              borderColor: workType 
-                ? '#f2ca50' : 'rgba(255,255,255,0.1)',
+            <View style={{
               flexDirection: 'row',
               justifyContent: 'space-between',
               alignItems: 'center',
-            }}
-          >
-            <Text style={{
-              color: workType ? '#f2ca50' : 'rgba(255,255,255,0.3)',
-              fontSize: 15,
+              marginBottom: 16,
             }}>
-              {workType ? WORK_TYPES.find(w => w.id === workType)?.label 
-                : 'Выберите вид работы...'}
-            </Text>
-            <Ionicons 
-              name={showWorkTypes ? 'chevron-up' : 'chevron-down'} 
-              size={18} color="#f2ca50" 
-            />
-          </TouchableOpacity>
-
-          {showWorkTypes && (
-            <View style={{
-              backgroundColor: '#0a1628',
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: 'rgba(242,202,80,0.2)',
-              marginTop: 4,
-              overflow: 'hidden',
-            }}>
-              {WORK_TYPES.map((item, index) => (
-                <TouchableOpacity
-                  key={item.id}
-                  onPress={() => {
-                    setWorkType(item.id);
-                    setShowWorkTypes(false);
-                  }}
-                  style={{
-                    padding: 14,
-                    borderBottomWidth: index < WORK_TYPES.length - 1 ? 1 : 0,
-                    borderBottomColor: 'rgba(255,255,255,0.06)',
-                    backgroundColor: workType === item.id 
-                      ? 'rgba(242,202,80,0.1)' : 'transparent',
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}
-                >
-                  <Text style={{
-                    color: workType === item.id 
-                      ? '#f2ca50' : 'rgba(255,255,255,0.8)',
-                    fontSize: 15,
-                  }}>{item.label}</Text>
-                  {workType === item.id && (
-                    <Ionicons name="checkmark" size={18} color="#f2ca50" />
-                  )}
-                </TouchableOpacity>
-              ))}
+              <TouchableOpacity
+                onPress={() => setShowConstructions(prev => !prev)}
+                style={{ flex: 1 }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.sectionTitle}>КОНСТРУКЦИИ {showConstructions ? '▼' : '►'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setBlockDetails({});
+                  setBlockMaterials({});
+                  setShowImplantSystems({});
+                  setShowImplantDiameters({});
+                  setOpenImplantDropdownId(null);
+                  setSelectedBlockIndex(null);
+                  setShowWorkTypes(false);
+                }}
+                style={{
+                  padding: 4,
+                  borderRadius: 4,
+                  backgroundColor: 'rgba(255,255,255,0.05)',
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
+              </TouchableOpacity>
             </View>
-          )}
-        </View>
+
+            {!showConstructions && (() => {
+              const blocks = getAddonBlocks();
+              if (blocks.length === 0) {
+                return <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginTop: 4 }}>Конструкции не выбраны</Text>;
+              }
+
+              return (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 6, gap: 6 }}>
+                  {blocks.map((block, index) => {
+                    const blockKey = block.map(t => t.number).join('-');
+                    const details = blockDetails[blockKey] || {};
+                    const type = blockKey.includes('-') ? 'Мост' : 'Зуб';
+                    const teeth = blockKey.includes('-') ? blockKey.replace(/-/g, ', ') : blockKey;
+                    const hasImplant = !!details.isImplant;
+
+                    return (
+                      <View key={blockKey} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        {/* Тип конструкции */}
+                        <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '500' }}>{type} </Text>
+                        
+                        {/* Номера зубов (Выделяем золотом) */}
+                        <Text style={{ color: '#E2BD75', fontSize: 13, fontWeight: '600' }}>({teeth})</Text>
+                        
+                        {/* Статус импланта (Мягкий зеленый/бирюзовый акцент) */}
+                        {hasImplant && (
+                          <Text style={{ color: '#64D2FF', fontSize: 13, fontWeight: '500' }}> • На имплантах</Text>
+                        )}
+
+                        {/* Разделитель между разными блоками, если их несколько */}
+                        {index < blocks.length - 1 && (
+                          <Text style={{ color: 'rgba(255,255,255,0.3)', marginHorizontal: 6 }}>|</Text>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })()}
+
+            {/* РЕНДЕР КАРТОЧКИ БЛОКА */}
+            {showConstructions && getAddonBlocks().map((block, blockIndex) => {
+              const blockKey = block.map(t => t.number).join('-');
+              const details = blockDetails[blockKey] || {};
+
+              return (
+                <View key={blockKey} style={{
+                  backgroundColor: '#0a1628ee',
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: 'rgba(242,202,80,0.15)',
+                  padding: 12,
+                  marginBottom: 12,
+                }}>
+                  {/* ШАПКА КАРТОЧКИ */}
+                  <View style={{ marginBottom: 12 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' }}>
+                      {/* ТУМБЛЕР ИМПЛАНТ */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13 }}>Имплант</Text>
+                      <Switch
+                        value={!!details.isImplant}
+                        onValueChange={(val) => {
+                          setBlockDetails(prev => ({
+                            ...prev,
+                            [blockKey]: { 
+                              ...prev[blockKey], 
+                              isImplant: val, 
+                              fixationType: val ? 'screw' : undefined 
+                            }
+                          }));
+                        }}
+                        trackColor={{ false: '#767577', true: '#E2BD75' }}
+                        thumbColor="#ffffff"
+                        style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+                      />
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 4, marginBottom: 12 }}>
+                      <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>
+                        {blockKey.includes('-') ? 'Мост:' : 'Зуб:'}
+                      </Text>
+                      <Text style={{ color: '#E2BD75', fontSize: 15, fontWeight: '600' }}>
+                        {blockKey.includes('-') ? blockKey.replace(/-/g, ', ') : blockKey}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* ТЕЛО КАРТОЧКИ */}
+                  <View style={{ marginTop: 12 }}>
+                      {/* 1. Материал */}
+                      <Text style={{ color: 'rgba(255,255,255,0.6)', marginBottom: 6 }}>Материал конструкции</Text>
+
+                      {/* ДРОПДАУН ВЫБОРА МАТЕРИАЛА */}
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowWorkTypes(!showWorkTypes);
+                          setSelectedBlockIndex(blockIndex);
+                        }}
+                        style={{
+                          backgroundColor: 'rgba(255,255,255,0.06)',
+                          borderRadius: 8,
+                          padding: 10,
+                          borderWidth: 1,
+                          borderColor: details.material ? '#E2BD75' : 'rgba(255,255,255,0.1)',
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <Text style={{ color: details.material ? '#E2BD75' : 'rgba(255,255,255,0.6)' }}>
+                          {details.material || 'Выберите материал...'}
+                        </Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.4)' }}>▼</Text>
+                      </TouchableOpacity>
+
+                      {showWorkTypes && selectedBlockIndex === blockIndex && (
+                        <View style={{
+                          marginTop: 6,
+                          backgroundColor: '#07111f',
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: 'rgba(226,189,117,0.25)',
+                          overflow: 'hidden',
+                        }}>
+                          {WORK_TYPES.map(workType => (
+                            <TouchableOpacity
+                              key={workType.id}
+                              onPress={() => {
+                                setBlockDetails(prev => ({
+                                  ...prev,
+                                  [blockKey]: { ...prev[blockKey], material: workType.label }
+                                }));
+                                setShowWorkTypes(false);
+                                setSelectedBlockIndex(null);
+                              }}
+                              style={{
+                                paddingVertical: 10,
+                                paddingHorizontal: 12,
+                                borderBottomWidth: 1,
+                                borderBottomColor: 'rgba(255,255,255,0.06)',
+                                backgroundColor: details.material === workType.label ? 'rgba(226,189,117,0.12)' : 'transparent',
+                              }}
+                            >
+                              <Text style={{ color: details.material === workType.label ? '#E2BD75' : '#fff' }}>
+                                {workType.label}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+
+                      {/* 2. Логика имплантов */}
+                      {!!details.isImplant && (
+                        <View style={{ marginTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', paddingTop: 12 }}>
+
+                          {/* ТИП ФИКСАЦИИ */}
+                          <Text style={{ color: 'rgba(255,255,255,0.6)', marginBottom: 8 }}>Тип фиксации:</Text>
+                          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
+                            <TouchableOpacity 
+                              style={{
+                                flex: 1,
+                                padding: 8,
+                                borderRadius: 6,
+                                borderWidth: 1,
+                                borderColor: details.fixationType === 'screw' ? '#E2BD75' : 'rgba(255,255,255,0.2)',
+                                backgroundColor: details.fixationType === 'screw' ? 'rgba(226,189,117,0.1)' : 'transparent',
+                                alignItems: 'center',
+                              }}
+                              onPress={() => setBlockDetails(prev => ({ ...prev, [blockKey]: { ...prev[blockKey], fixationType: 'screw' } }))}
+                            >
+                              <Text style={{ color: '#fff' }}>Винтовая</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                              style={{
+                                flex: 1,
+                                padding: 8,
+                                borderRadius: 6,
+                                borderWidth: 1,
+                                borderColor: details.fixationType === 'cement' ? '#E2BD75' : 'rgba(255,255,255,0.2)',
+                                backgroundColor: details.fixationType === 'cement' ? 'rgba(226,189,117,0.1)' : 'transparent',
+                                alignItems: 'center',
+                              }}
+                              onPress={() => setBlockDetails(prev => ({ ...prev, [blockKey]: { ...prev[blockKey], fixationType: 'cement' } }))}
+                            >
+                              <Text style={{ color: '#fff' }}>Цементная</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* ПОЗУБНЫЙ СПИСОК */}
+                          {blockKey.split('-').map((toothStr) => {
+                            const toothNum = parseInt(toothStr, 10);
+                            const isPontic = !!details.isPontic?.[toothNum];
+
+                            return (
+                              <View key={toothNum} style={{ marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' }}>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                  <Text style={{ color: '#E2BD75', fontWeight: 'bold' }}>Зуб №{toothNum}</Text>
+
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                    <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>Промежуток</Text>
+                                    <TouchableOpacity
+                                      onPress={() => setBlockDetails(prev => ({
+                                        ...prev,
+                                        [blockKey]: {
+                                          ...prev[blockKey],
+                                          isPontic: { ...(prev[blockKey]?.isPontic || {}), [toothNum]: !isPontic }
+                                        }
+                                      }))}
+                                      style={{
+                                        width: 36,
+                                        height: 20,
+                                        borderRadius: 10,
+                                        backgroundColor: isPontic ? '#E2BD75' : 'rgba(255,255,255,0.2)',
+                                        justifyContent: 'center',
+                                      }}
+                                    >
+                                      <View style={{
+                                        width: 16,
+                                        height: 16,
+                                        borderRadius: 8,
+                                        backgroundColor: '#fff',
+                                        alignSelf: isPontic ? 'flex-end' : 'flex-start',
+                                        marginHorizontal: 2,
+                                      }} />
+                                    </TouchableOpacity>
+                                  </View>
+                                </View>
+
+                                {isPontic ? (
+                                  <Text style={{ color: 'rgba(255,255,255,0.4)', fontStyle: 'italic', paddingVertical: 4 }}>
+                                    Промежуточная часть моста (без импланта)
+                                  </Text>
+                                ) : (
+                                  <View>
+                                    <TouchableOpacity
+                                      onPress={() => {
+                                        const key = `${blockKey}-${toothNum}`;
+                                        setOpenImplantDropdownId(prev => prev === key ? null : key);
+                                      }}
+                                      style={{
+                                        backgroundColor: 'rgba(255,255,255,0.06)',
+                                        borderRadius: 8,
+                                        padding: 10,
+                                        borderWidth: 1,
+                                        borderColor: details.implantSystems?.[toothNum] ? '#E2BD75' : 'rgba(255,255,255,0.12)',
+                                      }}
+                                    >
+                                      <Text style={{ color: details.implantSystems?.[toothNum] ? '#E2BD75' : 'rgba(255,255,255,0.6)', fontSize: 12 }}>
+                                        {details.implantSystems?.[toothNum]
+                                          ? details.implantDiameters?.[toothNum]
+                                            ? `${details.implantSystems[toothNum]} ø${details.implantDiameters[toothNum]} мм`
+                                            : details.implantSystems[toothNum]
+                                          : 'Выберите систему имплантов...'}
+                                      </Text>
+                                    </TouchableOpacity>
+
+                                    {openImplantDropdownId === `${blockKey}-${toothNum}` && (
+                                      <View style={{
+                                        marginTop: 4,
+                                        backgroundColor: '#07111f',
+                                        borderRadius: 8,
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(226,189,117,0.25)',
+                                        overflow: 'hidden',
+                                      }}>
+                                        {!details.implantSystems?.[toothNum] ? (
+                                          (Object.keys(IMPLANT_SYSTEMS) as Array<keyof typeof IMPLANT_SYSTEMS>).map(system => (
+                                            <TouchableOpacity
+                                              key={system}
+                                              onPress={() => {
+                                                setBlockDetails(prev => ({
+                                                  ...prev,
+                                                  [blockKey]: {
+                                                    ...prev[blockKey],
+                                                    implantSystems: { ...(prev[blockKey]?.implantSystems || {}), [toothNum]: system },
+                                                    implantDiameters: { ...(prev[blockKey]?.implantDiameters || {}), [toothNum]: '' },
+                                                  }
+                                                }));
+                                              }}
+                                              style={{
+                                                paddingVertical: 10,
+                                                paddingHorizontal: 12,
+                                                borderBottomWidth: 1,
+                                                borderBottomColor: 'rgba(255,255,255,0.06)',
+                                              }}
+                                            >
+                                              <Text style={{ color: '#fff', fontSize: 12 }}>{system}</Text>
+                                            </TouchableOpacity>
+                                          ))
+                                        ) : (
+                                          IMPLANT_SYSTEMS[details.implantSystems[toothNum] as keyof typeof IMPLANT_SYSTEMS].map(diameter => (
+                                            <TouchableOpacity
+                                              key={diameter}
+                                              onPress={() => {
+                                                setBlockDetails(prev => ({
+                                                  ...prev,
+                                                  [blockKey]: {
+                                                    ...prev[blockKey],
+                                                    implantDiameters: { ...(prev[blockKey]?.implantDiameters || {}), [toothNum]: diameter },
+                                                  }
+                                                }));
+                                                setOpenImplantDropdownId(null);
+                                              }}
+                                              style={{
+                                                paddingVertical: 10,
+                                                paddingHorizontal: 12,
+                                                borderBottomWidth: 1,
+                                                borderBottomColor: 'rgba(255,255,255,0.06)',
+                                              }}
+                                            >
+                                              <Text style={{ color: '#fff', fontSize: 12 }}>ø{diameter} мм</Text>
+                                            </TouchableOpacity>
+                                          ))
+                                        )}
+                                      </View>
+                                    )}
+                                  </View>
+                                )}
+                              </View>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         {/* Цвет VITA */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ЦВЕТ VITA</Text>
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 16,
+          }}>
+            <Text style={styles.sectionTitle}>ЦВЕТ VITA</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setVitaResult(null);
+              }}
+              style={{
+                padding: 4,
+                borderRadius: 4,
+                backgroundColor: 'rgba(255,255,255,0.05)',
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
+            </TouchableOpacity>
+          </View>
           {vitaResult ? (
   <View style={{
     borderWidth: 1,
@@ -854,7 +1137,7 @@ export default function NewOrderScreen() {
     {/* Детали — скрыты по умолчанию */}
     {showVitaDetails && (
       <View style={{ padding: 16 }}>
-        
+
         {/* Фото */}
         {(vitaResult.imageUri || vitaResult.originalImageUri) && (
           <TouchableOpacity
@@ -974,7 +1257,20 @@ export default function NewOrderScreen() {
   </View>
 ) : (
   <TouchableOpacity
-    onPress={() => router.push('/color-analyzer')}
+    onPress={async () => {
+      try {
+        // Сохраняем текущие состояния в AsyncStorage перед переходом
+        await AsyncStorage.setItem('tempBlockDetails', JSON.stringify(blockDetails));
+        await AsyncStorage.setItem('tempConnections', JSON.stringify(connections));
+
+        // Переходим на экран цвета
+        router.push('/color-analyzer');
+      } catch (error) {
+        console.error('Error saving states:', error);
+        // Если сохранение не удалось, все равно переходим
+        router.push('/color-analyzer');
+      }
+    }}
     style={{
       borderWidth: 1,
       borderColor: 'rgba(255,255,255,0.2)',
@@ -1009,24 +1305,22 @@ export default function NewOrderScreen() {
           />
         </View>
 
-        {/* Расширенные данные */}
+        {/* Расширенные параметры */}
         <View style={styles.section}>
-          <TouchableOpacity onPress={() => setShowExtended(!showExtended)} style={styles.extendedHeader}>
-            <Text style={styles.sectionTitle}>
-              Дополнительно {showExtended ? '▲' : '▼'}
-            </Text>
+          <TouchableOpacity
+            style={styles.extendedHeader}
+            onPress={() => setShowExtended(!showExtended)}
+          >
+            <Text style={styles.sectionTitle}>ДОПОЛНИТЕЛЬНО</Text>
+            <Ionicons
+              name={showExtended ? 'chevron-up' : 'chevron-down'}
+              size={20} color="
+#f2ca50"
+            />
           </TouchableOpacity>
-          
+
           {showExtended && (
             <View style={styles.extendedContent}>
-              <TextInput
-                style={styles.input}
-                placeholder="Система имплантов"
-                placeholderTextColor="rgba(255,255,255,0.4)"
-                value={implantSystem}
-                onChangeText={setImplantSystem}
-              />
-              
               <Text style={styles.subTitle}>Фиксация</Text>
               <View style={styles.optionsRow}>
                 <TouchableOpacity
@@ -1039,9 +1333,7 @@ export default function NewOrderScreen() {
                   <Text style={[
                     styles.optionBtnText,
                     fixationType === 'screw' && styles.optionBtnTextSelected
-                  ]}>
-                    Винтовая
-                  </Text>
+                  ]}>Винтовая</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => setFixationType('cement')}
@@ -1053,12 +1345,10 @@ export default function NewOrderScreen() {
                   <Text style={[
                     styles.optionBtnText,
                     fixationType === 'cement' && styles.optionBtnTextSelected
-                  ]}>
-                    Цементная
-                  </Text>
+                  ]}>Цементная</Text>
                 </TouchableOpacity>
               </View>
-              
+
               <Text style={styles.subTitle}>Анатомия</Text>
               <View style={styles.optionsRow}>
                 <TouchableOpacity
@@ -1071,9 +1361,7 @@ export default function NewOrderScreen() {
                   <Text style={[
                     styles.optionBtnText,
                     anatomyType === 'full' && styles.optionBtnTextSelected
-                  ]}>
-                    Полная
-                  </Text>
+                  ]}>Полная</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => setAnatomyType('apply')}
@@ -1085,12 +1373,10 @@ export default function NewOrderScreen() {
                   <Text style={[
                     styles.optionBtnText,
                     anatomyType === 'apply' && styles.optionBtnTextSelected
-                  ]}>
-                    Нанесение
-                  </Text>
+                  ]}>Нанесение</Text>
                 </TouchableOpacity>
               </View>
-              
+
               <Text style={styles.subTitle}>Конструкция</Text>
               <View style={styles.optionsRow}>
                 <TouchableOpacity
@@ -1103,9 +1389,7 @@ export default function NewOrderScreen() {
                   <Text style={[
                     styles.optionBtnText,
                     structureType === 'single' && styles.optionBtnTextSelected
-                  ]}>
-                    Одиночки
-                  </Text>
+                  ]}>Одиночки</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => setStructureType('bridge')}
@@ -1117,9 +1401,7 @@ export default function NewOrderScreen() {
                   <Text style={[
                     styles.optionBtnText,
                     structureType === 'bridge' && styles.optionBtnTextSelected
-                  ]}>
-                    Мост
-                  </Text>
+                  ]}>Мост</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => setStructureType('garland')}
@@ -1131,20 +1413,15 @@ export default function NewOrderScreen() {
                   <Text style={[
                     styles.optionBtnText,
                     structureType === 'garland' && styles.optionBtnTextSelected
-                  ]}>
-                    Гирлянда
-                  </Text>
+                  ]}>Гирлянда</Text>
                 </TouchableOpacity>
               </View>
             </View>
           )}
         </View>
 
-        <View style={{ 
-          paddingTop: 8,
-          paddingBottom: 32,
-          gap: 8,
-        }}>
+        {/* Кнопки */}
+        <View style={{ paddingTop: 8, paddingBottom: 32, gap: 8 }}>
           <TouchableOpacity
             style={{
               backgroundColor: '#f2ca50',
@@ -1154,11 +1431,9 @@ export default function NewOrderScreen() {
             }}
             onPress={handleSubmit}
           >
-            <Text style={{
-              color: '#031427',
-              fontSize: 16,
-              fontWeight: '700',
-            }}>Отправить наряд</Text>
+            <Text style={{ color: '#031427', fontSize: 16, fontWeight: '700' }}>
+              Отправить наряд
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -1172,16 +1447,14 @@ export default function NewOrderScreen() {
             }}
             onPress={() => setShowClearModal(true)}
           >
-            <Text style={{
-              color: '#ff4444',
-              fontSize: 15,
-              fontWeight: '500',
-            }}>🗑 Очистить наряд</Text>
+            <Text style={{ color: '#ff4444', fontSize: 15, fontWeight: '500' }}>
+              🗑 Очистить наряд
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      {/* Модалки календаря */}
+      {/* Календари */}
       {showWorkDatePicker && (
         <DateTimePicker
           value={workDate}
@@ -1336,6 +1609,16 @@ export default function NewOrderScreen() {
                   setToothTypes({});
                   setImplantData({});
                   setBridges([]);
+                  setConnections([]); // Очищаем точки соединений зубов
+                  setSelectedTeeth([]); // Очищаем выбранные зубы
+                  // Сбрасываем детали блоков и состояния дропдаунов
+                  setBlockDetails({});
+                  setBlockMaterials({});
+                  setShowImplantSystems({});
+                  setShowImplantDiameters({});
+                  setOpenImplantDropdownId(null);
+                  setSelectedBlockIndex(null);
+                  setShowWorkTypes(false);
                   await AsyncStorage.removeItem('orderDraft');
                   await AsyncStorage.removeItem('pendingVitaResult');
                 }}
@@ -1588,10 +1871,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#f2ca50',
   },
-  container: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
   section: {
     backgroundColor: '#0a1628ee',
     borderRadius: 16,
@@ -1634,64 +1913,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
   },
-  jawTitle: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  teethRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 16,
-  },
-  workTypesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  workTypeBtn: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 10,
-    padding: 10,
-    margin: 4,
-    alignItems: 'center',
-  },
-  workTypeBtnSelected: {
-    borderColor: '#f2ca50',
-    backgroundColor: 'rgba(242,202,80,0.15)',
-  },
-  workTypeBtnText: {
-    fontSize: 13,
-    color: 'white',
-  },
-  workTypeBtnTextSelected: {
-    color: '#f2ca50',
-  },
-  vitaBlock: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  vitaBlockSelected: {
-    borderColor: '#f2ca50',
-  },
-  vitaShade: {
-    color: '#f2ca50',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  vitaZones: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 12,
-  },
-  vitaPlaceholder: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 15,
-  },
   extendedHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1728,25 +1949,6 @@ const styles = StyleSheet.create({
   },
   optionBtnTextSelected: {
     color: '#f2ca50',
-  },
-  footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#0a1628ee',
-    padding: 16,
-  },
-  primaryBtn: {
-    backgroundColor: '#f2ca50',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-  },
-  primaryBtnText: {
-    color: '#031427',
-    fontSize: 16,
-    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
@@ -1797,5 +1999,34 @@ const styles = StyleSheet.create({
     color: '#031427',
     fontSize: 16,
     fontWeight: '600',
+  },
+  toothButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toothSelected: {
+    borderColor: '#f2ca50',
+    backgroundColor: 'rgba(242,202,80,0.2)',
+  },
+  toothPontic: {
+    borderStyle: 'dashed',
+    opacity: 0.7,
+    backgroundColor: 'rgba(242,202,80,0.1)',
+  },
+  toothText: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.4)',
+  },
+  sectionLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.6)',
+    marginBottom: 8,
   },
 });
