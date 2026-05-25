@@ -5,7 +5,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { push, ref } from 'firebase/database';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -23,13 +23,26 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function NewOrderScreen() {
   const insets = useSafeAreaInsets();
+  const topJawScrollRef = useRef<ScrollView>(null);
+  const bottomJawScrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    setTimeout(() => {
+      topJawScrollRef.current?.scrollTo({ x: 220, animated: false });
+      bottomJawScrollRef.current?.scrollTo({ x: 220, animated: false });
+    }, 100);
+  }, []);
 
   // Основные
   const [doctorName, setDoctorName] = useState('');
   const [patientName, setPatientName] = useState('');
   const [techName, setTechName] = useState('');
-  const [workDate, setWorkDate] = useState<Date>(new Date());
-  const [deliveryDate, setDeliveryDate] = useState<Date>(new Date());
+  // Даты
+  const [dates, setDates] = useState({
+    impressions: new Date(),
+    fitting: null as Date | null,
+    delivery: null as Date | null,
+  });
   const [selectedTeeth, setSelectedTeeth] = useState<{number: number, type: 'crown' | 'pontic'}[]>([]);
   const [workType, setWorkType] = useState('');
   const [workNote, setWorkNote] = useState('');
@@ -49,8 +62,7 @@ export default function NewOrderScreen() {
   const [showClearModal, setShowClearModal] = useState(false);
 
   // Календарь
-  const [showWorkDatePicker, setShowWorkDatePicker] = useState(false);
-  const [showDeliveryDatePicker, setShowDeliveryDatePicker] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState<string | null>(null);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
   const [showWorkTypes, setShowWorkTypes] = useState(false);
@@ -171,8 +183,13 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
           if (d.doctorName) setDoctorName(d.doctorName);
           if (d.patientName) setPatientName(d.patientName);
           if (d.techName) setTechName(d.techName);
-          if (d.workDate) setWorkDate(new Date(d.workDate));
-          if (d.deliveryDate) setDeliveryDate(new Date(d.deliveryDate));
+          if (d.dates) {
+            setDates({
+              impressions: new Date(d.dates.impressions),
+              fitting: d.dates.fitting ? new Date(d.dates.fitting) : null,
+              delivery: d.dates.delivery ? new Date(d.dates.delivery) : null,
+            });
+          }
           if (d.selectedTeeth) setSelectedTeeth(d.selectedTeeth);
           if (d.workType) setWorkType(d.workType);
           if (d.workNote) setWorkNote(d.workNote);
@@ -205,8 +222,11 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
         doctorName,
         patientName,
         techName,
-        workDate: workDate.toISOString(),
-        deliveryDate: deliveryDate.toISOString(),
+        dates: {
+          impressions: dates.impressions.toISOString(),
+          fitting: dates.fitting?.toISOString() || null,
+          delivery: dates.delivery?.toISOString() || null,
+        },
         selectedTeeth,
         workType,
         workNote,
@@ -218,9 +238,7 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
       await AsyncStorage.setItem('orderDraft', JSON.stringify(draft));
     };
     saveDraft();
-  }, [doctorName, patientName, techName, workDate, 
-      deliveryDate, selectedTeeth, workType, workNote, 
-      implantsEnabled, toothTypes, implantData, bridges]);
+  }, [doctorName, patientName, techName, dates, selectedTeeth, workType, workNote, implantsEnabled, toothTypes, implantData, bridges]);
 
   // ФОРМУЛА ЗУБОВ
   const upperJaw = [18,17,16,15,14,13,12,11, 21,22,23,24,25,26,27,28];
@@ -322,10 +340,12 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
       newDate.setFullYear(newDate.getFullYear() + increment);
     }
 
-    if (showWorkDatePicker) {
-      setWorkDate(newDate);
-    } else if (showDeliveryDatePicker) {
-      setDeliveryDate(newDate);
+    if (showDatePicker === 'impressions') {
+      setDates(prev => ({ ...prev, impressions: newDate }));
+    } else if (showDatePicker === 'fitting') {
+      setDates(prev => ({ ...prev, fitting: newDate }));
+    } else if (showDatePicker === 'delivery') {
+      setDates(prev => ({ ...prev, delivery: newDate }));
     }
   };
 
@@ -436,7 +456,7 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
             alignItems: 'center',
             marginBottom: 16,
           }}>
-            <Text style={styles.sectionTitle}>ВРАЧ</Text>
+            <Text style={styles.sectionTitle}>👨‍⚕️ ВРАЧ</Text>
             <TouchableOpacity
               onPress={() => {
                 setDoctorName('');
@@ -468,7 +488,7 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
             alignItems: 'center',
             marginBottom: 16,
           }}>
-            <Text style={styles.sectionTitle}>ПАЦИЕНТ</Text>
+            <Text style={styles.sectionTitle}>👤 ПАЦИЕНТ</Text>
             <TouchableOpacity
               onPress={() => {
                 setPatientName('');
@@ -501,7 +521,7 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
             alignItems: 'center',
             marginBottom: 16,
           }}>
-            <Text style={styles.sectionTitle}>ТЕХНИК</Text>
+            <Text style={styles.sectionTitle}>👨‍💻 ТЕХНИК</Text>
             <TouchableOpacity
               onPress={() => {
                 setTechName('');
@@ -533,10 +553,14 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
             alignItems: 'center',
             marginBottom: 16,
           }}>
-            <Text style={styles.sectionTitle}>ДАТЫ</Text>
+            <Text style={styles.sectionTitle}>📅 ДАТЫ</Text>
             <TouchableOpacity
               onPress={() => {
-                setDeliveryDate(new Date());
+                setDates({
+                  impressions: new Date(),
+                  fitting: null,
+                  delivery: null,
+                });
               }}
               style={{
                 padding: 4,
@@ -548,15 +572,21 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
               <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
             </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={() => setShowWorkDatePicker(true)} style={styles.dateInput}>
+          <TouchableOpacity onPress={() => setShowDatePicker('impressions')} style={styles.dateInput}>
             <Text style={styles.dateText}>
-              Дата работы: {workDate.toLocaleDateString('ru-RU')}
+              <Text style={{ color: '#f2ca50' }}>Оттиски:</Text> {dates.impressions.toLocaleDateString('ru-RU')}
             </Text>
             <Ionicons name="calendar" size={20} color="#f2ca50" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setShowDeliveryDatePicker(true)} style={styles.dateInput}>
+          <TouchableOpacity onPress={() => setShowDatePicker('fitting')} style={styles.dateInput}>
             <Text style={styles.dateText}>
-              Дата выдачи: {deliveryDate.toLocaleDateString('ru-RU')}
+              <Text style={{ color: '#f2ca50' }}>Примерка:</Text> {dates.fitting ? dates.fitting.toLocaleDateString('ru-RU') : 'Не назначена'}
+            </Text>
+            <Ionicons name="calendar" size={20} color="#f2ca50" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowDatePicker('delivery')} style={styles.dateInput}>
+            <Text style={styles.dateText}>
+              <Text style={{ color: '#f2ca50' }}>Сдача:</Text> {dates.delivery ? dates.delivery.toLocaleDateString('ru-RU') : 'Не назначена'}
             </Text>
             <Ionicons name="calendar" size={20} color="#f2ca50" />
           </TouchableOpacity>
@@ -569,7 +599,7 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
             alignItems: 'center',
             marginBottom: 16,
           }}>
-            <Text style={styles.sectionTitle}>ЗУБНАЯ ФОРМУЛА</Text>
+            <Text style={styles.sectionTitle}>🦷 ЗУБНАЯ ФОРМУЛА</Text>
             <TouchableOpacity
               onPress={() => {
                 setSelectedTeeth([]);
@@ -592,9 +622,10 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
   <ScrollView 
     horizontal 
     showsHorizontalScrollIndicator={false}
-    contentContainerStyle={{ paddingHorizontal: 15 }}
+    contentContainerStyle={{ paddingHorizontal: 15, flexGrow: 1, justifyContent: 'center', alignItems: 'center' }}
+    ref={topJawScrollRef}
   >
-    <View style={{ flexDirection: 'row', paddingVertical: 10 }}>
+    <View style={{ flexDirection: 'row', paddingVertical: 10, justifyContent: 'center', alignItems: 'center', width: '100%' }}>
       {[18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28].map((toothNumber, idx, arr) => {
         const isSelected = selectedTeeth.some(t => t.number === toothNumber);
         const toothData = selectedTeeth.find(t => t.number === toothNumber);
@@ -654,9 +685,10 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
   <ScrollView 
     horizontal 
     showsHorizontalScrollIndicator={false}
-    contentContainerStyle={{ paddingHorizontal: 15 }}
+    contentContainerStyle={{ paddingHorizontal: 15, flexGrow: 1, justifyContent: 'center', alignItems: 'center' }}
+    ref={bottomJawScrollRef}
   >
-    <View style={{ flexDirection: 'row', paddingVertical: 10 }}>
+    <View style={{ flexDirection: 'row', paddingVertical: 10, justifyContent: 'center', alignItems: 'center', width: '100%' }}>
       {[48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38].map((toothNumber, idx, arr) => {
         const isSelected = selectedTeeth.some(t => t.number === toothNumber);
         const toothData = selectedTeeth.find(t => t.number === toothNumber);
@@ -725,7 +757,7 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
                 style={{ flex: 1 }}
                 activeOpacity={0.7}
               >
-                <Text style={styles.sectionTitle}>КОНСТРУКЦИИ {showConstructions ? '▼' : '►'}</Text>
+                <Text style={styles.sectionTitle}>🛠️ КОНСТРУКЦИИ {showConstructions ? '▼' : '►'}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => {
@@ -1086,7 +1118,7 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
             alignItems: 'center',
             marginBottom: 16,
           }}>
-            <Text style={styles.sectionTitle}>ЦВЕТ VITA</Text>
+            <Text style={styles.sectionTitle}>🎨 ЦВЕТ VITA</Text>
             <TouchableOpacity
               onPress={() => {
                 setVitaResult(null);
@@ -1293,7 +1325,7 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
 
         {/* Примечание */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ПРИМЕЧАНИЕ</Text>
+          <Text style={styles.sectionTitle}>📝 ПРИМЕЧАНИЕ</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
             placeholder="Дополнительная информация"
@@ -1454,27 +1486,23 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
         </View>
       </ScrollView>
 
-      {/* Календари */}
-      {showWorkDatePicker && (
+      {/* Календарь */}
+      {showDatePicker && (
         <DateTimePicker
-          value={workDate}
+          value={dates[showDatePicker] || new Date()}
           mode="date"
           display="calendar"
           onChange={(event, date) => {
-            setShowWorkDatePicker(false);
-            if (date) setWorkDate(date);
-          }}
-        />
-      )}
-
-      {showDeliveryDatePicker && (
-        <DateTimePicker
-          value={deliveryDate}
-          mode="date"
-          display="calendar"
-          onChange={(event, date) => {
-            setShowDeliveryDatePicker(false);
-            if (date) setDeliveryDate(date);
+            setShowDatePicker(null);
+            if (date) {
+              if (showDatePicker === 'impressions') {
+                setDates(prev => ({ ...prev, impressions: date }));
+              } else if (showDatePicker === 'fitting') {
+                setDates(prev => ({ ...prev, fitting: date }));
+              } else if (showDatePicker === 'delivery') {
+                setDates(prev => ({ ...prev, delivery: date }));
+              }
+            }
           }}
         />
       )}
@@ -1595,8 +1623,11 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
                   setDoctorName('');
                   setPatientName('');
                   setTechName('');
-                  setWorkDate(new Date());
-                  setDeliveryDate(new Date());
+                  setDates({
+                    impressions: new Date(),
+                    fitting: null,
+                    delivery: null,
+                  });
                   setSelectedTeeth([]);
                   setWorkType('');
                   setWorkNote('');
