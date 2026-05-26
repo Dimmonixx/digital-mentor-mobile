@@ -10,6 +10,7 @@ import {
   Alert,
   Image,
   ImageBackground,
+  Keyboard,
   Modal,
   ScrollView,
   StyleSheet,
@@ -20,6 +21,7 @@ import {
   View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { playSuccessSound } from '../utils/audio';
 
 export default function NewOrderScreen() {
   const insets = useSafeAreaInsets();
@@ -369,6 +371,8 @@ export default function NewOrderScreen() {
   };
 
   const handleSubmit = async () => {
+    Keyboard.dismiss();
+
     if (!selectedDoctor || !selectedTechnician || !patientName.trim()) {
       Alert.alert('Внимание', 'Пожалуйста, заполните ФИО пациента, а также выберите врача и техника.');
       return;
@@ -399,10 +403,11 @@ export default function NewOrderScreen() {
       createdAt: Date.now(),
     };
     await push(ref(database, 'orders'), order);
+    await playSuccessSound();
     await AsyncStorage.removeItem('orderDraft');
     setLoading(false);
     Alert.alert('Успешно!', 'Наряд отправлен технику', [
-      { text: 'OK', onPress: () => router.back() }
+      { text: 'OK', onPress: () => setTimeout(() => router.back(), 400) }
     ]);
   };
 

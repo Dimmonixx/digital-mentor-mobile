@@ -1,17 +1,22 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Redirect, Tabs } from 'expo-router';
+import { Redirect, Tabs, router } from 'expo-router';
+import { onValue, ref } from 'firebase/database';
 import React, { useEffect, useState } from 'react';
-import { Image, ImageBackground, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Image, ImageBackground, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
+import { database } from '@/constants/firebase';
 import { HeaderHeightProvider } from '../../context/HeaderHeightContext';
+import { playSuccessSound } from '../../utils/audio';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [newOrdersCount, setNewOrdersCount] = useState(0);
+  const [previousNewOrdersCount, setPreviousNewOrdersCount] = useState(0);
 
   useEffect(() => {
     AsyncStorage.getItem('user').then((data) => {
@@ -21,12 +26,42 @@ export default function TabLayout() {
     });
   }, []);
 
+  // Глобальный слушатель нарядов из Firebase
+  useEffect(() => {
+    const ordersRef = ref(database, 'orders');
+    const unsubscribe = onValue(ordersRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const ordersList = Object.entries(data).map(([id, order]: any) => ({
+          id,
+          ...order,
+        }));
+        
+        // Подсчитываем количество новых нарядов
+        const currentNewOrdersCount = ordersList.filter(order => order.status === 'new').length;
+        setNewOrdersCount(currentNewOrdersCount);
+        
+        // Если количество новых нарядов увеличилось - играем звук
+        if (currentNewOrdersCount > previousNewOrdersCount && previousNewOrdersCount > 0) {
+          playSuccessSound();
+        }
+        
+        setPreviousNewOrdersCount(currentNewOrdersCount);
+      } else {
+        setNewOrdersCount(0);
+        setPreviousNewOrdersCount(0);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [previousNewOrdersCount]);
+
   if (loading) return null;
   if (!user) return <Redirect href="/auth" />;
 
   return (
     <HeaderHeightProvider>
-      {({ setHeaderHeight }) => (
+      {({ setHeaderHeight }: { setHeaderHeight: (height: number) => void }) => (
         <>
           <StatusBar barStyle="light-content" backgroundColor="#031427" />
           <ImageBackground
@@ -48,8 +83,25 @@ export default function TabLayout() {
                 resizeMode="contain"
               />
               <View style={styles.headerRight}>
-                <TouchableOpacity style={styles.headerIconBtn}>
+                <TouchableOpacity 
+                  style={styles.headerIconBtn}
+                  onPress={() => {
+                    // Переключаемся на вкладку Наряды и фильтр "Новые"
+                    router.push('/(tabs)/search');
+                    // Вызываем функцию для показа новых нарядов
+                    setTimeout(() => {
+                      (window as any).showNewOrders?.();
+                    }, 100);
+                  }}
+                >
                   <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
+                  {newOrdersCount > 0 && (
+                    <View style={styles.notificationBadge}>
+                      <Text style={styles.notificationBadgeText}>
+                        {newOrdersCount > 99 ? '99+' : newOrdersCount.toString()}
+                      </Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -81,8 +133,8 @@ export default function TabLayout() {
           <Tabs.Screen
             name="search"
             options={{
-              title: 'Search',
-              tabBarIcon: ({ color }) => <Ionicons size={22} name="search" color={color} />,
+              title: 'Наряды',
+              tabBarIcon: ({ color }) => <Ionicons size={22} name="clipboard-outline" color={color} />,
             }}
           />
           <Tabs.Screen
@@ -147,5 +199,24 @@ const styles = StyleSheet.create({
   },
   headerIconBtn: {
     padding: 4,
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#E2BD75',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#031427',
+  },
+  notificationBadgeText: {
+    color: '#031427',
+    fontSize: 11,
+    fontWeight: 'bold',
+    paddingHorizontal: 4,
   },
 });

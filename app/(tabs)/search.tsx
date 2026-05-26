@@ -33,6 +33,27 @@ export default function SearchScreen() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [filter, setFilter] = useState<'all' | 'new' | 'in_progress' | 'ready'>('all');
+  const [shouldShowNewOrders, setShouldShowNewOrders] = useState(false);
+
+  // Проверяем флаг для показа новых нарядов
+  useEffect(() => {
+    if (shouldShowNewOrders && !loading) {
+      setFilter('new');
+      setShouldShowNewOrders(false);
+    }
+  }, [shouldShowNewOrders, loading]);
+
+  // Регистрация функции для переключения на новые наряды
+  useEffect(() => {
+    // Экспортируем функцию для вызова из _layout.tsx
+    (window as any).showNewOrders = () => {
+      setShouldShowNewOrders(true);
+    };
+
+    return () => {
+      delete (window as any).showNewOrders;
+    };
+  }, []);
 
   // Загрузка пользователя
   useEffect(() => {
@@ -41,7 +62,7 @@ export default function SearchScreen() {
     });
   }, []);
 
-  // Real-time listener на наряды
+  // Real-time listener на наряды (только для отображения)
   useEffect(() => {
     const ordersRef = ref(database, 'orders');
     const unsubscribe = onValue(ordersRef, (snapshot) => {
