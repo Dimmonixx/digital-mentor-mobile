@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 
 export type LangType = 'uk' | 'en' | 'ru';
 
@@ -194,7 +194,7 @@ const translations = {
     chatTechnicians: 'Чат Техников',
     techCard: 'Тех-Карта',
     colorAnalysis: 'Анализ цвета',
-    newOrder: '📋 Новый наряд',
+    newOrder: 'Новый наряд',
     login: 'Вход',
     register: 'Регистрация',
     email: 'Email',

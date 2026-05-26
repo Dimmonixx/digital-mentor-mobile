@@ -757,7 +757,12 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
                 style={{ flex: 1 }}
                 activeOpacity={0.7}
               >
-                <Text style={styles.sectionTitle}>🛠️ КОНСТРУКЦИИ {showConstructions ? '▼' : '►'}</Text>
+                <Text style={styles.sectionTitle}>
+                  🛠️ КОНСТРУКЦИИ{' '}
+                  <Text style={{ color: '#E2BD75', fontSize: 13, fontWeight: 'bold' }}>
+                    {showConstructions ? '▼' : '►'}
+                  </Text>
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => {
@@ -787,30 +792,33 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
               }
 
               return (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 6, gap: 6 }}>
-                  {blocks.map((block, index) => {
+                <View style={{ flexDirection: 'column', marginTop: 8, gap: 4 }}>
+                  {blocks.map((block) => {
                     const blockKey = block.map(t => t.number).join('-');
                     const details = blockDetails[blockKey] || {};
                     const type = blockKey.includes('-') ? 'Мост' : 'Зуб';
                     const teeth = blockKey.includes('-') ? blockKey.replace(/-/g, ', ') : blockKey;
+                    const material = details.material ? details.material : 'не выбран';
                     const hasImplant = !!details.isImplant;
 
                     return (
-                      <View key={blockKey} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        {/* Тип конструкции */}
-                        <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '500' }}>{type} </Text>
+                      <View key={blockKey} style={{ flexDirection: 'column', gap: 2, marginBottom: 6 }}>
+                        {/* Строка 1: Название и зубы */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '600' }}>{type} </Text>
+                          <Text style={{ color: '#E2BD75', fontSize: 15, fontWeight: '600' }}>({teeth})</Text>
+                        </View>
                         
-                        {/* Номера зубов (Выделяем золотом) */}
-                        <Text style={{ color: '#E2BD75', fontSize: 13, fontWeight: '600' }}>({teeth})</Text>
+                        {/* Строка 2: Только название материала */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '500' }}>{material}</Text>
+                        </View>
                         
-                        {/* Статус импланта (Мягкий зеленый/бирюзовый акцент) */}
+                        {/* Строка 3: Статус импланта без точки */}
                         {hasImplant && (
-                          <Text style={{ color: '#64D2FF', fontSize: 13, fontWeight: '500' }}> • На имплантах</Text>
-                        )}
-
-                        {/* Разделитель между разными блоками, если их несколько */}
-                        {index < blocks.length - 1 && (
-                          <Text style={{ color: 'rgba(255,255,255,0.3)', marginHorizontal: 6 }}>|</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                            <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '600' }}>На имплантах</Text>
+                          </View>
                         )}
                       </View>
                     );
@@ -1343,12 +1351,11 @@ const [blockDetails, setBlockDetails] = useState<Record<string, {
             style={styles.extendedHeader}
             onPress={() => setShowExtended(!showExtended)}
           >
-            <Text style={styles.sectionTitle}>ДОПОЛНИТЕЛЬНО</Text>
-            <Ionicons
-              name={showExtended ? 'chevron-up' : 'chevron-down'}
-              size={20} color="
-#f2ca50"
-            />
+            <Text style={styles.sectionTitle}>ДОПОЛНИТЕЛЬНО{' '}
+              <Text style={{ color: '#E2BD75', fontSize: 13, fontWeight: 'bold' }}>
+                {showExtended ? '▼' : '►'}
+              </Text>
+            </Text>
           </TouchableOpacity>
 
           {showExtended && (
