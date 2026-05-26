@@ -452,27 +452,67 @@ export default function NewOrderScreen() {
       style={styles.bg}
       resizeMode="cover"
     >
-      <StatusBar style="light" backgroundColor="#0a0a1a" />
+      <StatusBar style="light" backgroundColor="transparent" translucent />
 
-      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <TouchableOpacity style={styles.headerIconBtn}>
+          <Ionicons name="menu-outline" size={28} color="#f2ca50" />
+        </TouchableOpacity>
+        <Image
+          source={require('@/assets/images/header-logo.png')}
+          style={styles.headerLogo}
+          resizeMode="contain"
+        />
+        <View style={styles.headerRight}>
+          <TouchableOpacity 
+            style={styles.headerIconBtn}
+            onPress={() => {
+              router.push('/(tabs)/search');
+              setTimeout(() => {
+                (window as any).showNewOrders?.();
+              }, 100);
+            }}
+          >
+            <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationBadgeText}>3</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Локальная навигация */}
+      <View style={[styles.localHeader, { paddingTop: 8 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color="#f2ca50" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Новый наряд</Text>
-        <View style={styles.headerBtn} />
+        <Text style={styles.localTitle}>Новый наряд</Text>
+        <View style={styles.backBtn} />
       </View>
 
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 16 }}
       >
-        {/* Врач */}
+        {/* Анкета: Врач, Пациент, Техник */}
         <View style={styles.section}>
           <View style={styles.cardContainer}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            {/* Врач */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <Text style={styles.sectionTitle}>👨‍⚕️ ВРАЧ</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setSelectedDoctor(null);
+                  setPatientName('');
+                  setSelectedTechnician(null);
+                }}
+                style={{ padding: 4, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.05)' }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={() => setShowDoctorModal(true)} style={styles.input}>
+            <TouchableOpacity onPress={() => setShowDoctorModal(true)} style={[styles.input, { marginBottom: 12 }]}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flex: 1 }}>
                 <Text style={{ color: selectedDoctor ? '#ffffff' : 'rgba(255,255,255,0.4)', fontSize: 16, fontWeight: '500' }}>
                   {selectedDoctor?.name || 'Выберите врача'}
@@ -480,36 +520,27 @@ export default function NewOrderScreen() {
                 <Ionicons name="chevron-down" size={16} color="#f2ca50" />
               </View>
             </TouchableOpacity>
-          </View>
-        </View>
 
-        {/* Пациент */}
-        <View style={styles.section}>
-          <View style={styles.cardContainer}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            {/* Разделитель */}
+            <View style={{ height: 1, backgroundColor: 'rgba(242,202,80,0.15)', marginVertical: 8 }} />
+
+            {/* Пациент */}
+            <View style={{ marginBottom: 12 }}>
               <Text style={styles.sectionTitle}>👤 ПАЦИЕНТ</Text>
-              <TouchableOpacity
-                onPress={() => setPatientName('')}
-                style={{ padding: 4, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
-              </TouchableOpacity>
             </View>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { marginBottom: 12 }]}
               placeholder="ФИО пациента *"
               placeholderTextColor="rgba(255,255,255,0.4)"
               value={patientName}
               onChangeText={setPatientName}
             />
-          </View>
-        </View>
 
-        {/* Техник */}
-        <View style={styles.section}>
-          <View style={styles.cardContainer}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            {/* Разделитель */}
+            <View style={{ height: 1, backgroundColor: 'rgba(242,202,80,0.15)', marginVertical: 8 }} />
+
+            {/* Техник */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <Text style={styles.sectionTitle}>👨‍💻 ТЕХНИК</Text>
             </View>
             <TouchableOpacity onPress={() => setShowTechnicianModal(true)} style={styles.input}>
@@ -525,6 +556,7 @@ export default function NewOrderScreen() {
 
         {/* Даты */}
         <View style={styles.section}>
+          <View style={styles.cardContainer}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <Text style={styles.sectionTitle}>📅 ДАТЫ</Text>
             <TouchableOpacity
@@ -553,123 +585,126 @@ export default function NewOrderScreen() {
             </Text>
             <Ionicons name="calendar" size={20} color="#f2ca50" />
           </TouchableOpacity>
+          </View>
         </View>
 
         {/* Зубная формула */}
         <View style={styles.section}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <Text style={styles.sectionTitle}>🦷 ЗУБНАЯ ФОРМУЛА</Text>
-            <TouchableOpacity
-              onPress={() => { setSelectedTeeth([]); setConnections([]); }}
-              style={{ padding: 4, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.05)' }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
-            </TouchableOpacity>
-          </View>
+          <View style={styles.cardContainer}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={styles.sectionTitle}>🦷 ЗУБНАЯ ФОРМУЛА</Text>
+              <TouchableOpacity
+                onPress={() => { setSelectedTeeth([]); setConnections([]); }}
+                style={{ padding: 4, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.05)' }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
+              </TouchableOpacity>
+            </View>
 
-          {/* Верхняя челюсть */}
-          <View style={{ marginBottom: 20, width: '100%' }}>
-            <Text style={styles.sectionLabel}>Верхняя челюсть</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 15, flexGrow: 1, justifyContent: 'center', alignItems: 'center' }}
-              ref={topJawScrollRef}
-            >
-              <View style={{ flexDirection: 'row', paddingVertical: 10, justifyContent: 'center', alignItems: 'center', width: '100%' }}>
-                {[18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28].map((toothNumber, idx, arr) => {
-                  const isSelected = selectedTeeth.some(t => t.number === toothNumber);
-                  const toothData = selectedTeeth.find(t => t.number === toothNumber);
-                  const isPontic = toothData?.type === 'pontic';
-                  const nextTooth = arr[idx + 1];
-                  const connId = `${toothNumber}-${nextTooth}`;
-                  const isConnected = connections.includes(connId);
-                  return (
-                    <View key={toothNumber} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <View style={{ alignItems: 'center', width: 46, marginHorizontal: 2 }}>
-                        <View style={{ height: 20, justifyContent: 'center', position: 'relative', width: '100%' }}>
-                          {nextTooth && (
-                            <TouchableOpacity
-                              onPress={() => toggleConnection(connId)}
-                              style={{
-                                width: 12, height: 12, borderRadius: 6,
-                                backgroundColor: isConnected ? '#FFD700' : 'rgba(255,255,255,0.15)',
-                                position: 'absolute', right: -8, zIndex: 10,
-                              }}
-                            />
-                          )}
+            {/* Верхняя челюсть */}
+            <View style={{ marginBottom: 20, width: '100%' }}>
+              <Text style={styles.sectionLabel}>Верхняя челюсть</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 15, flexGrow: 1, justifyContent: 'center', alignItems: 'center' }}
+                ref={topJawScrollRef}
+              >
+                <View style={{ flexDirection: 'row', paddingVertical: 10, justifyContent: 'center', alignItems: 'center', width: '100%' }}>
+                  {[18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28].map((toothNumber, idx, arr) => {
+                    const isSelected = selectedTeeth.some(t => t.number === toothNumber);
+                    const toothData = selectedTeeth.find(t => t.number === toothNumber);
+                    const isPontic = toothData?.type === 'pontic';
+                    const nextTooth = arr[idx + 1];
+                    const connId = `${toothNumber}-${nextTooth}`;
+                    const isConnected = connections.includes(connId);
+                    return (
+                      <View key={toothNumber} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <View style={{ alignItems: 'center', width: 46, marginHorizontal: 2 }}>
+                          <View style={{ height: 20, justifyContent: 'center', position: 'relative', width: '100%' }}>
+                            {nextTooth && (
+                              <TouchableOpacity
+                                onPress={() => toggleConnection(connId)}
+                                style={{
+                                  width: 12, height: 12, borderRadius: 6,
+                                  backgroundColor: isConnected ? '#FFD700' : 'rgba(255,255,255,0.15)',
+                                  position: 'absolute', right: -8, zIndex: 10,
+                                }}
+                              />
+                            )}
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => toggleTooth(toothNumber)}
+                            onLongPress={() => toggleToothType(toothNumber)}
+                            style={[
+                              styles.toothButton,
+                              { width: 46, height: 44 },
+                              isSelected && styles.toothSelected,
+                              isPontic && styles.toothPontic,
+                            ]}
+                          >
+                            <Text style={styles.toothText}>{toothNumber}</Text>
+                          </TouchableOpacity>
                         </View>
-                        <TouchableOpacity
-                          onPress={() => toggleTooth(toothNumber)}
-                          onLongPress={() => toggleToothType(toothNumber)}
-                          style={[
-                            styles.toothButton,
-                            { width: 46, height: 44 },
-                            isSelected && styles.toothSelected,
-                            isPontic && styles.toothPontic,
-                          ]}
-                        >
-                          <Text style={styles.toothText}>{toothNumber}</Text>
-                        </TouchableOpacity>
                       </View>
-                    </View>
-                  );
-                })}
-              </View>
-            </ScrollView>
-          </View>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            </View>
 
-          {/* Нижняя челюсть */}
-          <View style={{ marginBottom: 20, width: '100%' }}>
-            <Text style={styles.sectionLabel}>Нижняя челюсть</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 15, flexGrow: 1, justifyContent: 'center', alignItems: 'center' }}
-              ref={bottomJawScrollRef}
-            >
-              <View style={{ flexDirection: 'row', paddingVertical: 10, justifyContent: 'center', alignItems: 'center', width: '100%' }}>
-                {[48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38].map((toothNumber, idx, arr) => {
-                  const isSelected = selectedTeeth.some(t => t.number === toothNumber);
-                  const toothData = selectedTeeth.find(t => t.number === toothNumber);
-                  const isPontic = toothData?.type === 'pontic';
-                  const nextTooth = arr[idx + 1];
-                  const connId = `${toothNumber}-${nextTooth}`;
-                  const isConnected = connections.includes(connId);
-                  return (
-                    <View key={toothNumber} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <View style={{ alignItems: 'center', width: 46, marginHorizontal: 2 }}>
-                        <View style={{ height: 20, justifyContent: 'center', position: 'relative', width: '100%' }}>
-                          {nextTooth && (
-                            <TouchableOpacity
-                              onPress={() => toggleConnection(connId)}
-                              style={{
-                                width: 12, height: 12, borderRadius: 6,
-                                backgroundColor: isConnected ? '#FFD700' : 'rgba(255,255,255,0.15)',
-                                position: 'absolute', right: -8, zIndex: 10,
-                              }}
-                            />
-                          )}
+            {/* Нижняя челюсть */}
+            <View style={{ marginBottom: 20, width: '100%' }}>
+              <Text style={styles.sectionLabel}>Нижняя челюсть</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 15, flexGrow: 1, justifyContent: 'center', alignItems: 'center' }}
+                ref={bottomJawScrollRef}
+              >
+                <View style={{ flexDirection: 'row', paddingVertical: 10, justifyContent: 'center', alignItems: 'center', width: '100%' }}>
+                  {[48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38].map((toothNumber, idx, arr) => {
+                    const isSelected = selectedTeeth.some(t => t.number === toothNumber);
+                    const toothData = selectedTeeth.find(t => t.number === toothNumber);
+                    const isPontic = toothData?.type === 'pontic';
+                    const nextTooth = arr[idx + 1];
+                    const connId = `${toothNumber}-${nextTooth}`;
+                    const isConnected = connections.includes(connId);
+                    return (
+                      <View key={toothNumber} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <View style={{ alignItems: 'center', width: 46, marginHorizontal: 2 }}>
+                          <View style={{ height: 20, justifyContent: 'center', position: 'relative', width: '100%' }}>
+                            {nextTooth && (
+                              <TouchableOpacity
+                                onPress={() => toggleConnection(connId)}
+                                style={{
+                                  width: 12, height: 12, borderRadius: 6,
+                                  backgroundColor: isConnected ? '#FFD700' : 'rgba(255,255,255,0.15)',
+                                  position: 'absolute', right: -8, zIndex: 10,
+                                }}
+                              />
+                            )}
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => toggleTooth(toothNumber)}
+                            onLongPress={() => toggleToothType(toothNumber)}
+                            style={[
+                              styles.toothButton,
+                              { width: 46, height: 44 },
+                              isSelected && styles.toothSelected,
+                              isPontic && styles.toothPontic,
+                            ]}
+                          >
+                            <Text style={styles.toothText}>{toothNumber}</Text>
+                          </TouchableOpacity>
                         </View>
-                        <TouchableOpacity
-                          onPress={() => toggleTooth(toothNumber)}
-                          onLongPress={() => toggleToothType(toothNumber)}
-                          style={[
-                            styles.toothButton,
-                            { width: 46, height: 44 },
-                            isSelected && styles.toothSelected,
-                            isPontic && styles.toothPontic,
-                          ]}
-                        >
-                          <Text style={styles.toothText}>{toothNumber}</Text>
-                        </TouchableOpacity>
                       </View>
-                    </View>
-                  );
-                })}
-              </View>
-            </ScrollView>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            </View>
           </View>
         </View>
 
@@ -1107,60 +1142,13 @@ export default function NewOrderScreen() {
           </View>
         </View>
 
-        {/* Расширенные параметры */}
-        <View style={styles.section}>
-          <TouchableOpacity style={styles.extendedHeader} onPress={() => setShowExtended(!showExtended)}>
-            <Text style={styles.sectionTitle}>ДОПОЛНИТЕЛЬНО{' '}
-              <Text style={{ color: '#E2BD75', fontSize: 13, fontWeight: 'bold' }}>
-                {showExtended ? '▼' : '►'}
-              </Text>
-            </Text>
-          </TouchableOpacity>
-
-          {showExtended && (
-            <View style={styles.extendedContent}>
-              <Text style={styles.subTitle}>Фиксация</Text>
-              <View style={styles.optionsRow}>
-                <TouchableOpacity onPress={() => setFixationType('screw')} style={[styles.optionBtn, fixationType === 'screw' && styles.optionBtnSelected]}>
-                  <Text style={[styles.optionBtnText, fixationType === 'screw' && styles.optionBtnTextSelected]}>Винтовая</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setFixationType('cement')} style={[styles.optionBtn, fixationType === 'cement' && styles.optionBtnSelected]}>
-                  <Text style={[styles.optionBtnText, fixationType === 'cement' && styles.optionBtnTextSelected]}>Цементная</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.subTitle}>Анатомия</Text>
-              <View style={styles.optionsRow}>
-                <TouchableOpacity onPress={() => setAnatomyType('full')} style={[styles.optionBtn, anatomyType === 'full' && styles.optionBtnSelected]}>
-                  <Text style={[styles.optionBtnText, anatomyType === 'full' && styles.optionBtnTextSelected]}>Полная</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setAnatomyType('apply')} style={[styles.optionBtn, anatomyType === 'apply' && styles.optionBtnSelected]}>
-                  <Text style={[styles.optionBtnText, anatomyType === 'apply' && styles.optionBtnTextSelected]}>Нанесение</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.subTitle}>Конструкция</Text>
-              <View style={styles.optionsRow}>
-                <TouchableOpacity onPress={() => setStructureType('single')} style={[styles.optionBtn, structureType === 'single' && styles.optionBtnSelected]}>
-                  <Text style={[styles.optionBtnText, structureType === 'single' && styles.optionBtnTextSelected]}>Одиночки</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setStructureType('bridge')} style={[styles.optionBtn, structureType === 'bridge' && styles.optionBtnSelected]}>
-                  <Text style={[styles.optionBtnText, structureType === 'bridge' && styles.optionBtnTextSelected]}>Мост</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setStructureType('garland')} style={[styles.optionBtn, structureType === 'garland' && styles.optionBtnSelected]}>
-                  <Text style={[styles.optionBtnText, structureType === 'garland' && styles.optionBtnTextSelected]}>Гирлянда</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </View>
-
+        
         {/* Сводка заказа */}
         <View style={styles.section}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <Text style={styles.sectionTitle}>📋 СВОДКА ЗАКАЗА</Text>
-          </View>
-          <View style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: 'rgba(242,202,80,0.15)' }}>
+          <View style={styles.cardContainer}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={styles.sectionTitle}>📋 СВОДКА ЗАКАЗА</Text>
+            </View>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
               <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Пациент:</Text>
               <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>{patientName || 'Не указан'}</Text>
@@ -1195,8 +1183,8 @@ export default function NewOrderScreen() {
                 <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>{dates.delivery.toLocaleDateString('ru-RU')}</Text>
               </View>
             )}
+            </View>
           </View>
-        </View>
 
         {/* Кнопки */}
         <View style={{ paddingTop: 8, paddingBottom: 32, gap: 8 }}>
@@ -1452,9 +1440,66 @@ export default function NewOrderScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 60, paddingBottom: 16 },
-  headerBtn: { width: 40, height: 40 },
-  headerTitle: { color: '#f2ca50', fontSize: 18, fontWeight: 'bold' },
+  header: {
+    backgroundColor: 'transparent',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    position: 'relative',
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f2ca50',
+  },
+  headerLogo: {
+    width: 180,
+    height: 56,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  headerIconBtn: {
+    padding: 4,
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#E2BD75',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#031427',
+  },
+  notificationBadgeText: {
+    color: '#031427',
+    fontSize: 11,
+    fontWeight: 'bold',
+    paddingHorizontal: 4,
+  },
+  localHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  localTitle: {
+    color: '#f2ca50',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
   section: { marginBottom: 20 },
   cardContainer: { backgroundColor: 'rgba(7, 15, 28, 0.93)', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(242, 202, 80, 0.1)' },
   sectionTitle: { color: '#f2ca50', fontSize: 16, fontWeight: '600', marginBottom: 12 },
