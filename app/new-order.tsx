@@ -1,5 +1,5 @@
 import { database } from '@/constants/firebase';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
@@ -7,26 +7,27 @@ import { StatusBar } from 'expo-status-bar';
 import { onValue, push, ref } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
-  Image,
-  ImageBackground,
-  Keyboard,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Image,
+    ImageBackground,
+    Keyboard,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import StyledToast from '../components/ui/StyledToast';
 import { playSuccessSound } from '../utils/audio';
 
 export default function NewOrderScreen() {
   const insets = useSafeAreaInsets();
   const topJawScrollRef = useRef<ScrollView>(null);
   const bottomJawScrollRef = useRef<ScrollView>(null);
+  const formScrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     setTimeout(() => {
@@ -68,6 +69,14 @@ export default function NewOrderScreen() {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
   const [showWorkTypes, setShowWorkTypes] = useState(false);
+  const [manualVitaColor, setManualVitaColor] = useState('');
+  const [manualVitaFocused, setManualVitaFocused] = useState(false);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const [vitaSectionY, setVitaSectionY] = useState(0);
 
   useEffect(() => {
     const usersRef = ref(database, 'users');
@@ -122,9 +131,19 @@ export default function NewOrderScreen() {
     const restoreStates = async () => {
       try {
         const savedBlockDetails = await AsyncStorage.getItem('tempBlockDetails');
+        const savedSelectedTeeth = await AsyncStorage.getItem('tempSelectedTeeth');
+        const savedShowConstructions = await AsyncStorage.getItem('tempShowConstructions');
         if (savedBlockDetails) {
           setBlockDetails(JSON.parse(savedBlockDetails));
           await AsyncStorage.removeItem('tempBlockDetails');
+        }
+        if (savedSelectedTeeth) {
+          setSelectedTeeth(JSON.parse(savedSelectedTeeth));
+          await AsyncStorage.removeItem('tempSelectedTeeth');
+        }
+        if (savedShowConstructions !== null) {
+          setShowConstructions(savedShowConstructions === 'true');
+          await AsyncStorage.removeItem('tempShowConstructions');
         }
         const savedConnections = await AsyncStorage.getItem('tempConnections');
         if (savedConnections) {
@@ -194,20 +213,44 @@ export default function NewOrderScreen() {
     return check(upper) || check(lower);
   };
 
+  const getToothPositionLabel = (num: number) => {
+    const quadrant = Math.floor(num / 10);
+    const position = quadrant === 1
+      ? 'Верх. прав.'
+      : quadrant === 2
+        ? 'Верх. лев.'
+        : quadrant === 3
+          ? 'Низ. лев.'
+          : quadrant === 4
+            ? 'Низ. прав.'
+            : '';
+    return `№ ${num}${position ? ` · ${position}` : ''}`;
+  };
+
+  const getBlockPositionLabel = (block: { number: number }[]) =>
+    block.map(tooth => getToothPositionLabel(tooth.number)).join(' / ');
+
   useEffect(() => {
     const loadVitaResult = async () => {
       try {
+        const shouldScrollToVita = await AsyncStorage.getItem('scrollToVitaOnReturn');
         const stored = await AsyncStorage.getItem('pendingVitaResult');
         if (stored) {
           setVitaResult(JSON.parse(stored));
           await AsyncStorage.removeItem('pendingVitaResult');
+        }
+        if ((stored || shouldScrollToVita) && vitaSectionY > 0) {
+          await AsyncStorage.removeItem('scrollToVitaOnReturn');
+          setTimeout(() => {
+            formScrollRef.current?.scrollTo({ y: Math.max(vitaSectionY - 24, 0), animated: true });
+          }, 350);
         }
       } catch (e) {
         console.error('Error loading vita result:', e);
       }
     };
     loadVitaResult();
-  }, []);
+  }, [vitaSectionY]);
 
   useEffect(() => {
     const loadDraft = async () => {
@@ -232,9 +275,16 @@ export default function NewOrderScreen() {
           if (d.toothTypes) setToothTypes(d.toothTypes);
           if (d.implantData) setImplantData(d.implantData);
           if (d.bridges) setBridges(d.bridges);
+          if (d.connections) setConnections(d.connections);
+          if (d.blockDetails) setBlockDetails(d.blockDetails);
+          if (d.manualVitaColor) setManualVitaColor(d.manualVitaColor);
+          if (d.vitaResult) setVitaResult(d.vitaResult);
+          if (typeof d.showConstructions === 'boolean') setShowConstructions(d.showConstructions);
         }
       } catch (e) {
         console.error('Error loading draft:', e);
+      } finally {
+        setDraftLoaded(true);
       }
     };
     loadDraft();
@@ -249,6 +299,7 @@ export default function NewOrderScreen() {
   }, [selectedTechnician]);
 
   useEffect(() => {
+    if (!draftLoaded) return;
     const saveDraft = async () => {
       const draft = {
         selectedDoctor,
@@ -266,16 +317,22 @@ export default function NewOrderScreen() {
         toothTypes,
         implantData,
         bridges,
+        connections,
+        blockDetails,
+        manualVitaColor,
+        vitaResult,
+        showConstructions,
       };
       await AsyncStorage.setItem('orderDraft', JSON.stringify(draft));
     };
     saveDraft();
-  }, [selectedDoctor, patientName, selectedTechnician, dates, selectedTeeth, workType, workNote, implantsEnabled, toothTypes, implantData, bridges]);
+  }, [draftLoaded, selectedDoctor, patientName, selectedTechnician, dates, selectedTeeth, workType, workNote, implantsEnabled, toothTypes, implantData, bridges, connections, blockDetails, manualVitaColor, vitaResult, showConstructions]);
 
   const upperJaw = [18,17,16,15,14,13,12,11, 21,22,23,24,25,26,27,28];
   const lowerJaw = [48,47,46,45,44,43,42,41, 31,32,33,34,35,36,37,38];
 
   const toggleTooth = (num: number) => {
+    setShowConstructions(true);
     setSelectedTeeth(prev => {
       const existing = prev.find(t => t.number === num);
       if (existing) {
@@ -374,7 +431,9 @@ export default function NewOrderScreen() {
     Keyboard.dismiss();
 
     if (!selectedDoctor || !selectedTechnician || !patientName.trim()) {
-      Alert.alert('Внимание', 'Пожалуйста, заполните ФИО пациента, а также выберите врача и техника.');
+      setToastMessage('Пожалуйста, заполните ФИО пациента, а также выберите врача и техника');
+      setToastType('error');
+      setToastVisible(true);
       return;
     }
     setLoading(true);
@@ -393,6 +452,7 @@ export default function NewOrderScreen() {
       selectedTeeth,
       workNote,
       vitaResult,
+      manualVitaColor: manualVitaColor.trim(),
       implantSystem,
       fixationType,
       anatomyType,
@@ -406,9 +466,10 @@ export default function NewOrderScreen() {
     await playSuccessSound();
     await AsyncStorage.removeItem('orderDraft');
     setLoading(false);
-    Alert.alert('Успешно!', 'Наряд отправлен технику', [
-      { text: 'OK', onPress: () => setTimeout(() => router.back(), 400) }
-    ]);
+    setToastMessage('Наряд отправлен технику');
+    setToastType('success');
+    setToastVisible(true);
+    setTimeout(() => router.back(), 1400);
   };
 
   const renderDatePicker = (title: string, date: Date, visible: boolean, setVisible: (val: boolean) => void, setDate: (val: Date) => void) => (
@@ -479,9 +540,6 @@ export default function NewOrderScreen() {
             }}
           >
             <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
-            <View style={styles.notificationBadge}>
-              <Text style={styles.notificationBadgeText}>3</Text>
-            </View>
           </TouchableOpacity>
         </View>
       </View>
@@ -496,6 +554,7 @@ export default function NewOrderScreen() {
       </View>
 
       <ScrollView
+        ref={formScrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: 16 }}
       >
@@ -765,28 +824,47 @@ export default function NewOrderScreen() {
                       return <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginTop: 4 }}>Конструкции не выбраны</Text>;
                     }
                     return (
-                      <View style={{ flexDirection: 'column', marginTop: 8, gap: 4 }}>
+                      <View style={{ flexDirection: 'column', marginTop: 8 }}>
                         {blocks.map((block) => {
                           const blockKey = block.map(t => t.number).join('-');
                           const details = blockDetails[blockKey] || {};
                           const type = blockKey.includes('-') ? 'Мост' : 'Зуб';
-                          const teeth = blockKey.includes('-') ? blockKey.replace(/-/g, ', ') : blockKey;
+                          const teeth = getBlockPositionLabel(block);
                           const material = details.material ? details.material : 'не выбран';
                           const hasImplant = !!details.isImplant;
                           return (
-                            <View key={blockKey} style={{ flexDirection: 'column', gap: 2, marginBottom: 6 }}>
+                            <View
+                              key={blockKey}
+                              style={{
+                                backgroundColor: 'rgba(255,255,255,0.05)',
+                                borderRadius: 8,
+                                borderWidth: 1,
+                                borderColor: 'rgba(226,189,117,0.22)',
+                                padding: 10,
+                                marginBottom: 10,
+                              }}
+                            >
                               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '600' }}>{type} </Text>
-                                <Text style={{ color: '#E2BD75', fontSize: 15, fontWeight: '600' }}>({teeth})</Text>
-                              </View>
-                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '500' }}>{material}</Text>
-                              </View>
-                              {hasImplant && (
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-                                  <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '600' }}>На имплантах</Text>
+                                <View style={{ width: 34, alignItems: 'center', justifyContent: 'center' }}>
+                                  <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(242,202,80,0.12)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(242,202,80,0.25)' }}>
+                                    <MaterialCommunityIcons name="tooth-outline" size={20} color="#f2ca50" style={{ marginTop: 2 }} />
+                                  </View>
                                 </View>
-                              )}
+                                <View style={{ flex: 1, marginLeft: 10 }}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '600' }}>{type} </Text>
+                                    <Text style={{ color: '#E2BD75', fontSize: 13, fontWeight: '600', flex: 1 }}>{teeth}</Text>
+                                  </View>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '500' }}>{material}</Text>
+                                  </View>
+                                  {hasImplant && (
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+                                      <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '600' }}>На имплантах</Text>
+                                    </View>
+                                  )}
+                                </View>
+                              </View>
                             </View>
                           );
                         })}
@@ -830,13 +908,18 @@ export default function NewOrderScreen() {
                         />
                       </View>
                     </View>
-                    <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 4, marginBottom: 12 }}>
-                      <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>
-                        {blockKey.includes('-') ? 'Мост:' : 'Зуб:'}
-                      </Text>
-                      <Text style={{ color: '#E2BD75', fontSize: 15, fontWeight: '600' }}>
-                        {blockKey.includes('-') ? blockKey.replace(/-/g, ', ') : blockKey}
-                      </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4, marginBottom: 12 }}>
+                      <View style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: 'rgba(242,202,80,0.12)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(242,202,80,0.25)' }}>
+                        <MaterialCommunityIcons name="tooth-outline" size={22} color="#f2ca50" style={{ marginTop: 2 }} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>
+                          {blockKey.includes('-') ? 'Мост:' : 'Зуб:'}
+                        </Text>
+                        <Text style={{ color: '#E2BD75', fontSize: 14, fontWeight: '600', marginTop: 2 }}>
+                          {getBlockPositionLabel(block)}
+                        </Text>
+                      </View>
                     </View>
                   </View>
 
@@ -1034,11 +1117,25 @@ export default function NewOrderScreen() {
                 </View>
               );
             })}
+            {showConstructions && getAddonBlocks().length > 0 && (
+              <TouchableOpacity
+                onPress={() => setShowConstructions(prev => !prev)}
+                style={{ alignItems: 'center', paddingVertical: 10, marginTop: 2 }}
+                activeOpacity={0.7}
+              >
+                <Text style={{ color: 'rgba(242,202,80,0.7)', fontSize: 14, fontWeight: '600' }}>
+                  Свернуть
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
         {/* Цвет VITA */}
-        <View style={styles.section}>
+        <View
+          style={styles.section}
+          onLayout={(event) => setVitaSectionY(event.nativeEvent.layout.y)}
+        >
           <View style={styles.cardContainer}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <Text style={styles.sectionTitle}>🎨 ЦВЕТ VITA</Text>
@@ -1104,7 +1201,18 @@ export default function NewOrderScreen() {
                       </View>
                     ) : null}
 
-                    <TouchableOpacity onPress={() => { setVitaResult(null); router.push('/color-analyzer'); }} style={{ alignItems: 'center', paddingVertical: 8 }}>
+                    <TouchableOpacity
+                      onPress={async () => {
+                        setVitaResult(null);
+                        await AsyncStorage.setItem('tempSelectedTeeth', JSON.stringify(selectedTeeth));
+                        await AsyncStorage.setItem('tempBlockDetails', JSON.stringify(blockDetails));
+                        await AsyncStorage.setItem('tempConnections', JSON.stringify(connections));
+                        await AsyncStorage.setItem('tempShowConstructions', String(showConstructions));
+                        await AsyncStorage.setItem('scrollToVitaOnReturn', 'true');
+                        router.push('/color-analyzer');
+                      }}
+                      style={{ alignItems: 'center', paddingVertical: 8 }}
+                    >
                       <Text style={{ color: 'rgba(242,202,80,0.5)', fontSize: 13 }}>Переопределить цвет →</Text>
                     </TouchableOpacity>
                   </View>
@@ -1114,11 +1222,17 @@ export default function NewOrderScreen() {
               <TouchableOpacity
                 onPress={async () => {
                   try {
+                    await AsyncStorage.setItem('tempSelectedTeeth', JSON.stringify(selectedTeeth));
                     await AsyncStorage.setItem('tempBlockDetails', JSON.stringify(blockDetails));
                     await AsyncStorage.setItem('tempConnections', JSON.stringify(connections));
+                    await AsyncStorage.setItem('tempShowConstructions', String(showConstructions));
+                    await AsyncStorage.setItem('scrollToVitaOnReturn', 'true');
                     router.push('/color-analyzer');
                   } catch (error) {
                     console.error('Error saving states:', error);
+                    await AsyncStorage.setItem('tempSelectedTeeth', JSON.stringify(selectedTeeth));
+                    await AsyncStorage.setItem('tempShowConstructions', String(showConstructions));
+                    await AsyncStorage.setItem('scrollToVitaOnReturn', 'true');
                     router.push('/color-analyzer');
                   }
                 }}
@@ -1128,6 +1242,27 @@ export default function NewOrderScreen() {
                 <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
               </TouchableOpacity>
             )}
+            <TextInput
+              style={{
+                marginTop: 12,
+                backgroundColor: 'rgba(255,255,255,0.05)',
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: manualVitaFocused ? '#f2ca50' : 'rgba(242,202,80,0.25)',
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                color: manualVitaColor ? '#f2ca50' : '#ffffff',
+                fontSize: 15,
+                fontWeight: '600',
+              }}
+              placeholder="Ввести цвет вручную (напр. A3, B2)..."
+              placeholderTextColor="rgba(255,255,255,0.35)"
+              value={manualVitaColor}
+              onChangeText={setManualVitaColor}
+              onFocus={() => setManualVitaFocused(true)}
+              onBlur={() => setManualVitaFocused(false)}
+              autoCapitalize="characters"
+            />
           </View>
         </View>
 
@@ -1166,12 +1301,6 @@ export default function NewOrderScreen() {
               <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Техник:</Text>
               <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>{selectedTechnician?.name || 'Не выбран'}</Text>
             </View>
-            {selectedTeeth.length > 0 && (
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Зубы:</Text>
-                <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>{selectedTeeth.map(t => t.number).join(', ')}</Text>
-              </View>
-            )}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
               <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Снятие слепков:</Text>
               <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>{dates.impressions.toLocaleDateString('ru-RU')}</Text>
@@ -1186,6 +1315,44 @@ export default function NewOrderScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Сдача:</Text>
                 <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>{dates.delivery.toLocaleDateString('ru-RU')}</Text>
+              </View>
+            )}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, marginBottom: 8 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Цвет:</Text>
+              <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>
+                {(manualVitaColor.trim() || vitaResult?.primary_range || vitaResult?.shade || 'Не указан').toString()}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Примечание:</Text>
+              <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500', flex: 1, textAlign: 'right' }}>
+                {workNote?.trim() ? workNote : 'Нет'}
+              </Text>
+            </View>
+            {selectedTeeth.length > 0 && (
+              <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)' }}>
+                <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, marginBottom: 8 }}>В работе:</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {[...selectedTeeth]
+                    .sort((a, b) => a.number - b.number)
+                    .map(tooth => (
+                      <View
+                        key={tooth.number}
+                        style={{
+                          backgroundColor: 'rgba(242,202,80,0.08)',
+                          borderWidth: 1,
+                          borderColor: 'rgba(242,202,80,0.28)',
+                          borderRadius: 8,
+                          paddingVertical: 6,
+                          paddingHorizontal: 8,
+                        }}
+                      >
+                        <Text style={{ color: '#E2BD75', fontSize: 12, fontWeight: '700' }}>
+                          {getToothPositionLabel(tooth.number)}
+                        </Text>
+                      </View>
+                    ))}
+                </View>
               </View>
             )}
             </View>
@@ -1266,6 +1433,7 @@ export default function NewOrderScreen() {
                   setWorkType('');
                   setWorkNote('');
                   setVitaResult(null);
+                  setManualVitaColor('');
                   setImplantSystem('');
                   setFixationType(null);
                   setAnatomyType(null);
@@ -1439,6 +1607,12 @@ export default function NewOrderScreen() {
           </View>
         </View>
       </Modal>
+      <StyledToast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        onDismiss={() => setToastVisible(false)}
+      />
     </ImageBackground>
   );
 }

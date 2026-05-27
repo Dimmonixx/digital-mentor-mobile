@@ -17,6 +17,7 @@ export const playSuccessSound = async () => {
     sound.setOnPlaybackStatusUpdate(async (status) => {
       if (status.isLoaded && status.didJustFinish) {
         try {
+          sound.setOnPlaybackStatusUpdate(null);
           await sound.unloadAsync();
         } catch (error) {
           console.log('Глобальный сбой аудио:', error);

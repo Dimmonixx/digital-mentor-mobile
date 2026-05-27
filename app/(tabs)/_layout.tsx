@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Redirect, Tabs, router } from 'expo-router';
 import { onValue, ref } from 'firebase/database';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Image, ImageBackground, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -17,6 +17,7 @@ export default function TabLayout() {
   const [loading, setLoading] = useState(true);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
   const [previousNewOrdersCount, setPreviousNewOrdersCount] = useState(0);
+  const isInitialLoad = useRef(true);
 
   useEffect(() => {
     AsyncStorage.getItem('user').then((data) => {
@@ -41,11 +42,11 @@ export default function TabLayout() {
         const currentNewOrdersCount = ordersList.filter(order => order.status === 'new').length;
         setNewOrdersCount(currentNewOrdersCount);
         
-        // Если количество новых нарядов увеличилось - играем звук
-        if (currentNewOrdersCount > previousNewOrdersCount && previousNewOrdersCount > 0) {
+        // Если количество новых нарядов увеличилось - играем звук (кроме первой загрузки)
+        if (!isInitialLoad.current && currentNewOrdersCount > previousNewOrdersCount) {
           playSuccessSound();
         }
-        
+        isInitialLoad.current = false;
         setPreviousNewOrdersCount(currentNewOrdersCount);
       } else {
         setNewOrdersCount(0);
@@ -153,14 +154,6 @@ export default function TabLayout() {
           />
           <Tabs.Screen
             name="color-analyzer"
-            options={{
-              headerShown: false,
-              tabBarButton: () => null,
-              tabBarItemStyle: { display: 'none' },
-            }}
-          />
-          <Tabs.Screen
-            name="new-order"
             options={{
               headerShown: false,
               tabBarButton: () => null,
