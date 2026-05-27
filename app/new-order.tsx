@@ -7,17 +7,17 @@ import { StatusBar } from 'expo-status-bar';
 import { onValue, push, ref } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Image,
-    ImageBackground,
-    Keyboard,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Image,
+  ImageBackground,
+  Keyboard,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import StyledToast from '../components/ui/StyledToast';
@@ -1252,7 +1252,7 @@ export default function NewOrderScreen() {
                 paddingHorizontal: 14,
                 paddingVertical: 12,
                 color: manualVitaColor ? '#f2ca50' : '#ffffff',
-                fontSize: 15,
+                fontSize: 10,
                 fontWeight: '600',
               }}
               placeholder="Ввести цвет вручную (напр. A3, B2)..."
