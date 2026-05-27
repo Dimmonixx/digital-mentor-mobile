@@ -3,6 +3,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { Audiowide_400Regular, useFonts } from '@expo-google-fonts/audiowide';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Audio } from 'expo-av';
 import { router } from 'expo-router';
 import React, { useEffect, useRef } from 'react';
 import {
@@ -18,11 +19,37 @@ import {
   View
 } from 'react-native';
 
+const playGlobalBell = async () => {
+  try {
+    await Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+    });
+    const { sound } = await Audio.Sound.createAsync(
+      require('@/assets/sounds/bell.mp3')
+    );
+    await sound.playAsync();
+    sound.setOnPlaybackStatusUpdate(async (status) => {
+      if (status.isLoaded && status.didJustFinish) {
+        try {
+          sound.setOnPlaybackStatusUpdate(null);
+          await sound.unloadAsync();
+        } catch (error) {
+          console.log('Ошибка выгрузки звука:', error);
+        }
+      }
+    });
+  } catch (e) {
+    console.log('Ошибка внешнего аудио:', e);
+  }
+};
+
 export default function HomeScreen() {
   const [fontsLoaded] = useFonts({
     Audiowide_400Regular,
   });
-  const { theme, themeType } = useTheme();
+  const { theme } = useTheme();
   const { t } = useLanguage();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const scrollAnim = useRef(new Animated.Value(0)).current;
@@ -146,7 +173,7 @@ export default function HomeScreen() {
       style={{ flex: 1 }}
       resizeMode="cover"
     >
-      <StatusBar barStyle={themeType === 'dark' ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       
       <ScrollView
         style={{ flex: 1 }}
@@ -248,13 +275,21 @@ export default function HomeScreen() {
           }}>
             <TouchableOpacity
               style={styles.card}
-              onPress={() => router.push('/new-order')}
+              onPressIn={() => {
+                console.log('👉 КЛИК ПО КНОПКЕ НА ГЛАВНОЙ НАЖАТ!');
+                playGlobalBell();
+              }}
+              onPress={() => {
+                setTimeout(() => {
+                  router.push('/new-order');
+                }, 500);
+              }}
               activeOpacity={0.8}
             >
               <View style={styles.iconBox}>
-                <Ionicons name="document-text-outline" size={20} color="#f2ca50" />
+                <Ionicons name="add-circle-outline" size={22} color="#f2ca50" />
               </View>
-              <Text style={styles.labelText}>{t('newOrder')}</Text>
+              <Text style={styles.labelText}>НОВЫЙ НАРЯД</Text>
               <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
             </TouchableOpacity>
           </View>
