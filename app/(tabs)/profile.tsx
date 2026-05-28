@@ -111,6 +111,16 @@ export default function ProfileScreen() {
       if (snapshot.exists()) {
         const data = snapshot.val();
         setProfile(data as ProfileData);
+      } else {
+        // Fallback: try to parse from user's name if profile doesn't exist
+        if (user?.name) {
+          const nameParts = user.name.trim().split(' ');
+          setProfile(prev => ({
+            ...prev,
+            lastName: nameParts[0] || '',
+            firstName: nameParts.slice(1).join(' ') || '',
+          }));
+        }
       }
     } catch (error) {
       console.error('Error loading profile:', error);
