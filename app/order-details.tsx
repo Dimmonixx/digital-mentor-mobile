@@ -1,20 +1,21 @@
+import { database } from '@/constants/firebase';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
 import { onValue, ref, update } from 'firebase/database';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   ImageBackground,
   Modal,
   ScrollView,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { database } from '@/constants/firebase';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STATUS_FLOW = [
   { key: 'new', label: 'Новый', color: '#29b6f6', icon: '🆕' },
@@ -31,6 +32,7 @@ export default function OrderDetailsScreen() {
   const [user, setUser] = useState<any>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [newOrdersCount, setNewOrdersCount] = useState(0);
 
   useEffect(() => {
     AsyncStorage.getItem('user').then(data => {
@@ -48,6 +50,25 @@ export default function OrderDetailsScreen() {
     });
     return () => unsubscribe();
   }, [orderId]);
+
+  // Слушатель для подсчёта новых нарядов
+  useEffect(() => {
+    const ordersRef = ref(database, 'orders');
+    const unsubscribe = onValue(ordersRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const ordersList = Object.entries(data).map(([id, order]: any) => ({
+          id,
+          ...order,
+        }));
+        const currentNewOrdersCount = ordersList.filter(order => order.status === 'new').length;
+        setNewOrdersCount(currentNewOrdersCount);
+      } else {
+        setNewOrdersCount(0);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const updateStatus = async (newStatus: string) => {
     await update(ref(database, `orders/${orderId}`), { 
@@ -113,17 +134,56 @@ export default function OrderDetailsScreen() {
       style={{ flex: 1 }}
       resizeMode="cover"
     >
-      {/* Header */}
+      {/* DiLabs Branded Header */}
       <View style={{
         paddingTop: insets.top + 8,
-        paddingHorizontal: 16,
-        paddingBottom: 12,
+        paddingHorizontal: 12,
+        paddingBottom: 8,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
+        borderBottomWidth: 1,
+        borderBottomColor: '#f2ca50',
       }}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#f2ca50" />
+        <TouchableOpacity style={{ padding: 4 }}>
+          <Ionicons name="menu-outline" size={28} color="#f2ca50" />
+        </TouchableOpacity>
+        <Image
+          source={require('@/assets/images/header-logo.png')}
+          style={{ width: 120, height: 40 }}
+          resizeMode="contain"
+        />
+        <TouchableOpacity 
+          style={{ padding: 4 }}
+          onPress={() => {
+            router.push('/(tabs)/search');
+            setTimeout(() => {
+              (window as any).showNewOrders?.();
+            }, 100);
+          }}
+        >
+          <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
+          {newOrdersCount > 0 && (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationBadgeText}>
+                {newOrdersCount > 99 ? '99+' : newOrdersCount.toString()}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* Local Navigation Header */}
+      <View style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingTop: 16,
+        paddingBottom: 18,
+      }}>
+        <TouchableOpacity onPress={() => router.back()} style={{ width: 40, height: 40, justifyContent: 'center' }}>
+          <Ionicons name="chevron-back" size={24} color="#f2ca50" />
         </TouchableOpacity>
         <Text style={{
           color: '#f2ca50',
@@ -155,21 +215,8 @@ export default function OrderDetailsScreen() {
           </TouchableOpacity>
         ) : (
           <View style={{
-            paddingHorizontal: 12,
-            paddingVertical: 6,
-            borderRadius: 20,
-            backgroundColor: statusColor + '20',
-            borderWidth: 1,
-            borderColor: statusColor,
-          }}>
-            <Text style={{
-              color: statusColor,
-              fontSize: 12,
-              fontWeight: '600',
-            }}>
-              {getStatusLabel(order.status)}
-            </Text>
-          </View>
+            width: 40,
+          }} />
         )}
       </View>
 
@@ -190,9 +237,9 @@ export default function OrderDetailsScreen() {
           borderColor: 'rgba(242,202,80,0.15)',
         }}>
           <Text style={{
-            color: 'rgba(255,255,255,0.4)',
-            fontSize: 11,
-            letterSpacing: 1.5,
+            color: '#f2ca50',
+            fontSize: 14,
+            fontWeight: '700',
             marginBottom: 12,
           }}>УЧАСТНИКИ</Text>
 
@@ -204,7 +251,7 @@ export default function OrderDetailsScreen() {
             <View key={item.label} style={{
               flexDirection: 'row',
               justifyContent: 'space-between',
-              paddingVertical: 8,
+              paddingVertical: 10,
               borderBottomWidth: 1,
               borderBottomColor: 'rgba(255,255,255,0.06)',
             }}>
@@ -231,9 +278,9 @@ export default function OrderDetailsScreen() {
           borderColor: 'rgba(242,202,80,0.15)',
         }}>
           <Text style={{
-            color: 'rgba(255,255,255,0.4)',
-            fontSize: 11,
-            letterSpacing: 1.5,
+            color: '#f2ca50',
+            fontSize: 14,
+            fontWeight: '700',
             marginBottom: 12,
           }}>ДАТЫ</Text>
 
@@ -252,7 +299,7 @@ export default function OrderDetailsScreen() {
             <View key={item.label} style={{
               flexDirection: 'row',
               justifyContent: 'space-between',
-              paddingVertical: 8,
+              paddingVertical: 10,
               borderBottomWidth: 1,
               borderBottomColor: 'rgba(255,255,255,0.06)',
             }}>
@@ -279,16 +326,16 @@ export default function OrderDetailsScreen() {
           borderColor: 'rgba(242,202,80,0.15)',
         }}>
           <Text style={{
-            color: 'rgba(255,255,255,0.4)',
-            fontSize: 11,
-            letterSpacing: 1.5,
+            color: '#f2ca50',
+            fontSize: 14,
+            fontWeight: '700',
             marginBottom: 12,
           }}>РАБОТА</Text>
 
           <View style={{
             flexDirection: 'row',
             justifyContent: 'space-between',
-            paddingVertical: 8,
+            paddingVertical: 10,
             borderBottomWidth: 1,
             borderBottomColor: 'rgba(255,255,255,0.06)',
           }}>
@@ -297,7 +344,7 @@ export default function OrderDetailsScreen() {
               fontSize: 14,
             }}>Вид работы</Text>
             <Text style={{
-              color: '#f2ca50',
+              color: getWorkTypeLabel(order.workType) ? '#f2ca50' : 'rgba(255,255,255,0.3)',
               fontSize: 14,
               fontWeight: '600',
             }}>
@@ -311,7 +358,7 @@ export default function OrderDetailsScreen() {
               <Text style={{
                 color: 'rgba(255,255,255,0.4)',
                 fontSize: 12,
-                marginBottom: 8,
+                marginBottom: 12,
               }}>Зубы</Text>
               <View style={{ 
                 flexDirection: 'row', 
@@ -361,9 +408,9 @@ export default function OrderDetailsScreen() {
             borderColor: 'rgba(242,202,80,0.3)',
           }}>
             <Text style={{
-              color: 'rgba(255,255,255,0.4)',
-              fontSize: 11,
-              letterSpacing: 1.5,
+              color: '#f2ca50',
+              fontSize: 14,
+              fontWeight: '700',
               marginBottom: 12,
             }}>ЦВЕТ VITA</Text>
 
@@ -405,29 +452,47 @@ export default function OrderDetailsScreen() {
             )}
 
             {/* Зоны */}
+            <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, letterSpacing: 1.5, marginBottom: 10 }}>ЗОНЫ</Text>
             {[
-              { label: 'Шейка', value: order.vitaResult.zones?.cervical },
-              { label: 'Тело', value: order.vitaResult.zones?.body },
-              { label: 'Режущий край', value: order.vitaResult.zones?.incisal },
-            ].filter(z => z.value).map(zone => (
+              { label: 'Шейка', value: order.vitaResult.zones?.cervical ?? order.vitaResult.zone_cervical ?? '—' },
+              { label: 'Тело', value: order.vitaResult.zones?.body ?? order.vitaResult.zone_middle ?? '—' },
+              { label: 'Режущий край', value: order.vitaResult.zones?.incisal ?? order.vitaResult.zone_incisal ?? '—' },
+            ].map(zone => (
               <View key={zone.label} style={{
                 flexDirection: 'row',
                 justifyContent: 'space-between',
-                paddingVertical: 6,
+                alignItems: 'flex-start',
+                paddingVertical: 8,
                 borderBottomWidth: 1,
                 borderBottomColor: 'rgba(255,255,255,0.06)',
               }}>
                 <Text style={{
                   color: 'rgba(255,255,255,0.4)',
                   fontSize: 13,
+                  flex: 1,
                 }}>{zone.label}</Text>
                 <Text style={{
-                  color: '#fff',
+                  color: '#ffffff',
                   fontSize: 13,
-                  fontWeight: '500',
+                  fontWeight: '600',
+                  flex: 2,
+                  textAlign: 'right',
                 }}>{zone.value}</Text>
               </View>
             ))}
+
+            {/* Описание характеристик */}
+            {order.vitaResult.description && (
+              <View style={{ marginBottom: 12 }}>
+                {order.vitaResult.description.split('. ').filter((s: string) => s.trim().length > 0).map((sentence: string, index: number) => (
+                  <View key={index} style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: 10, marginBottom: 6, borderLeftWidth: 2, borderLeftColor: 'rgba(242,202,80,0.4)' }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, lineHeight: 18, fontStyle: 'italic' }}>
+                      {sentence.trim().endsWith('.') ? sentence.trim() : sentence.trim() + '.'}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
         )}
 
@@ -442,10 +507,10 @@ export default function OrderDetailsScreen() {
             borderColor: 'rgba(242,202,80,0.15)',
           }}>
             <Text style={{
-              color: 'rgba(255,255,255,0.4)',
-              fontSize: 11,
-              letterSpacing: 1.5,
-              marginBottom: 8,
+              color: '#f2ca50',
+              fontSize: 14,
+              fontWeight: '700',
+              marginBottom: 12,
             }}>ПРИМЕЧАНИЕ</Text>
             <Text style={{
               color: 'rgba(255,255,255,0.8)',
@@ -575,3 +640,25 @@ export default function OrderDetailsScreen() {
     </ImageBackground>
   );
 }
+
+const styles = StyleSheet.create({
+  notificationBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#E2BD75',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#031427',
+  },
+  notificationBadgeText: {
+    color: '#031427',
+    fontSize: 11,
+    fontWeight: 'bold',
+    paddingHorizontal: 4,
+  },
+});

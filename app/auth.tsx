@@ -6,21 +6,22 @@ import { StatusBar } from 'expo-status-bar';
 import { child, get, ref, set } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated,
-  Easing,
-  ImageBackground,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Animated,
+    Easing,
+    ImageBackground,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 export default function AuthScreen() {
   const [tab, setTab] = useState<'login' | 'register'>('login');
+  const [surname, setSurname] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -93,7 +94,7 @@ export default function AuthScreen() {
   });
 
   const handleRegister = async () => {
-    if (!email || !password || !name) {
+    if (!email || !password || !surname || !name) {
       setError('Заполните все поля');
       return;
     }
@@ -128,7 +129,8 @@ export default function AuthScreen() {
         return;
       }
       const userData = {
-        name,
+        id: email.replace(/\./g, '_'),
+        name: `${surname} ${name}`,
         email,
         password,
         role,
@@ -136,6 +138,23 @@ export default function AuthScreen() {
       };
       await set(ref(database, 
         'users/' + email.replace(/\./g, '_')), userData);
+      
+      // Also save to profile with separate fields
+      const profileData = {
+        firstName: name,
+        lastName: surname,
+        position: role === 'doctor' ? 'Стоматолог' : 'Зубной техник',
+        laboratory: '',
+        city: '',
+        experience: '',
+        specialization: [],
+        avatarType: 'preset',
+        avatarUrl: '',
+        avatarPresetId: 1,
+      };
+      await set(ref(database, 
+        'users/' + email.replace(/\./g, '_') + '/profile'), profileData);
+      
       await AsyncStorage.setItem('user', JSON.stringify(userData));
       router.replace('/(tabs)');
     } catch (error: any) {
@@ -202,6 +221,10 @@ const handleLogin = async () => {
       if (userData.password !== password) {
         setError('Неверный пароль');
         return;
+      }
+      // Ensure id is set in userData
+      if (!userData.id) {
+        userData.id = email.replace(/\./g, '_');
       }
       await AsyncStorage.setItem('user', JSON.stringify(userData));
       router.replace('/(tabs)');
@@ -316,7 +339,17 @@ const handleLogin = async () => {
             {tab === 'register' && (
               <TextInput
                 style={styles.input}
-                placeholder="Имя"
+                placeholder="Фамилия"
+                placeholderTextColor="rgba(255,255,255,0.4)"
+                value={surname}
+                onChangeText={setSurname}
+              />
+            )}
+
+            {tab === 'register' && (
+              <TextInput
+                style={styles.input}
+                placeholder="Имя и отчество"
                 placeholderTextColor="rgba(255,255,255,0.4)"
                 value={name}
                 onChangeText={setName}

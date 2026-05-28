@@ -8,18 +8,18 @@ import { ref as dbRef, get, set } from 'firebase/database';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  FlatList,
-  Image,
-  Modal,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    Dimensions,
+    FlatList,
+    Image,
+    Modal,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { database, storage } from '../../constants/firebase';
 import { useAuth } from '../../hooks/useAuth';
@@ -39,7 +39,7 @@ const PRESET_AVATARS = [
   require('../../assets/avatars/avatar_10.jpg'),
 ];
 
-const POSITIONS = ['Зубной техник', 'Технолог', 'Руководитель лаборатории', 'Другое'];
+const POSITIONS = ['Зубной техник', 'Стоматолог'];
 const SPECIALIZATIONS = [
   'Металлокерамика',
   'Циркон',
@@ -203,9 +203,9 @@ export default function ProfileScreen() {
   const toggleSpecialization = (spec: string) => {
     setProfile(prev => ({
       ...prev,
-      specialization: prev.specialization.includes(spec)
-        ? prev.specialization.filter(s => s !== spec)
-        : [...prev.specialization, spec],
+      specialization: (prev.specialization || []).includes(spec)
+        ? (prev.specialization || []).filter(s => s !== spec)
+        : [...(prev.specialization || []), spec],
     }));
   };
 
@@ -294,23 +294,23 @@ export default function ProfileScreen() {
           <Text style={[styles.sectionTitle, { color: theme.accent }]}>{t('personalData')}</Text>
           
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: theme.textSecondary }]}>{t('firstName')}</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.firstName}
-              onChangeText={(text) => setProfile(prev => ({ ...prev, firstName: text }))}
-              placeholder={t('firstName')}
-              placeholderTextColor={theme.textDim}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
             <Text style={[styles.label, { color: theme.textSecondary }]}>{t('lastName')}</Text>
             <TextInput
               style={styles.input}
               value={profile.lastName}
               onChangeText={(text) => setProfile(prev => ({ ...prev, lastName: text }))}
               placeholder={t('lastName')}
+              placeholderTextColor={theme.textDim}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>Имя Отчество</Text>
+            <TextInput
+              style={styles.input}
+              value={profile.firstName}
+              onChangeText={(text) => setProfile(prev => ({ ...prev, firstName: text }))}
+              placeholder="Имя Отчество"
               placeholderTextColor={theme.textDim}
             />
           </View>
@@ -404,14 +404,14 @@ export default function ProfileScreen() {
                   key={spec}
                   style={[
                     styles.chip,
-                    profile.specialization.includes(spec) && styles.chipSelected,
+                    (profile.specialization || []).includes(spec) && styles.chipSelected,
                   ]}
                   onPress={() => toggleSpecialization(spec)}
                 >
                   <Text
                     style={[
                       styles.chipText,
-                      profile.specialization.includes(spec) && styles.chipTextSelected,
+                      (profile.specialization || []).includes(spec) && styles.chipTextSelected,
                     ]}
                   >
                     {spec}
