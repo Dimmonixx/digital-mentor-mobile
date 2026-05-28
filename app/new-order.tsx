@@ -21,7 +21,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import StyledToast from '../components/ui/StyledToast';
-import { playSuccessSound } from '../utils/audio';
 
 export default function NewOrderScreen() {
   const insets = useSafeAreaInsets();
@@ -49,6 +48,12 @@ export default function NewOrderScreen() {
     fitting: null as Date | null,
     delivery: null as Date | null,
   });
+  const [times, setTimes] = useState({
+    impressions: new Date(),
+    fitting: null as Date | null,
+    delivery: null as Date | null,
+  });
+  const [skipTryIn, setSkipTryIn] = useState(false);
   const [selectedTeeth, setSelectedTeeth] = useState<{number: number, type: 'crown' | 'pontic'}[]>([]);
   const [workType, setWorkType] = useState('');
   const [workNote, setWorkNote] = useState('');
@@ -66,6 +71,8 @@ export default function NewOrderScreen() {
   const [showClearModal, setShowClearModal] = useState(false);
 
   const [showDatePicker, setShowDatePicker] = useState<string | null>(null);
+  const [showTimePicker, setShowTimePicker] = useState<string | null>(null);
+  const [pendingTimeStage, setPendingTimeStage] = useState<string | null>(null);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
   const [showWorkTypes, setShowWorkTypes] = useState(false);
@@ -229,6 +236,21 @@ export default function NewOrderScreen() {
 
   const getBlockPositionLabel = (block: { number: number }[]) =>
     block.map(tooth => getToothPositionLabel(tooth.number)).join(' / ');
+
+  const formatDateWithDay = (date: Date) => {
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear().toString().slice(-2);
+    const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+    const dayOfWeek = days[date.getDay()];
+    return `${day}.${month}.${year} (${dayOfWeek})`;
+  };
+
+  const formatTime = (date: Date) => {
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
 
   useEffect(() => {
     const loadVitaResult = async () => {
@@ -446,8 +468,13 @@ export default function NewOrderScreen() {
       workType,
       dates: {
         impressions: dates.impressions.toISOString(),
-        fitting: dates.fitting?.toISOString() || null,
+        fitting: skipTryIn ? null : (dates.fitting?.toISOString() || null),
         delivery: dates.delivery?.toISOString() || null,
+      },
+      times: {
+        impressions: times.impressions.toISOString(),
+        fitting: skipTryIn ? null : (times.fitting?.toISOString() || null),
+        delivery: times.delivery?.toISOString() || null,
       },
       selectedTeeth,
       workNote,
@@ -463,7 +490,6 @@ export default function NewOrderScreen() {
       createdAt: Date.now(),
     };
     await push(ref(database, 'orders'), order);
-    await playSuccessSound();
     await AsyncStorage.removeItem('orderDraft');
     setLoading(false);
     setToastMessage('Наряд отправлен технику');
@@ -631,23 +657,45 @@ export default function NewOrderScreen() {
               <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
             </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={() => setShowDatePicker('impressions')} style={styles.dateInput}>
-            <Text style={styles.dateText}>
-              <Text style={{ color: '#f2ca50' }}>Оттиски:</Text> {dates.impressions.toLocaleDateString('ru-RU')}
+          <View style={styles.dateInput}>
+            <Text style={styles.dateText} numberOfLines={1}>
+              <Text style={{ color: '#f2ca50' }}>Оттиски:</Text>{' '}
+              <Text style={{ color: '#ffffff' }}>{formatDateWithDay(dates.impressions)} в {formatTime(times.impressions)}</Text>
             </Text>
-            <Ionicons name="calendar" size={20} color="#f2ca50" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setShowDatePicker('fitting')} style={styles.dateInput}>
-            <Text style={styles.dateText}>
-              <Text style={{ color: '#f2ca50' }}>Примерка:</Text> {dates.fitting ? dates.fitting.toLocaleDateString('ru-RU') : 'Не назначена'}
-            </Text>
-            <Ionicons name="calendar" size={20} color="#f2ca50" />
-          </TouchableOpacity>
+          </View>
+          
+          {/* Switch for skipping try-in */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
+            <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Без примерки</Text>
+            <Switch
+              value={skipTryIn}
+              onValueChange={setSkipTryIn}
+              trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#f2ca50' }}
+              thumbColor={skipTryIn ? '#031427' : 'rgba(255,255,255,0.8)'}
+            />
+          </View>
+
+          {!skipTryIn && (
+            <TouchableOpacity onPress={() => setShowDatePicker('fitting')} style={styles.dateInput}>
+              <Text style={styles.dateText} numberOfLines={1}>
+                <Text style={{ color: '#f2ca50' }}>Примерка:</Text>{' '}
+                <Text style={{ color: '#ffffff' }}>
+                  {dates.fitting && times.fitting 
+                    ? `${formatDateWithDay(dates.fitting)} в ${formatTime(times.fitting)}` 
+                    : 'Нажмите для выбора'}
+                </Text>
+              </Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity onPress={() => setShowDatePicker('delivery')} style={styles.dateInput}>
-            <Text style={styles.dateText}>
-              <Text style={{ color: '#f2ca50' }}>Сдача:</Text> {dates.delivery ? dates.delivery.toLocaleDateString('ru-RU') : 'Не назначена'}
+            <Text style={styles.dateText} numberOfLines={1}>
+              <Text style={{ color: '#f2ca50' }}>Сдача:</Text>{' '}
+              <Text style={{ color: '#ffffff' }}>
+                {dates.delivery && times.delivery 
+                  ? `${formatDateWithDay(dates.delivery)} в ${formatTime(times.delivery)}` 
+                  : 'Нажмите для выбора'}
+              </Text>
             </Text>
-            <Ionicons name="calendar" size={20} color="#f2ca50" />
           </TouchableOpacity>
           </View>
         </View>
@@ -1189,17 +1237,40 @@ export default function NewOrderScreen() {
                       </View>
                     ))}
 
-                    {vitaResult.description ? (
+                    {vitaResult && (vitaResult.neck || vitaResult.body || vitaResult.edge || vitaResult.effects || vitaResult.features) && (
                       <View style={{ marginBottom: 12 }}>
-                        {vitaResult.description.split('. ').filter((s: string) => s.trim().length > 0).map((sentence: string, index: number) => (
-                          <View key={index} style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: 10, marginBottom: 6, borderLeftWidth: 2, borderLeftColor: 'rgba(242,202,80,0.4)' }}>
-                            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, lineHeight: 18, fontStyle: 'italic' }}>
-                              {sentence.trim().endsWith('.') ? sentence.trim() : sentence.trim() + '.'}
-                            </Text>
+                        {vitaResult.neck && (
+                          <View style={{ backgroundColor: '#131e31', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                            <Text style={{ fontWeight: 'bold', fontSize: 12, color: '#f2ca50', marginBottom: 4, textTransform: 'uppercase' }}>Шейка</Text>
+                            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, lineHeight: 16 }}>{vitaResult.neck}</Text>
                           </View>
-                        ))}
+                        )}
+                        {vitaResult.body && (
+                          <View style={{ backgroundColor: '#131e31', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                            <Text style={{ fontWeight: 'bold', fontSize: 12, color: '#f2ca50', marginBottom: 4, textTransform: 'uppercase' }}>Тело зуба</Text>
+                            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, lineHeight: 16 }}>{vitaResult.body}</Text>
+                          </View>
+                        )}
+                        {vitaResult.edge && (
+                          <View style={{ backgroundColor: '#131e31', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                            <Text style={{ fontWeight: 'bold', fontSize: 12, color: '#f2ca50', marginBottom: 4, textTransform: 'uppercase' }}>Режущий край</Text>
+                            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, lineHeight: 16 }}>{vitaResult.edge}</Text>
+                          </View>
+                        )}
+                        {vitaResult.effects && (
+                          <View style={{ backgroundColor: '#131e31', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                            <Text style={{ fontWeight: 'bold', fontSize: 12, color: '#f2ca50', marginBottom: 4, textTransform: 'uppercase' }}>Эффекты</Text>
+                            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, lineHeight: 16 }}>{vitaResult.effects}</Text>
+                          </View>
+                        )}
+                        {vitaResult.features && (
+                          <View style={{ backgroundColor: '#131e31', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                            <Text style={{ fontWeight: 'bold', fontSize: 12, color: '#f2ca50', marginBottom: 4, textTransform: 'uppercase' }}>Особенности</Text>
+                            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, lineHeight: 16 }}>{vitaResult.features}</Text>
+                          </View>
+                        )}
                       </View>
-                    ) : null}
+                    )}
 
                     <TouchableOpacity
                       onPress={async () => {
@@ -1289,43 +1360,50 @@ export default function NewOrderScreen() {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <Text style={styles.sectionTitle}>📋 СВОДКА ЗАКАЗА</Text>
             </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Пациент:</Text>
-              <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>{patientName || 'Не указан'}</Text>
+            
+            <View style={{ marginBottom: 12 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>Пациент</Text>
+              <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>{patientName || 'Не указан'}</Text>
             </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Врач:</Text>
-              <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>{selectedDoctor?.name || 'Не выбран'}</Text>
+            
+            <View style={{ marginBottom: 12 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>Врач</Text>
+              <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>{selectedDoctor?.name || 'Не выбран'}</Text>
             </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Техник:</Text>
-              <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>{selectedTechnician?.name || 'Не выбран'}</Text>
+            
+            <View style={{ marginBottom: 12 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>Техник</Text>
+              <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>{selectedTechnician?.name || 'Не выбран'}</Text>
             </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Снятие слепков:</Text>
-              <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>{dates.impressions.toLocaleDateString('ru-RU')}</Text>
+            
+            <View style={{ marginBottom: 12 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>Снятие слепков</Text>
+              <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>{formatDateWithDay(dates.impressions)}</Text>
             </View>
+            
             {dates.fitting && (
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Примерка:</Text>
-                <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>{dates.fitting.toLocaleDateString('ru-RU')}</Text>
+              <View style={{ marginBottom: 12 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>Примерка</Text>
+                <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>{formatDateWithDay(dates.fitting)}</Text>
               </View>
             )}
+            
             {dates.delivery && (
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Сдача:</Text>
-                <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>{dates.delivery.toLocaleDateString('ru-RU')}</Text>
+              <View style={{ marginBottom: 12 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>Сдача</Text>
+                <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>{formatDateWithDay(dates.delivery)}</Text>
               </View>
             )}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, marginBottom: 8 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Цвет:</Text>
-              <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>
+            
+            <View style={{ marginBottom: 12 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>Цвет</Text>
+              <Text style={{ color: '#f2ca50', fontSize: 15, fontWeight: '600' }}>
                 {(manualVitaColor.trim() || vitaResult?.primary_range || vitaResult?.shade || 'Не указан').toString()}
               </Text>
             </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Примечание:</Text>
-              <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500', flex: 1, textAlign: 'right' }}>
+            <View style={{ marginBottom: 12 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>Примечание</Text>
+              <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>
                 {workNote?.trim() ? workNote : 'Нет'}
               </Text>
             </View>
@@ -1385,9 +1463,47 @@ export default function NewOrderScreen() {
           onChange={(event, date) => {
             setShowDatePicker(null);
             if (date) {
-              if (showDatePicker === 'impressions') setDates(prev => ({ ...prev, impressions: date }));
-              else if (showDatePicker === 'fitting') setDates(prev => ({ ...prev, fitting: date }));
-              else if (showDatePicker === 'delivery') setDates(prev => ({ ...prev, delivery: date }));
+              const newDate = new Date(date);
+              if (showDatePicker === 'impressions') {
+                setDates(prev => ({ ...prev, impressions: newDate }));
+                setTimes(prev => ({ ...prev, impressions: newDate }));
+              }
+              else if (showDatePicker === 'fitting') {
+                setDates(prev => ({ ...prev, fitting: newDate }));
+                setPendingTimeStage('fitting');
+                setTimeout(() => setShowTimePicker('fitting'), 100);
+              }
+              else if (showDatePicker === 'delivery') {
+                setDates(prev => ({ ...prev, delivery: newDate }));
+                setPendingTimeStage('delivery');
+                setTimeout(() => setShowTimePicker('delivery'), 100);
+              }
+            }
+          }}
+        />
+      )}
+
+      {/* Time Picker */}
+      {showTimePicker && (
+        <DateTimePicker
+          value={times[showTimePicker as keyof typeof times] || new Date()}
+          mode="time"
+          display="default"
+          onChange={(event, date) => {
+            setShowTimePicker(null);
+            setPendingTimeStage(null);
+            if (date) {
+              const existingDate = dates[showTimePicker as keyof typeof dates];
+              const newTime = new Date(date);
+              if (existingDate) {
+                newTime.setFullYear(existingDate.getFullYear(), existingDate.getMonth(), existingDate.getDate());
+              }
+              if (showTimePicker === 'impressions') {
+                setTimes(prev => ({ ...prev, impressions: newTime }));
+                setDates(prev => ({ ...prev, impressions: newTime }));
+              }
+              else if (showTimePicker === 'fitting') setTimes(prev => ({ ...prev, fitting: newTime }));
+              else if (showTimePicker === 'delivery') setTimes(prev => ({ ...prev, delivery: newTime }));
             }
           }}
         />
@@ -1429,6 +1545,8 @@ export default function NewOrderScreen() {
                   setPatientName('');
                   setSelectedTechnician(null);
                   setDates({ impressions: new Date(), fitting: null, delivery: null });
+                  setTimes({ impressions: new Date(), fitting: null, delivery: null });
+                  setSkipTryIn(false);
                   setSelectedTeeth([]);
                   setWorkType('');
                   setWorkNote('');

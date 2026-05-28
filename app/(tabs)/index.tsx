@@ -275,11 +275,8 @@ export default function HomeScreen() {
           }}>
             <TouchableOpacity
               style={styles.card}
-              onPressIn={() => {
-                console.log('👉 КЛИК ПО КНОПКЕ НА ГЛАВНОЙ НАЖАТ!');
-                playGlobalBell();
-              }}
               onPress={() => {
+                console.log('👉 КЛИК ПО КНОПКЕ НА ГЛАВНОЙ НАЖАТ!');
                 setTimeout(() => {
                   router.push('/new-order');
                 }, 500);

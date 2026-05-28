@@ -129,11 +129,12 @@ export default function OrderDetailsScreen() {
   const isTechnician = user?.role === 'technician';
 
   return (
-    <ImageBackground
-      source={require('@/assets/images/background.png')}
-      style={{ flex: 1 }}
-      resizeMode="cover"
-    >
+    <View style={{ flex: 1, backgroundColor: '#031427' }}>
+      <ImageBackground
+        source={require('@/assets/images/background.png')}
+        style={{ flex: 1 }}
+        resizeMode="cover"
+      >
       {/* DiLabs Branded Header */}
       <View style={{
         paddingTop: insets.top + 8,
@@ -251,6 +252,7 @@ export default function OrderDetailsScreen() {
             <View key={item.label} style={{
               flexDirection: 'row',
               justifyContent: 'space-between',
+              alignItems: 'flex-start',
               paddingVertical: 10,
               borderBottomWidth: 1,
               borderBottomColor: 'rgba(255,255,255,0.06)',
@@ -263,6 +265,9 @@ export default function OrderDetailsScreen() {
                 color: '#ffffff',
                 fontSize: 14,
                 fontWeight: '500',
+                flex: 1,
+                textAlign: 'right',
+                marginLeft: 12,
               }}>{item.value || '—'}</Text>
             </View>
           ))}
@@ -482,15 +487,85 @@ export default function OrderDetailsScreen() {
             ))}
 
             {/* Описание характеристик */}
-            {order.vitaResult.description && (
-              <View style={{ marginBottom: 12 }}>
-                {order.vitaResult.description.split('. ').filter((s: string) => s.trim().length > 0).map((sentence: string, index: number) => (
-                  <View key={index} style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: 10, marginBottom: 6, borderLeftWidth: 2, borderLeftColor: 'rgba(242,202,80,0.4)' }}>
-                    <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, lineHeight: 18, fontStyle: 'italic' }}>
-                      {sentence.trim().endsWith('.') ? sentence.trim() : sentence.trim() + '.'}
-                    </Text>
+            {order.vitaResult && (order.vitaResult.neck || order.vitaResult.body || order.vitaResult.edge || order.vitaResult.effects || order.vitaResult.features) && (
+              <View style={{ marginTop: 16 }}>
+                <Text style={{ color: '#f2ca50', fontSize: 16, fontWeight: '600', marginBottom: 12 }}>Анализ характеристик зуба</Text>
+                
+                {order.vitaResult.neck && (
+                  <View style={{ 
+                    backgroundColor: '#131e31', 
+                    borderRadius: 12, 
+                    paddingVertical: 16,
+                    paddingHorizontal: 16,
+                    marginBottom: 14,
+                    width: '100%',
+                    minHeight: 'auto',
+                    alignItems: 'center',
+                  }}>
+                    <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase' }}>Шейка (Пришеечная зона)</Text>
+                    <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22, textAlign: 'center' }}>{order.vitaResult.neck}</Text>
                   </View>
-                ))}
+                )}
+                
+                {order.vitaResult.body && (
+                  <View style={{ 
+                    backgroundColor: '#131e31', 
+                    borderRadius: 12, 
+                    paddingVertical: 16,
+                    paddingHorizontal: 16,
+                    marginBottom: 14,
+                    width: '100%',
+                    minHeight: 'auto',
+                  }}>
+                    <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase', textAlign: 'center' }}>Тело зуба (Центральная часть)</Text>
+                    <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22 }}>{order.vitaResult.body}</Text>
+                  </View>
+                )}
+                
+                {order.vitaResult.edge && (
+                  <View style={{ 
+                    backgroundColor: '#131e31', 
+                    borderRadius: 12, 
+                    paddingVertical: 16,
+                    paddingHorizontal: 16,
+                    marginBottom: 14,
+                    width: '100%',
+                    minHeight: 'auto',
+                  }}>
+                    <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase', textAlign: 'center' }}>Режущий край</Text>
+                    <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22 }}>{order.vitaResult.edge}</Text>
+                  </View>
+                )}
+                
+                {order.vitaResult.effects && (
+                  <View style={{ 
+                    backgroundColor: '#131e31', 
+                    borderRadius: 12, 
+                    paddingVertical: 16,
+                    paddingHorizontal: 16,
+                    marginBottom: 14,
+                    width: '100%',
+                    minHeight: 'auto',
+                  }}>
+                    <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase', textAlign: 'center' }}>Интенсивность и эффекты</Text>
+                    <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22 }}>{order.vitaResult.effects}</Text>
+                  </View>
+                )}
+                
+                {order.vitaResult.features && (
+                  <View style={{ 
+                    backgroundColor: '#131e31', 
+                    borderRadius: 12, 
+                    paddingVertical: 16,
+                    paddingHorizontal: 16,
+                    marginBottom: 14,
+                    width: '100%',
+                    minHeight: 'auto',
+                  }}>
+                    <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase', textAlign: 'center' }}>Особенности</Text>
+                    <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22 }}>{order.vitaResult.features}</Text>
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -637,7 +712,8 @@ export default function OrderDetailsScreen() {
           )}
         </View>
       </Modal>
-    </ImageBackground>
+      </ImageBackground>
+    </View>
   );
 }
 

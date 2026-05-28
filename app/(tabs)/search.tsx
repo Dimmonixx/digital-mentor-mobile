@@ -131,6 +131,20 @@ export default function SearchScreen() {
     return types[workType] || workType;
   };
 
+  const formatDoctorName = (fullName: string) => {
+    if (!fullName) return '—';
+    const parts = fullName.trim().split(' ');
+    if (parts.length === 0) return '—';
+    const lastName = parts[0];
+    const initials = parts.slice(1).map(p => p[0] ? p[0].toUpperCase() : '').join('.');
+    return initials ? `${lastName} ${initials}.` : lastName;
+  };
+
+  const getToothNumbers = (teeth: any[]) => {
+    if (!teeth || teeth.length === 0) return null;
+    return teeth.map(t => typeof t === 'object' ? t.number : t).join(', ');
+  };
+
   return (
     <ImageBackground
       source={require('@/assets/images/background.png')}
@@ -247,30 +261,21 @@ export default function SearchScreen() {
                 borderColor: 'rgba(242,202,80,0.15)',
               }}
             >
-              {/* Шапка карточки */}
+              {/* Строка 1: Пациент и статус */}
               <View style={{
                 flexDirection: 'row',
                 justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                marginBottom: 10,
+                alignItems: 'center',
+                marginBottom: 8,
               }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{
-                    color: '#ffffff',
-                    fontSize: 16,
-                    fontWeight: '600',
-                    marginBottom: 2,
-                  }}>
-                    {order.patientName || 'Без имени'}
-                  </Text>
-                  <Text style={{
-                    color: 'rgba(255,255,255,0.4)',
-                    fontSize: 12,
-                  }}>
-                    Врач: {order.doctorName || '—'}
-                  </Text>
-                </View>
-                {/* Статус */}
+                <Text style={{
+                  color: '#ffffff',
+                  fontSize: 16,
+                  fontWeight: '600',
+                  flex: 1,
+                }}>
+                  {order.patientName || 'Без имени'}
+                </Text>
                 <View style={{
                   paddingHorizontal: 10,
                   paddingVertical: 4,
@@ -278,6 +283,7 @@ export default function SearchScreen() {
                   backgroundColor: getStatusColor(order.status) + '20',
                   borderWidth: 1,
                   borderColor: getStatusColor(order.status),
+                  marginLeft: 8,
                 }}>
                   <Text style={{
                     color: getStatusColor(order.status),
@@ -289,37 +295,48 @@ export default function SearchScreen() {
                 </View>
               </View>
 
-              {/* Инфо */}
+              {/* Строка 2: Врач */}
+              <Text style={{
+                color: 'rgba(255,255,255,0.4)',
+                fontSize: 13,
+                marginBottom: 8,
+              }}>
+                Врач: {formatDoctorName(order.doctorName)}
+              </Text>
+
+              {/* Строка 3: Вид работы | Зубы | Цвет */}
               <View style={{
                 flexDirection: 'row',
-                gap: 16,
+                alignItems: 'center',
+                flexWrap: 'wrap',
                 marginBottom: 10,
+                gap: 8,
               }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Ionicons name="construct-outline" size={13} color="rgba(255,255,255,0.4)" />
-                  <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
-                    {getWorkTypeLabel(order.workType) || '—'}
+                {getWorkTypeLabel(order.workType) && (
+                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>
+                    {getWorkTypeLabel(order.workType)}
                   </Text>
-                </View>
-                {order.selectedTeeth?.length > 0 && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <Ionicons name="medical-outline" size={13} color="rgba(255,255,255,0.4)" />
-                    <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
-                      {order.selectedTeeth.length} зуб(ов)
+                )}
+                {getToothNumbers(order.selectedTeeth) && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Ionicons name="medical-outline" size={14} color="rgba(255,255,255,0.4)" style={{ marginRight: 6 }} />
+                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginRight: 4 }}>Зубы:</Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '500' }}>
+                      {getToothNumbers(order.selectedTeeth)}
                     </Text>
                   </View>
                 )}
                 {order.vitaResult && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <Text style={{ fontSize: 11 }}>🦷</Text>
-                    <Text style={{ color: '#f2ca50', fontSize: 12, fontWeight: '600' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginRight: 4 }}>Цвет:</Text>
+                    <Text style={{ color: '#f2ca50', fontSize: 13, fontWeight: '600' }}>
                       {order.vitaResult.primary_range ?? order.vitaResult.shade ?? ''}
                     </Text>
                   </View>
                 )}
               </View>
 
-              {/* Дата и техник */}
+              {/* Строка 4: Дата и техник */}
               <View style={{
                 flexDirection: 'row',
                 justifyContent: 'space-between',
@@ -338,7 +355,7 @@ export default function SearchScreen() {
                   color: 'rgba(255,255,255,0.3)', 
                   fontSize: 11 
                 }}>
-                  Техник: {order.techName || '—'}
+                  Техник: {order.techName || (user?.role === 'technician' ? user.name : '—')}
                 </Text>
               </View>
             </TouchableOpacity>
