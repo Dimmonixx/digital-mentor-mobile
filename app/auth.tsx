@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { child, get, ref, set } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+    Alert,
     Animated,
     Easing,
     ImageBackground,
