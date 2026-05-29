@@ -556,8 +556,12 @@ export default function NewOrderScreen() {
       doctorName: selectedDoctor?.name || 'Не указан',
       technicianId: selectedTechnician?.id || null,
       technicianName: selectedTechnician?.name || 'Не указан',
+      techName: selectedTechnician?.name || 'Не указан',
       patientName,
       workType,
+      impressionsDate: dates.impressions.toISOString(),
+      fittingDate: skipTryIn ? null : (dates.fitting?.toISOString() || null),
+      deliveryDate: dates.delivery?.toISOString() || null,
       dates: {
         impressions: dates.impressions.toISOString(),
         fitting: skipTryIn ? null : (dates.fitting?.toISOString() || null),
@@ -570,7 +574,10 @@ export default function NewOrderScreen() {
       },
       selectedTeeth,
       workNote,
-      vitaResult,
+      vitaResult: vitaResult ? {
+        ...vitaResult,
+        imageUri: vitaResult.imageUri || vitaResult.originalImageUri || null,
+      } : null,
       manualVitaColor: manualVitaColor.trim(),
       implantSystem,
       fixationType,
@@ -578,6 +585,7 @@ export default function NewOrderScreen() {
       structureType,
       bridges,
       blockDetails,
+      connections,
       status: 'new',
       createdAt: Date.now(),
     };

@@ -33,6 +33,7 @@ export default function OrderDetailsScreen() {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
+  const [imageLoading, setImageLoading] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem('user').then(data => {
@@ -129,7 +130,7 @@ export default function OrderDetailsScreen() {
   const isTechnician = user?.role === 'technician';
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#031427' }}>
+    <View style={{ flex: 1, backgroundColor: '#090f1d' }}>
       <ImageBackground
         source={require('@/assets/images/background.png')}
         style={{ flex: 1 }}
@@ -247,7 +248,7 @@ export default function OrderDetailsScreen() {
           {[
             { label: 'Пациент', value: order.patientName },
             { label: 'Врач', value: order.doctorName },
-            { label: 'Техник', value: order.techName },
+            { label: 'Техник', value: order.technicianName || order.techName },
           ].map(item => (
             <View key={item.label} style={{
               flexDirection: 'row',
@@ -365,35 +366,58 @@ export default function OrderDetailsScreen() {
                 fontSize: 12,
                 marginBottom: 12,
               }}>Зубы</Text>
-              <View style={{ 
-                flexDirection: 'row', 
+              <View style={{
+                flexDirection: 'row',
                 flexWrap: 'wrap',
-                gap: 6,
+                alignItems: 'center',
               }}>
-                {order.selectedTeeth.map((tooth: any) => {
+                {order.selectedTeeth.map((tooth: any, index: number) => {
                   const num = typeof tooth === 'object' ? tooth.number : tooth;
-                  const isPontic = tooth?.type === 'pontic';
+                  const isPontic = tooth?.type === 'pontic' ||
+                    Object.values(order.blockDetails || {}).some((d: any) => d?.isPontic?.[num]);
+                  const nextTooth = order.selectedTeeth[index + 1];
+                  const nextNum = nextTooth ? (typeof nextTooth === 'object' ? nextTooth.number : nextTooth) : null;
+                  
+                  // Check if there's a connection to the next tooth
+                  const hasConnection = nextNum && order.connections?.some((conn: string) => {
+                    const [a, b] = conn.split('-').map(Number);
+                    return (a === num && b === nextNum) || (a === nextNum && b === num);
+                  });
+                  
                   return (
-                    <View key={num} style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 8,
-                      borderWidth: 1,
-                      borderColor: isPontic 
-                        ? 'rgba(242,202,80,0.3)' 
-                        : '#f2ca50',
-                      borderStyle: isPontic ? 'dashed' : 'solid',
-                      backgroundColor: isPontic
-                        ? 'rgba(242,202,80,0.05)'
-                        : 'rgba(242,202,80,0.15)',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}>
-                      <Text style={{
-                        color: '#f2ca50',
-                        fontSize: 10,
-                        fontWeight: '600',
-                      }}>{num}</Text>
+                    <View key={num} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <View style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: isPontic
+                          ? 'rgba(242,202,80,0.3)'
+                          : '#f2ca50',
+                        borderStyle: isPontic ? 'dashed' : 'solid',
+                        backgroundColor: isPontic
+                          ? 'rgba(242,202,80,0.05)'
+                          : 'rgba(242,202,80,0.15)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}>
+                        <Text style={{
+                          color: '#f2ca50',
+                          fontSize: 10,
+                          fontWeight: '600',
+                        }}>{num}</Text>
+                      </View>
+                      {hasConnection && (
+                        <View style={{
+                          width: 12,
+                          height: 2,
+                          backgroundColor: '#f2ca50',
+                          marginHorizontal: -1,
+                        }} />
+                      )}
+                      {!hasConnection && index < order.selectedTeeth.length - 1 && (
+                        <View style={{ width: 6 }} />
+                      )}
                     </View>
                   );
                 })}
@@ -429,32 +453,89 @@ export default function OrderDetailsScreen() {
             </Text>
 
             {/* Фото */}
-            {order.vitaResult.imageUri && (
-              <TouchableOpacity
-                onPress={() => setShowPhotoModal(true)}
-                style={{ marginBottom: 12 }}
-              >
-                <Image
-                  source={{ uri: order.vitaResult.imageUri }}
-                  style={{
+            {(() => {
+              const imageUri = order.vitaResult.imageUri || order.vitaResult.originalImageUri;
+              const fallbackUri = order.imageUrl || order.photoUrl;
+              const finalImageUri = imageUri || fallbackUri;
+              console.log('DEBUG_IMAGE_URI:', finalImageUri);
+              console.log('DEBUG_VITA_RESULT:', JSON.stringify(order.vitaResult, null, 2));
+              console.log('DEBUG_FALLBACK_URI:', fallbackUri);
+              
+              if (!finalImageUri) {
+                return (
+                  <View style={{
                     width: '100%',
                     height: 160,
                     borderRadius: 10,
                     borderWidth: 1,
                     borderColor: 'rgba(242,202,80,0.3)',
-                  }}
-                  resizeMode="cover"
-                />
-                <Text style={{
-                  color: 'rgba(255,255,255,0.3)',
-                  fontSize: 10,
-                  textAlign: 'center',
-                  marginTop: 4,
-                }}>
-                  Нажмите для увеличения
-                </Text>
-              </TouchableOpacity>
-            )}
+                    backgroundColor: 'rgba(255,255,255,0.05)',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    marginBottom: 12,
+                  }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>
+                      Изображение недоступно
+                    </Text>
+                  </View>
+                );
+              }
+              
+              return (
+                <TouchableOpacity
+                  onPress={() => setShowPhotoModal(true)}
+                  style={{ marginBottom: 12, position: 'relative' }}
+                >
+                  {imageLoading && (
+                    <View style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      backgroundColor: 'rgba(0,0,0,0.3)',
+                      borderRadius: 10,
+                      zIndex: 1,
+                    }}>
+                      <ActivityIndicator size="large" color="#f2ca50" />
+                    </View>
+                  )}
+                  <Image
+                    source={{ uri: finalImageUri }}
+                    style={{
+                      width: 120,
+                      height: 120,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: 'rgba(242,202,80,0.3)',
+                    }}
+                    resizeMode="cover"
+                    onLoadStart={() => {
+                      console.log('Image loading started:', finalImageUri);
+                      setImageLoading(true);
+                    }}
+                    onLoad={() => {
+                      console.log('Image loaded successfully:', finalImageUri);
+                      setImageLoading(false);
+                    }}
+                    onError={(error) => {
+                      console.log('Image load error:', error.nativeEvent.error, 'URI:', finalImageUri);
+                      setImageLoading(false);
+                    }}
+                  />
+                  <Text style={{
+                    color: 'rgba(255,255,255,0.3)',
+                    fontSize: 10,
+                    textAlign: 'center',
+                    marginTop: 4,
+                  }}>
+                    Нажмите для увеличения
+                  </Text>
+                </TouchableOpacity>
+              );
+            })()}
 
             {/* Зоны */}
             <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, letterSpacing: 1.5, marginBottom: 10 }}>ЗОНЫ</Text>
@@ -703,13 +784,25 @@ export default function OrderDetailsScreen() {
           >
             <Text style={{ color: 'white', fontSize: 28 }}>✕</Text>
           </TouchableOpacity>
-          {order.vitaResult?.imageUri && (
-            <Image
-              source={{ uri: order.vitaResult.imageUri }}
-              style={{ width: '100%', height: '80%' }}
-              resizeMode="contain"
-            />
-          )}
+          {(() => {
+            const imageUri = order.vitaResult?.imageUri || order.vitaResult?.originalImageUri;
+            if (!imageUri) {
+              return (
+                <View style={{ justifyContent: 'center', alignItems: 'center' }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 16 }}>
+                    Изображение недоступно
+                  </Text>
+                </View>
+              );
+            }
+            return (
+              <Image
+                source={{ uri: imageUri }}
+                style={{ width: '100%', height: '80%' }}
+                resizeMode="contain"
+              />
+            );
+          })()}
         </View>
       </Modal>
       </ImageBackground>
