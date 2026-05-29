@@ -7,14 +7,22 @@ export const useAuth = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    AsyncStorage.getItem('user').then((data) => {
-      if (data) {
-        const parsed = JSON.parse(data);
-        setUser(parsed);
-        setRole(parsed.role);
+    const loadUser = async () => {
+      try {
+        const data = await AsyncStorage.getItem('user');
+        if (data) {
+          const parsed = JSON.parse(data);
+          setUser(parsed);
+          setRole(parsed.role);
+        }
+      } catch (error) {
+        console.error('Error loading user from AsyncStorage:', error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    };
+    
+    loadUser();
   }, []);
 
   const logout = async () => {

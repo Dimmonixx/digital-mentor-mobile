@@ -99,17 +99,22 @@ export default function ProfileScreen() {
   useEffect(() => {
     loadProfile();
     loadStatistics();
-  }, []);
+  }, [user]);
 
   const loadProfile = async () => {
     try {
       const userId = user?.id;
-      if (!userId) return;
+      if (!userId) {
+        console.log('Profile: No userId yet, skipping load');
+        return;
+      }
 
+      console.log('Profile: Loading profile for userId:', userId);
       const profileRef = dbRef(database, `users/${userId}/profile`);
       const snapshot = await get(profileRef);
       if (snapshot.exists()) {
         const data = snapshot.val();
+        console.log('Profile: Profile data loaded:', data);
         setProfile(data as ProfileData);
         
         // If profile exists but firstName/lastName are empty, fallback to user.name
@@ -122,6 +127,7 @@ export default function ProfileScreen() {
           }));
         }
       } else {
+        console.log('Profile: No profile data found, using fallback');
         // Fallback: try to parse from user's name if profile doesn't exist
         if (user?.name) {
           const nameParts = user.name.trim().split(' ');

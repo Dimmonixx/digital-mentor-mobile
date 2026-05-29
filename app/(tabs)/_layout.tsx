@@ -11,12 +11,39 @@ import { database } from '@/constants/firebase';
 import { HeaderHeightProvider } from '../../context/HeaderHeightContext';
 import { playSuccessSound } from '../../utils/audio';
 
+const countNewOrdersForUser = (orders: { status?: string; doctorId?: string; doctorName?: string; technicianId?: string; technicianName?: string; techName?: string }[], currentUser: { email?: string; id?: string; name?: string; role?: string }) => {
+  return orders.filter((order) => {
+    if (order.status !== 'new') return false;
+
+    const userId = currentUser.email || currentUser.id;
+    const userName = currentUser.name;
+
+    if (currentUser.role === 'technician') {
+      return (
+        order.technicianId === userId ||
+        order.technicianName === userName ||
+        order.techName === userName
+      );
+    }
+
+    if (currentUser.role === 'doctor') {
+      return (
+        order.doctorId === userId ||
+        order.doctorName === userName
+      );
+    }
+
+    return true;
+  }).length;
+};
+
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
-  const [previousNewOrdersCount, setPreviousNewOrdersCount] = useState(0);
+  const [, setPreviousNewOrdersCount] = useState(0);
+  const previousNewOrdersCountRef = useRef(0);
   const isInitialLoad = useRef(true);
 
   useEffect(() => {
@@ -27,35 +54,41 @@ export default function TabLayout() {
     });
   }, []);
 
-  // Глобальный слушатель нарядов из Firebase
+  // Real-time слушатель новых нарядов (Firebase Realtime Database)
   useEffect(() => {
+    if (!user) return;
+
     const ordersRef = ref(database, 'orders');
-    const unsubscribe = onValue(ordersRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const ordersList = Object.entries(data).map(([id, order]: any) => ({
-          id,
-          ...order,
-        }));
-        
-        // Подсчитываем количество новых нарядов
-        const currentNewOrdersCount = ordersList.filter(order => order.status === 'new').length;
+    const unsubscribe = onValue(
+      ordersRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        let currentNewOrdersCount = 0;
+
+        if (data) {
+          const ordersList = Object.entries(data).map(([id, order]: any) => ({
+            id,
+            ...order,
+          }));
+          currentNewOrdersCount = countNewOrdersForUser(ordersList, user);
+        }
+
         setNewOrdersCount(currentNewOrdersCount);
-        
-        // Если количество новых нарядов увеличилось - играем звук (кроме первой загрузки)
-        if (!isInitialLoad.current && currentNewOrdersCount > previousNewOrdersCount) {
+
+        if (!isInitialLoad.current && currentNewOrdersCount > previousNewOrdersCountRef.current) {
           playSuccessSound();
         }
         isInitialLoad.current = false;
+        previousNewOrdersCountRef.current = currentNewOrdersCount;
         setPreviousNewOrdersCount(currentNewOrdersCount);
-      } else {
-        setNewOrdersCount(0);
-        setPreviousNewOrdersCount(0);
+      },
+      (error) => {
+        console.error('Ошибка при получении новых нарядов для колокольчика:', error);
       }
-    });
+    );
 
     return () => unsubscribe();
-  }, [previousNewOrdersCount]);
+  }, [user]);
 
   if (loading) return null;
   if (!user) return <Redirect href="/auth" />;
@@ -85,7 +118,7 @@ export default function TabLayout() {
               />
               <View style={styles.headerRight}>
                 <TouchableOpacity 
-                  style={styles.headerIconBtn}
+                  style={[styles.headerIconBtn, styles.bellButton]}
                   onPress={() => {
                     // Переключаемся на вкладку Наряды и фильтр "Новые"
                     router.push('/(tabs)/search');
@@ -193,23 +226,29 @@ const styles = StyleSheet.create({
   headerIconBtn: {
     padding: 4,
   },
+  bellButton: {
+    position: 'relative',
+    overflow: 'visible',
+  },
   notificationBadge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
-    backgroundColor: '#E2BD75',
+    top: -4,
+    right: -4,
+    backgroundColor: '#ff4d4d',
     borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+    minWidth: 18,
+    height: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#031427',
+    paddingHorizontal: 4,
+    zIndex: 10,
   },
   notificationBadgeText: {
-    color: '#031427',
-    fontSize: 11,
-    fontWeight: 'bold',
-    paddingHorizontal: 4,
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 12,
   },
 });

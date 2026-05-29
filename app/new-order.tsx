@@ -21,12 +21,14 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import StyledToast from '../components/ui/StyledToast';
+import { useNewOrdersCount } from '../hooks/useNewOrdersCount';
 
 export default function NewOrderScreen() {
   const insets = useSafeAreaInsets();
   const topJawScrollRef = useRef<ScrollView>(null);
   const bottomJawScrollRef = useRef<ScrollView>(null);
   const formScrollRef = useRef<ScrollView>(null);
+  const newOrdersCount = useNewOrdersCount();
 
   useEffect(() => {
     setTimeout(() => {
@@ -135,11 +137,52 @@ export default function NewOrderScreen() {
   }, [user, doctors, technicians, selectedDoctor, selectedTechnician]);
 
   useEffect(() => {
-    const restoreStates = async () => {
+    const restoreFormOnMount = async () => {
       try {
-        const savedBlockDetails = await AsyncStorage.getItem('tempBlockDetails');
-        const savedSelectedTeeth = await AsyncStorage.getItem('tempSelectedTeeth');
-        const savedShowConstructions = await AsyncStorage.getItem('tempShowConstructions');
+        const [
+          savedBlockDetails,
+          savedSelectedTeeth,
+          savedShowConstructions,
+          savedConnections,
+          savedDates,
+          savedTimes,
+          savedSkipTryIn,
+          draftRaw,
+        ] = await Promise.all([
+          AsyncStorage.getItem('tempBlockDetails'),
+          AsyncStorage.getItem('tempSelectedTeeth'),
+          AsyncStorage.getItem('tempShowConstructions'),
+          AsyncStorage.getItem('tempConnections'),
+          AsyncStorage.getItem('tempDates'),
+          AsyncStorage.getItem('tempTimes'),
+          AsyncStorage.getItem('tempSkipTryIn'),
+          AsyncStorage.getItem('orderDraft'),
+        ]);
+
+        const restoredDatesFromVita = !!savedDates;
+
+        if (savedDates) {
+          const parsed = JSON.parse(savedDates);
+          setDates({
+            impressions: new Date(parsed.impressions),
+            fitting: parsed.fitting ? new Date(parsed.fitting) : null,
+            delivery: parsed.delivery ? new Date(parsed.delivery) : null,
+          });
+          await AsyncStorage.removeItem('tempDates');
+        }
+        if (savedTimes) {
+          const parsed = JSON.parse(savedTimes);
+          setTimes({
+            impressions: new Date(parsed.impressions),
+            fitting: parsed.fitting ? new Date(parsed.fitting) : null,
+            delivery: parsed.delivery ? new Date(parsed.delivery) : null,
+          });
+          await AsyncStorage.removeItem('tempTimes');
+        }
+        if (savedSkipTryIn !== null) {
+          setSkipTryIn(savedSkipTryIn === 'true');
+          await AsyncStorage.removeItem('tempSkipTryIn');
+        }
         if (savedBlockDetails) {
           setBlockDetails(JSON.parse(savedBlockDetails));
           await AsyncStorage.removeItem('tempBlockDetails');
@@ -152,16 +195,53 @@ export default function NewOrderScreen() {
           setShowConstructions(savedShowConstructions === 'true');
           await AsyncStorage.removeItem('tempShowConstructions');
         }
-        const savedConnections = await AsyncStorage.getItem('tempConnections');
         if (savedConnections) {
           setConnections(JSON.parse(savedConnections));
           await AsyncStorage.removeItem('tempConnections');
         }
+
+        if (draftRaw) {
+          const d = JSON.parse(draftRaw);
+          if (d.selectedDoctor) setSelectedDoctor(d.selectedDoctor);
+          if (d.patientName) setPatientName(d.patientName);
+          if (d.selectedTechnician) setSelectedTechnician(d.selectedTechnician);
+          if (!restoredDatesFromVita && d.dates) {
+            setDates({
+              impressions: new Date(d.dates.impressions),
+              fitting: d.dates.fitting ? new Date(d.dates.fitting) : null,
+              delivery: d.dates.delivery ? new Date(d.dates.delivery) : null,
+            });
+          }
+          if (!savedTimes && d.times) {
+            setTimes({
+              impressions: new Date(d.times.impressions),
+              fitting: d.times.fitting ? new Date(d.times.fitting) : null,
+              delivery: d.times.delivery ? new Date(d.times.delivery) : null,
+            });
+          }
+          if (savedSkipTryIn === null && typeof d.skipTryIn === 'boolean') {
+            setSkipTryIn(d.skipTryIn);
+          }
+          if (d.selectedTeeth) setSelectedTeeth(d.selectedTeeth);
+          if (d.workType) setWorkType(d.workType);
+          if (d.workNote) setWorkNote(d.workNote);
+          if (d.implantsEnabled) setImplantsEnabled(d.implantsEnabled);
+          if (d.toothTypes) setToothTypes(d.toothTypes);
+          if (d.implantData) setImplantData(d.implantData);
+          if (d.bridges) setBridges(d.bridges);
+          if (d.connections) setConnections(d.connections);
+          if (d.blockDetails) setBlockDetails(d.blockDetails);
+          if (d.manualVitaColor) setManualVitaColor(d.manualVitaColor);
+          if (d.vitaResult) setVitaResult(d.vitaResult);
+          if (typeof d.showConstructions === 'boolean') setShowConstructions(d.showConstructions);
+        }
       } catch (error) {
-        console.error('Error restoring states:', error);
+        console.error('Error restoring form state:', error);
+      } finally {
+        setDraftLoaded(true);
       }
     };
-    restoreStates();
+    restoreFormOnMount();
   }, []);
 
   const [implantsEnabled, setImplantsEnabled] = useState(false);
@@ -275,44 +355,6 @@ export default function NewOrderScreen() {
   }, [vitaSectionY]);
 
   useEffect(() => {
-    const loadDraft = async () => {
-      try {
-        const draft = await AsyncStorage.getItem('orderDraft');
-        if (draft) {
-          const d = JSON.parse(draft);
-          if (d.selectedDoctor) setSelectedDoctor(d.selectedDoctor);
-          if (d.patientName) setPatientName(d.patientName);
-          if (d.selectedTechnician) setSelectedTechnician(d.selectedTechnician);
-          if (d.dates) {
-            setDates({
-              impressions: new Date(d.dates.impressions),
-              fitting: d.dates.fitting ? new Date(d.dates.fitting) : null,
-              delivery: d.dates.delivery ? new Date(d.dates.delivery) : null,
-            });
-          }
-          if (d.selectedTeeth) setSelectedTeeth(d.selectedTeeth);
-          if (d.workType) setWorkType(d.workType);
-          if (d.workNote) setWorkNote(d.workNote);
-          if (d.implantsEnabled) setImplantsEnabled(d.implantsEnabled);
-          if (d.toothTypes) setToothTypes(d.toothTypes);
-          if (d.implantData) setImplantData(d.implantData);
-          if (d.bridges) setBridges(d.bridges);
-          if (d.connections) setConnections(d.connections);
-          if (d.blockDetails) setBlockDetails(d.blockDetails);
-          if (d.manualVitaColor) setManualVitaColor(d.manualVitaColor);
-          if (d.vitaResult) setVitaResult(d.vitaResult);
-          if (typeof d.showConstructions === 'boolean') setShowConstructions(d.showConstructions);
-        }
-      } catch (e) {
-        console.error('Error loading draft:', e);
-      } finally {
-        setDraftLoaded(true);
-      }
-    };
-    loadDraft();
-  }, []);
-
-  useEffect(() => {
     if (selectedDoctor) AsyncStorage.setItem('selectedDoctor', JSON.stringify(selectedDoctor));
   }, [selectedDoctor]);
 
@@ -332,6 +374,12 @@ export default function NewOrderScreen() {
           fitting: dates.fitting?.toISOString() || null,
           delivery: dates.delivery?.toISOString() || null,
         },
+        times: {
+          impressions: times.impressions.toISOString(),
+          fitting: times.fitting?.toISOString() || null,
+          delivery: times.delivery?.toISOString() || null,
+        },
+        skipTryIn,
         selectedTeeth,
         workType,
         workNote,
@@ -348,7 +396,51 @@ export default function NewOrderScreen() {
       await AsyncStorage.setItem('orderDraft', JSON.stringify(draft));
     };
     saveDraft();
-  }, [draftLoaded, selectedDoctor, patientName, selectedTechnician, dates, selectedTeeth, workType, workNote, implantsEnabled, toothTypes, implantData, bridges, connections, blockDetails, manualVitaColor, vitaResult, showConstructions]);
+  }, [draftLoaded, selectedDoctor, patientName, selectedTechnician, dates, times, skipTryIn, selectedTeeth, workType, workNote, implantsEnabled, toothTypes, implantData, bridges, connections, blockDetails, manualVitaColor, vitaResult, showConstructions]);
+
+  const persistFormSnapshotForVitaNavigation = async () => {
+    const datesSnapshot = {
+      impressions: dates.impressions.toISOString(),
+      fitting: dates.fitting?.toISOString() ?? null,
+      delivery: dates.delivery?.toISOString() ?? null,
+    };
+    const timesSnapshot = {
+      impressions: times.impressions.toISOString(),
+      fitting: times.fitting?.toISOString() ?? null,
+      delivery: times.delivery?.toISOString() ?? null,
+    };
+
+    await Promise.all([
+      AsyncStorage.setItem('tempSelectedTeeth', JSON.stringify(selectedTeeth)),
+      AsyncStorage.setItem('tempBlockDetails', JSON.stringify(blockDetails)),
+      AsyncStorage.setItem('tempConnections', JSON.stringify(connections)),
+      AsyncStorage.setItem('tempShowConstructions', String(showConstructions)),
+      AsyncStorage.setItem('tempDates', JSON.stringify(datesSnapshot)),
+      AsyncStorage.setItem('tempTimes', JSON.stringify(timesSnapshot)),
+      AsyncStorage.setItem('tempSkipTryIn', String(skipTryIn)),
+      AsyncStorage.setItem('scrollToVitaOnReturn', 'true'),
+      AsyncStorage.setItem('orderDraft', JSON.stringify({
+        selectedDoctor,
+        patientName,
+        selectedTechnician,
+        dates: datesSnapshot,
+        times: timesSnapshot,
+        skipTryIn,
+        selectedTeeth,
+        workType,
+        workNote,
+        implantsEnabled,
+        toothTypes,
+        implantData,
+        bridges,
+        connections,
+        blockDetails,
+        manualVitaColor,
+        vitaResult,
+        showConstructions,
+      })),
+    ]);
+  };
 
   const upperJaw = [18,17,16,15,14,13,12,11, 21,22,23,24,25,26,27,28];
   const lowerJaw = [48,47,46,45,44,43,42,41, 31,32,33,34,35,36,37,38];
@@ -490,12 +582,13 @@ export default function NewOrderScreen() {
       createdAt: Date.now(),
     };
     await push(ref(database, 'orders'), order);
+    await AsyncStorage.removeItem('pendingVitaResult');
     await AsyncStorage.removeItem('orderDraft');
     setLoading(false);
     setToastMessage('Наряд отправлен технику');
     setToastType('success');
     setToastVisible(true);
-    setTimeout(() => router.back(), 1400);
+    setTimeout(() => router.replace('/(tabs)'), 1400);
   };
 
   const renderDatePicker = (title: string, date: Date, visible: boolean, setVisible: (val: boolean) => void, setDate: (val: Date) => void) => (
@@ -964,9 +1057,25 @@ export default function NewOrderScreen() {
                         <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>
                           {blockKey.includes('-') ? 'Мост:' : 'Зуб:'}
                         </Text>
-                        <Text style={{ color: '#E2BD75', fontSize: 14, fontWeight: '600', marginTop: 2 }}>
-                          {getBlockPositionLabel(block)}
-                        </Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 2 }}>
+                          {block.map((tooth, idx) => {
+                            const isPontic = !!blockDetails[blockKey]
+                              ?.isPontic?.[tooth.number];
+                            return (
+                              <Text key={tooth.number} style={{
+                                color: isPontic 
+                                  ? 'rgba(255,255,255,0.4)' 
+                                  : 'rgba(255,255,255,0.7)',
+                                fontSize: 13,
+                              }}>
+                                {isPontic ? '🕳 ' : '🦷 '}
+                                № {tooth.number}
+                                {isPontic ? ' (пром.)' : ''}
+                                {idx < block.length - 1 ? ' / ' : ''}
+                              </Text>
+                            );
+                          })}
+                        </View>
                       </View>
                     </View>
                   </View>
@@ -1024,6 +1133,68 @@ export default function NewOrderScreen() {
                       </View>
                     )}
 
+                    {/* Промежутки — всегда видны */}
+                    {block.length > 1 && (
+                      <View style={{ marginBottom: 12 }}>
+                        <Text style={{
+                          color: 'rgba(255,255,255,0.4)',
+                          fontSize: 11,
+                          letterSpacing: 1,
+                          marginBottom: 8,
+                        }}>ПРОМЕЖУТКИ</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                          {block.map((tooth) => {
+                            const isPontic = !!blockDetails[blockKey]?.isPontic?.[tooth.number];
+                            return (
+                              <TouchableOpacity
+                                key={tooth.number}
+                                onPress={() => setBlockDetails(prev => ({
+                                  ...prev,
+                                  [blockKey]: {
+                                    ...prev[blockKey],
+                                    isPontic: {
+                                      ...prev[blockKey]?.isPontic,
+                                      [tooth.number]: !isPontic,
+                                    }
+                                  }
+                                }))}
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  paddingHorizontal: 12,
+                                  paddingVertical: 8,
+                                  borderRadius: 10,
+                                  borderWidth: 1,
+                                  borderColor: isPontic 
+                                    ? '#f2ca50' 
+                                    : 'rgba(255,255,255,0.15)',
+                                  backgroundColor: isPontic
+                                    ? 'rgba(242,202,80,0.1)'
+                                    : 'transparent',
+                                }}
+                              >
+                                <Text style={{
+                                  color: isPontic ? '#f2ca50' : 'rgba(255,255,255,0.5)',
+                                  fontSize: 13,
+                                  fontWeight: isPontic ? '600' : '400',
+                                }}>
+                                  {isPontic ? '🕳' : '🦷'} {tooth.number}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                        <Text style={{
+                          color: 'rgba(255,255,255,0.25)',
+                          fontSize: 11,
+                          marginTop: 6,
+                        }}>
+                          Нажмите на зуб чтобы отметить как промежуток
+                        </Text>
+                      </View>
+                    )}
+
                     {/* Логика имплантов */}
                     {!!details.isImplant && (
                       <View style={{ marginTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', paddingTop: 12 }}>
@@ -1058,28 +1229,6 @@ export default function NewOrderScreen() {
                             <View key={toothNum} style={{ marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' }}>
                               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                                 <Text style={{ color: '#E2BD75', fontWeight: 'bold' }}>Зуб №{toothNum}</Text>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>Промежуток</Text>
-                                  <TouchableOpacity
-                                    onPress={() => setBlockDetails(prev => ({
-                                      ...prev,
-                                      [blockKey]: {
-                                        ...prev[blockKey],
-                                        isPontic: { ...(prev[blockKey]?.isPontic || {}), [toothNum]: !isPontic }
-                                      }
-                                    }))}
-                                    style={{
-                                      width: 36, height: 20, borderRadius: 10,
-                                      backgroundColor: isPontic ? '#E2BD75' : 'rgba(255,255,255,0.2)',
-                                      justifyContent: 'center',
-                                    }}
-                                  >
-                                    <View style={{
-                                      width: 16, height: 16, borderRadius: 8, backgroundColor: '#fff',
-                                      alignSelf: isPontic ? 'flex-end' : 'flex-start', marginHorizontal: 2,
-                                    }} />
-                                  </TouchableOpacity>
-                                </View>
                               </View>
 
                               {isPontic ? (
@@ -1275,11 +1424,7 @@ export default function NewOrderScreen() {
                     <TouchableOpacity
                       onPress={async () => {
                         setVitaResult(null);
-                        await AsyncStorage.setItem('tempSelectedTeeth', JSON.stringify(selectedTeeth));
-                        await AsyncStorage.setItem('tempBlockDetails', JSON.stringify(blockDetails));
-                        await AsyncStorage.setItem('tempConnections', JSON.stringify(connections));
-                        await AsyncStorage.setItem('tempShowConstructions', String(showConstructions));
-                        await AsyncStorage.setItem('scrollToVitaOnReturn', 'true');
+                        await persistFormSnapshotForVitaNavigation();
                         router.push('/color-analyzer');
                       }}
                       style={{ alignItems: 'center', paddingVertical: 8 }}
@@ -1293,17 +1438,11 @@ export default function NewOrderScreen() {
               <TouchableOpacity
                 onPress={async () => {
                   try {
-                    await AsyncStorage.setItem('tempSelectedTeeth', JSON.stringify(selectedTeeth));
-                    await AsyncStorage.setItem('tempBlockDetails', JSON.stringify(blockDetails));
-                    await AsyncStorage.setItem('tempConnections', JSON.stringify(connections));
-                    await AsyncStorage.setItem('tempShowConstructions', String(showConstructions));
-                    await AsyncStorage.setItem('scrollToVitaOnReturn', 'true');
+                    await persistFormSnapshotForVitaNavigation();
                     router.push('/color-analyzer');
                   } catch (error) {
                     console.error('Error saving states:', error);
-                    await AsyncStorage.setItem('tempSelectedTeeth', JSON.stringify(selectedTeeth));
-                    await AsyncStorage.setItem('tempShowConstructions', String(showConstructions));
-                    await AsyncStorage.setItem('scrollToVitaOnReturn', 'true');
+                    await persistFormSnapshotForVitaNavigation();
                     router.push('/color-analyzer');
                   }
                 }}
@@ -1378,20 +1517,20 @@ export default function NewOrderScreen() {
             
             <View style={{ marginBottom: 12 }}>
               <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>Снятие слепков</Text>
-              <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>{formatDateWithDay(dates.impressions)}</Text>
+              <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>{formatDateWithDay(dates.impressions)} {formatTime(times.impressions)}</Text>
             </View>
             
             {dates.fitting && (
               <View style={{ marginBottom: 12 }}>
                 <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>Примерка</Text>
-                <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>{formatDateWithDay(dates.fitting)}</Text>
+                <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>{formatDateWithDay(dates.fitting)} {times.fitting ? formatTime(times.fitting) : ''}</Text>
               </View>
             )}
             
             {dates.delivery && (
               <View style={{ marginBottom: 12 }}>
                 <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>Сдача</Text>
-                <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>{formatDateWithDay(dates.delivery)}</Text>
+                <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>{formatDateWithDay(dates.delivery)} {times.delivery ? formatTime(times.delivery) : ''}</Text>
               </View>
             )}
             
@@ -1408,29 +1547,102 @@ export default function NewOrderScreen() {
               </Text>
             </View>
             {selectedTeeth.length > 0 && (
-              <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)' }}>
-                <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, marginBottom: 8 }}>В работе:</Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                  {[...selectedTeeth]
-                    .sort((a, b) => a.number - b.number)
-                    .map(tooth => (
-                      <View
-                        key={tooth.number}
-                        style={{
-                          backgroundColor: 'rgba(242,202,80,0.08)',
+              <View style={{ 
+                marginTop: 12, 
+                paddingTop: 12, 
+                borderTopWidth: 1, 
+                borderTopColor: 'rgba(255,255,255,0.08)' 
+              }}>
+                <Text style={{ 
+                  color: 'rgba(255,255,255,0.6)', 
+                  fontSize: 13, 
+                  marginBottom: 10,
+                }}>В работе:</Text>
+
+                {/* Верхняя челюсть */}
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginBottom: 6 }}
+                >
+                  <View style={{ flexDirection: 'row', gap: 3 }}>
+                    {[18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28].map(num => {
+                      const tooth = selectedTeeth.find(t => t.number === num);
+                      const isSelected = !!tooth;
+                      const isPontic = tooth?.type === 'pontic' ||
+                        Object.values(blockDetails).some(d => d?.isPontic?.[num]);
+                      return (
+                        <View key={num} style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: 4,
                           borderWidth: 1,
-                          borderColor: 'rgba(242,202,80,0.28)',
-                          borderRadius: 8,
-                          paddingVertical: 6,
-                          paddingHorizontal: 8,
-                        }}
-                      >
-                        <Text style={{ color: '#E2BD75', fontSize: 12, fontWeight: '700' }}>
-                          {getToothPositionLabel(tooth.number)}
-                        </Text>
-                      </View>
-                    ))}
-                </View>
+                          borderColor: isSelected 
+                            ? (isPontic ? 'rgba(242,202,80,0.3)' : '#f2ca50')
+                            : 'rgba(255,255,255,0.25)',
+                          borderStyle: isPontic ? 'dashed' : 'solid',
+                          backgroundColor: isSelected
+                            ? (isPontic 
+                              ? 'rgba(242,202,80,0.05)' 
+                              : 'rgba(242,202,80,0.15)')
+                            : 'transparent',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}>
+                          <Text style={{
+                            color: isSelected 
+                              ? '#f2ca50' 
+                              : 'rgba(255,255,255,0.35)',
+                            fontSize: 7,
+                            fontWeight: isSelected ? '600' : '400',
+                          }}>{num}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+
+                {/* Нижняя челюсть */}
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                >
+                  <View style={{ flexDirection: 'row', gap: 3 }}>
+                    {[48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38].map(num => {
+                      const tooth = selectedTeeth.find(t => t.number === num);
+                      const isSelected = !!tooth;
+                      const isPontic = tooth?.type === 'pontic' ||
+                        Object.values(blockDetails).some(d => d?.isPontic?.[num]);
+                      return (
+                        <View key={num} style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: 4,
+                          borderWidth: 1,
+                          borderColor: isSelected 
+                            ? (isPontic ? 'rgba(242,202,80,0.3)' : '#f2ca50')
+                            : 'rgba(255,255,255,0.25)',
+                          borderStyle: isPontic ? 'dashed' : 'solid',
+                          backgroundColor: isSelected
+                            ? (isPontic 
+                              ? 'rgba(242,202,80,0.05)' 
+                              : 'rgba(242,202,80,0.15)')
+                            : 'transparent',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}>
+                          <Text style={{
+                            color: isSelected 
+                              ? '#f2ca50' 
+                              : 'rgba(255,255,255,0.35)',
+                            fontSize: 7,
+                            fontWeight: isSelected ? '600' : '400',
+                          }}>{num}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
               </View>
             )}
             </View>
@@ -1570,6 +1782,9 @@ export default function NewOrderScreen() {
                   setShowWorkTypes(false);
                   await AsyncStorage.removeItem('orderDraft');
                   await AsyncStorage.removeItem('pendingVitaResult');
+                  await AsyncStorage.removeItem('tempDates');
+                  await AsyncStorage.removeItem('tempTimes');
+                  await AsyncStorage.removeItem('tempSkipTryIn');
                 }}
               >
                 <Text style={{ color: '#ff4444', fontSize: 15, fontWeight: '600' }}>Очистить</Text>
