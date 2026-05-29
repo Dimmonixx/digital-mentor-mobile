@@ -507,10 +507,14 @@ const reset = useCallback(() => {
       
       // Затем отправляем в Claude с математическим ориентиром
       const analysis = await analyzeWithClaude(base64, mime, calculatedShade);
-      setResult(analysis);
+      const analysisWithImage = {
+        ...analysis,
+        imageUri: selectedImage,
+      };
+      setResult(analysisWithImage);
       await AsyncStorage.setItem(
         'pendingVitaResult', 
-        JSON.stringify(analysis)
+        JSON.stringify(analysisWithImage)
       );
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
