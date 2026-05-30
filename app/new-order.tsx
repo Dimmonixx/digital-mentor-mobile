@@ -7,17 +7,17 @@ import { StatusBar } from 'expo-status-bar';
 import { onValue, push, ref } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Image,
-  ImageBackground,
-  Keyboard,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Image,
+    ImageBackground,
+    Keyboard,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import StyledToast from '../components/ui/StyledToast';
@@ -232,7 +232,11 @@ export default function NewOrderScreen() {
           if (d.connections) setConnections(d.connections);
           if (d.blockDetails) setBlockDetails(d.blockDetails);
           if (d.manualVitaColor) setManualVitaColor(d.manualVitaColor);
-          if (d.vitaResult) setVitaResult(d.vitaResult);
+          // НЕ перезаписываем vitaResult из черновика, если он уже загружен из color-analyzer
+          if (d.vitaResult && !vitaResult) {
+            console.log("=== ВОССТАНОВЛЕН ИЗ ЧЕРНОВИКА ===", d.vitaResult.imageUri);
+            setVitaResult(d.vitaResult);
+          }
           if (typeof d.showConstructions === 'boolean') setShowConstructions(d.showConstructions);
         }
       } catch (error) {
@@ -338,7 +342,9 @@ export default function NewOrderScreen() {
         const shouldScrollToVita = await AsyncStorage.getItem('scrollToVitaOnReturn');
         const stored = await AsyncStorage.getItem('pendingVitaResult');
         if (stored) {
-          setVitaResult(JSON.parse(stored));
+          const parsed = JSON.parse(stored);
+          console.log("=== ПРИНЯЛИ ИЗ COLOR-ANALYZER ===", parsed.imageUri);
+          setVitaResult(parsed);
           await AsyncStorage.removeItem('pendingVitaResult');
         }
         if ((stored || shouldScrollToVita) && vitaSectionY > 0) {
@@ -589,6 +595,7 @@ export default function NewOrderScreen() {
       status: 'new',
       createdAt: Date.now(),
     };
+    console.log("=== ФИНАЛЬНЫЙ ТЕСТ ПЕРЕД ОТПРАВКОЙ ===", order.vitaResult?.imageUri);
     await push(ref(database, 'orders'), order);
     await AsyncStorage.removeItem('pendingVitaResult');
     await AsyncStorage.removeItem('orderDraft');

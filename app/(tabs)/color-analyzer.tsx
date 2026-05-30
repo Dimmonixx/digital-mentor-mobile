@@ -1,5 +1,5 @@
 import {
-    ANTHROPIC_API_KEY
+  ANTHROPIC_API_KEY
 } from '@/constants/config';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -10,16 +10,16 @@ import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Dimensions,
-    Image,
-    ImageBackground,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Dimensions,
+  Image,
+  ImageBackground,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DraggableZones, { Zone } from '../../components/DraggableZones';
@@ -504,18 +504,10 @@ const reset = useCallback(() => {
   containerSize
 );
       console.log("Рассчитанный пиксельный оттенок:", calculatedShade);
-      
+
       // Затем отправляем в Claude с математическим ориентиром
       const analysis = await analyzeWithClaude(base64, mime, calculatedShade);
-      const analysisWithImage = {
-        ...analysis,
-        imageUri: selectedImage,
-      };
-      setResult(analysisWithImage);
-      await AsyncStorage.setItem(
-        'pendingVitaResult', 
-        JSON.stringify(analysisWithImage)
-      );
+      setResult(analysis);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Ошибка запроса';
@@ -978,6 +970,10 @@ const reset = useCallback(() => {
                             {result && (
                 <TouchableOpacity
                   onPress={async () => {
+                    // Use base64 string directly instead of Firebase Storage
+                    const base64Uri = `data:image/jpeg;base64,${pendingPayload?.base64 || ''}`;
+                    const uploadedImageUrl = base64Uri;
+                    
                     await AsyncStorage.setItem(
                       'pendingVitaResult',
                       JSON.stringify({
@@ -995,7 +991,7 @@ const reset = useCallback(() => {
                           body: shadeOnly(result.zones?.body ?? ''),
                           incisal: shadeOnly(result.zones?.incisal ?? ''),
                         },
-                        imageUri: selectedImage,
+                        imageUri: uploadedImageUrl,
                       })
                     );
                     router.push('/new-order');

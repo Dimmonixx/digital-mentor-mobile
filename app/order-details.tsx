@@ -5,15 +5,15 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { onValue, ref, update } from 'firebase/database';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Image,
-  ImageBackground,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Image,
+    ImageBackground,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -34,6 +34,7 @@ export default function OrderDetailsScreen() {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
   const [imageLoading, setImageLoading] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem('user').then(data => {
@@ -128,6 +129,8 @@ export default function OrderDetailsScreen() {
 
   const statusColor = getStatusColor(order.status);
   const isTechnician = user?.role === 'technician';
+
+  console.log("=== DEBUG VITA URL ===", order?.vitaResult?.imageUri);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#090f1d' }}>
@@ -453,89 +456,39 @@ export default function OrderDetailsScreen() {
             </Text>
 
             {/* Фото */}
-            {(() => {
-              const imageUri = order.vitaResult.imageUri || order.vitaResult.originalImageUri;
-              const fallbackUri = order.imageUrl || order.photoUrl;
-              const finalImageUri = imageUri || fallbackUri;
-              console.log('DEBUG_IMAGE_URI:', finalImageUri);
-              console.log('DEBUG_VITA_RESULT:', JSON.stringify(order.vitaResult, null, 2));
-              console.log('DEBUG_FALLBACK_URI:', fallbackUri);
-              
-              if (!finalImageUri) {
-                return (
-                  <View style={{
-                    width: '100%',
-                    height: 160,
-                    borderRadius: 10,
-                    borderWidth: 1,
-                    borderColor: 'rgba(242,202,80,0.3)',
-                    backgroundColor: 'rgba(255,255,255,0.05)',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    marginBottom: 12,
-                  }}>
-                    <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>
-                      Изображение недоступно
-                    </Text>
-                  </View>
-                );
-              }
-              
-              return (
-                <TouchableOpacity
-                  onPress={() => setShowPhotoModal(true)}
-                  style={{ marginBottom: 12, position: 'relative' }}
-                >
-                  {imageLoading && (
-                    <View style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      backgroundColor: 'rgba(0,0,0,0.3)',
-                      borderRadius: 10,
-                      zIndex: 1,
-                    }}>
-                      <ActivityIndicator size="large" color="#f2ca50" />
-                    </View>
-                  )}
+            {order?.vitaResult?.imageUri ? (
+              <View style={{ position: 'relative', width: '100%', height: 250, borderRadius: 16, overflow: 'hidden', backgroundColor: '#0a1628', borderWidth: 1, borderColor: 'rgba(242,202,80,0.15)', justifyContent: 'center', alignItems: 'center' }}>
+                {!imageError ? (
                   <Image
-                    source={{ uri: finalImageUri }}
-                    style={{
-                      width: 120,
-                      height: 120,
-                      borderRadius: 10,
-                      borderWidth: 1,
-                      borderColor: 'rgba(242,202,80,0.3)',
-                    }}
-                    resizeMode="cover"
+                    source={{ uri: order.vitaResult.imageUri }}
+                    style={{ width: '100%', height: '100%' }}
+                    resizeMode="contain"
                     onLoadStart={() => {
-                      console.log('Image loading started:', finalImageUri);
                       setImageLoading(true);
+                      setImageError(false);
                     }}
-                    onLoad={() => {
-                      console.log('Image loaded successfully:', finalImageUri);
+                    onLoadEnd={() => setImageLoading(false)}
+                    onError={(e) => {
+                      console.error("Ошибка загрузки изображения:", e.nativeEvent.error);
                       setImageLoading(false);
-                    }}
-                    onError={(error) => {
-                      console.log('Image load error:', error.nativeEvent.error, 'URI:', finalImageUri);
-                      setImageLoading(false);
+                      setImageError(true);
                     }}
                   />
-                  <Text style={{
-                    color: 'rgba(255,255,255,0.3)',
-                    fontSize: 10,
-                    textAlign: 'center',
-                    marginTop: 4,
-                  }}>
-                    Нажмите для увеличения
-                  </Text>
-                </TouchableOpacity>
-              );
-            })()}
+                ) : (
+                  <Text style={{ color: '#ff4444', fontSize: 14 }}>Не удалось загрузить фото</Text>
+                )}
+
+                {imageLoading && (
+                  <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(3,20,39,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color="#f2ca50" />
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={{ width: '100%', height: 100, borderRadius: 16, backgroundColor: '#0a1628', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>Фото анализа отсутствует</Text>
+              </View>
+            )}
 
             {/* Зоны */}
             <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, letterSpacing: 1.5, marginBottom: 10 }}>ЗОНЫ</Text>
