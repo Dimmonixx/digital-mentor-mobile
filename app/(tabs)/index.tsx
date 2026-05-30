@@ -3,11 +3,13 @@ import { useTheme } from '@/context/ThemeContext';
 import { Audiowide_400Regular, useFonts } from '@expo-google-fonts/audiowide';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
 import { router } from 'expo-router';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  Dimensions,
   Easing,
   Image,
   ImageBackground,
@@ -51,6 +53,7 @@ export default function HomeScreen() {
   });
   const { theme } = useTheme();
   const { t } = useLanguage();
+  const [user, setUser] = useState<any>(null);
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const scrollAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
@@ -58,6 +61,9 @@ export default function HomeScreen() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const glowAnim = useRef(new Animated.Value(10)).current;
   const tickerAnim = useRef(new Animated.Value(400)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const floatAnim = useRef(new Animated.Value(0)).current;
+  const tickerScrollAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const startAnimation = () => {
@@ -71,6 +77,58 @@ export default function HomeScreen() {
     };
     startAnimation();
   }, []);
+
+  useEffect(() => {
+    AsyncStorage.getItem('user').then(data => {
+      if (data) {
+        setUser(JSON.parse(data));
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    // Анимация вращения вокруг оси Y
+    Animated.loop(
+      Animated.timing(spinAnim, {
+        toValue: 1,
+        duration: 6000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    ).start();
+
+    // Анимация левитации вверх-вниз
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, { toValue: 1, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(floatAnim, { toValue: 0, duration: 2000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
+  const screenWidth = Dimensions.get('window').width;
+
+  useEffect(() => {
+    scrollAnim.setValue(0);
+    Animated.loop(
+      Animated.timing(scrollAnim, {
+        toValue: -250,
+        duration: 8000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    ).start();
+  }, [user]);
+
+  const spinY = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  const translateY = floatAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -8],
+  });
 
   useEffect(() => {
     // Вращение кольца 1
@@ -241,31 +299,58 @@ export default function HomeScreen() {
               borderColor: '#4fc3f760',
               transform: [{ rotate: rotate2 }],
             }} />
+
+            {/* Анимированный золотой объект в центре */}
+            <Animated.View style={{
+              position: 'absolute',
+              transform: [
+                { rotateY: spinY },
+                { translateY }
+              ],
+              shadowColor: '#f2ca50',
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: 0.6,
+              shadowRadius: 12,
+              elevation: 8
+            }}>
+              <Ionicons
+                name={user?.role === 'technician' ? "construct" : "pulse-sharp"}
+                size={42}
+                color="#f2ca50"
+              />
+            </Animated.View>
+
+            {/* Бегущая строка по нижнему краю баннера */}
             <View style={{
               position: 'absolute',
-              top: 0, left: 0, right: 0, bottom: 0,
-              alignItems: 'center',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              backgroundColor: 'rgba(13, 21, 39, 0.8)',
+              borderTopWidth: 1,
+              borderColor: 'rgba(242, 202, 80, 0.2)',
+              height: 26,
               justifyContent: 'center',
-              overflow: 'hidden',
+              overflow: 'hidden'
             }}>
-              <Animated.Text style={{
-                color: '#f2ca50',
-                fontSize: 12,
-                fontFamily: 'Audiowide_400Regular',
-                letterSpacing: 4,
-                textShadowColor: '#000000',
-                textShadowOffset: { width: 1, height: 1 },
-                textShadowRadius: 0,
-                transform: [{ translateX: tickerAnim }],
+              <Animated.View style={{
+                flexDirection: 'row',
+                transform: [{ translateX: scrollAnim }],
+                width: 1000
               }}>
-                Welcome to DiLabs
-              </Animated.Text>
+                <Text style={{ color: '#f2ca50', fontSize: 12, fontWeight: 'bold' }}>
+                  Добро пожаловать в DiLabs, {user?.name ? user.name.split(' ').slice(0, 2).join(' ') : 'уважаемый гость'}!  •  
+                </Text>
+                <Text style={{ color: '#f2ca50', fontSize: 12, fontWeight: 'bold' }}>
+                   Добро пожаловать в DiLabs, {user?.name ? user.name.split(' ').slice(0, 2).join(' ') : 'уважаемый гость'}!  •  
+                </Text>
+              </Animated.View>
             </View>
           </View>
         </View>
 
         <View style={styles.cardsContainer}>
-          {/* 1. Новый наряд */}
+          {/* 1. Новый наряд / Входящие наряды */}
           <View style={{
             shadowColor: '#4fc3f7',
             shadowOffset: { width: 0, height: 4 },
@@ -276,17 +361,24 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.card}
               onPress={() => {
-                console.log('👉 КЛИК ПО КНОПКЕ НА ГЛАВНОЙ НАЖАТ!');
-                setTimeout(() => {
+                if (user?.role === 'technician') {
+                  router.push('/(tabs)/search');
+                } else {
                   router.push('/new-order');
-                }, 500);
+                }
               }}
               activeOpacity={0.8}
             >
               <View style={styles.iconBox}>
-                <Ionicons name="add-circle-outline" size={22} color="#f2ca50" />
+                <Ionicons 
+                  name={user?.role === 'technician' ? "download-outline" : "add-circle-outline"} 
+                  size={22} 
+                  color="#f2ca50" 
+                />
               </View>
-              <Text style={styles.labelText}>НОВЫЙ НАРЯД</Text>
+              <Text style={styles.labelText}>
+                {user?.role === 'technician' ? 'ВХОДЯЩИЕ НАРЯДЫ' : 'НОВЫЙ НАРЯД'}
+              </Text>
               <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
             </TouchableOpacity>
           </View>

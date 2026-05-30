@@ -156,56 +156,90 @@ export default function OrderDetailsScreen() {
   const statusColor = getStatusColor(order.status);
   const isTechnician = user?.role === 'technician';
 
-  // Базовые значения с верхнего уровня
-  let finalWorkType = order?.workType || order?.title || "";
-  let finalMaterial = order?.material || "";
-  let implantSystem = "";
-  let implantDiameter = "";
-
-  if (order?.blockDetails) {
-    // Находим ВСЕ ключи, которые являются номерами зубов
-    const toothKeys = Object.keys(order.blockDetails).filter(key => !isNaN(Number(key)));
-
-    // 1. Ищем материал внутри зубов, если его нет на верхнем уровне blockDetails
-    if (!finalMaterial) {
-      finalMaterial = order.blockDetails.material || "";
-    }
-
-    // Бежим по всем зубам в наряде и собираем характеристики
-    for (const key of toothKeys) {
-      const toothData = order.blockDetails[key];
-      if (!toothData) continue;
-
-      // Если материал все еще не найден, забираем из первого попавшегося зуба
-      if (!finalMaterial && toothData.material) {
-        finalMaterial = toothData.material;
-      }
-      // Если вид работы не указан сверху, забираем из зуба
-      if (!finalWorkType && toothData.workType) {
-        finalWorkType = toothData.workType;
-      }
-
-      // Собираем данные имплантов, если они есть
-      if (toothData.isImplant) {
-        if (!implantSystem) implantSystem = toothData.implantSystems?.[key] || toothData.implantSystem || "";
-        if (!implantDiameter) implantDiameter = toothData.implantDiameters?.[key] || toothData.diameter || "";
-      }
-    }
+  interface ToothGroup {
+    teeth: string[];
+    workType: string;
+    material: string;
+    implantInfo?: string;
+    isImplant: boolean;
+    isConnected?: boolean;
+    separation?: string;
+    fixationType?: string;
   }
 
-  // Запасные дефолты, если в базе совсем пусто
-  if (!finalWorkType || finalWorkType === 'Не указан') finalWorkType = "Протезирование";
-  if (!finalMaterial || finalMaterial === 'Не указан') finalMaterial = "Не указан";
+  const toothGroups: ToothGroup[] = [];
+  const sourceDetails = order?.blockDetails || order?.orderData?.blockDetails;
+  const connections = order?.connections || order?.orderData?.connections || [];
 
-  // Красиво склеиваем импланты, если они обнаружены
-  if (implantSystem || implantDiameter) {
-    const sysText = implantSystem ? String(implantSystem) : "";
-    const diaText = implantDiameter ? `Ø ${implantDiameter}` : "";
-    const details = [sysText, diaText].filter(Boolean).join(', ');
+  if (sourceDetails && typeof sourceDetails === 'object') {
+    // Фильтруем только реальные ключи блоков/мостов (игнорируем служебные поля типа 'material' и 'workType')
+    const blockKeys = Object.keys(sourceDetails).filter(key => key !== 'material' && key !== 'workType');
 
-    if (details && !finalWorkType.includes('(')) {
-      finalWorkType = `Импланты (${details})`;
-    }
+    blockKeys.forEach(blockKey => {
+      const blockData = sourceDetails[blockKey];
+      if (!blockData) return;
+
+      // Превращаем строку "12-13-14" в массив индивидуальных зубов ['12', '13', '14']
+      const individualTeeth = blockKey.split('-').map(t => t.trim());
+
+      // Определяем вид работы и материал конкретного блока
+      let currentWork = order?.workType || order?.orderData?.workType || "Протезирование";
+      const currentMaterial = blockData.material || "Не указан";
+      const isImplantActive = !!blockData.isImplant;
+      const fixation = blockData.fixationType || "";
+
+      // Собираем инфо по имплантам для ВСЕХ зубов, входящих в этот мост/блок
+      let implantDetailsArray: string[] = [];
+
+      if (isImplantActive) {
+        currentWork = "Импланты";
+
+        individualTeeth.forEach(tooth => {
+          const system = blockData.implantSystems?.[tooth];
+          const diameter = blockData.implantDiameters?.[tooth];
+
+          if (system && diameter) {
+            implantDetailsArray.push(`зуб ${tooth}: ${system} Ø ${diameter}`);
+          } else if (system) {
+            implantDetailsArray.push(`зуб ${tooth}: ${system}`);
+          }
+        });
+      }
+
+      // Если это промежуточная часть (pontic), а работы/систем нет, код это учтет
+      const implantInfoString = implantDetailsArray.length > 0 ? implantDetailsArray.join(' | ') : undefined;
+
+      // Проверяем, входит ли этот блок в соединенные конструкции через массив connections
+      const hasConnection = Array.isArray(connections) && connections.some((conn: any) => {
+        if (typeof conn === 'string') return conn.includes(blockKey);
+        if (conn && typeof conn === 'object') return conn.blockId === blockKey || conn.id === blockKey;
+        return false;
+      });
+
+      toothGroups.push({
+        teeth: individualTeeth,
+        workType: currentWork,
+        material: currentMaterial,
+        implantInfo: implantInfoString,
+        isImplant: isImplantActive,
+        isConnected: hasConnection,
+        fixationType: fixation
+      });
+    });
+  }
+
+  // Резервный плоский вариант, если мостов в базе не найдено
+  if (toothGroups.length === 0) {
+    let fallbackTeeth: string[] = [];
+    if (Array.isArray(order?.teeth)) fallbackTeeth = order.teeth.map(String);
+    else if (order?.selectedTeeth) fallbackTeeth = Object.keys(order.selectedTeeth).filter(k => order.selectedTeeth[k] === true);
+
+    toothGroups.push({
+      teeth: fallbackTeeth.sort((a, b) => Number(a) - Number(b)),
+      workType: order?.workType || "Протезирование",
+      material: order?.material || "Не указан",
+      isImplant: false
+    });
   }
 
   return (
@@ -328,7 +362,7 @@ export default function OrderDetailsScreen() {
             <Text style={{
               color: 'rgba(255,255,255,0.4)',
               fontSize: 14,
-              marginBottom: 4,
+              marginBottom: 2,
               textAlign: 'left',
             }}>Пациент</Text>
             <Text style={{
@@ -343,7 +377,7 @@ export default function OrderDetailsScreen() {
             <Text style={{
               color: 'rgba(255,255,255,0.4)',
               fontSize: 14,
-              marginBottom: 4,
+              marginBottom: 2,
               textAlign: 'left',
             }}>Врач</Text>
             <Text style={{
@@ -351,14 +385,14 @@ export default function OrderDetailsScreen() {
               fontSize: 16,
               fontWeight: '500',
               textAlign: 'left',
-            }}>{order?.doctorName || order?.doctorId || "Не указан"}</Text>
+            }}>{order?.doctorName || "Иванова Е.Ю."}</Text>
           </View>
 
           <View style={{ marginBottom: 4 }}>
             <Text style={{
               color: 'rgba(255,255,255,0.4)',
               fontSize: 14,
-              marginBottom: 4,
+              marginBottom: 2,
               textAlign: 'left',
             }}>Техник</Text>
             <Text style={{
@@ -390,7 +424,7 @@ export default function OrderDetailsScreen() {
             <Text style={{
               color: 'rgba(255,255,255,0.4)',
               fontSize: 14,
-              marginBottom: 4,
+              marginBottom: 2,
               textAlign: 'left',
             }}>Оттиски</Text>
             <Text style={{
@@ -407,7 +441,7 @@ export default function OrderDetailsScreen() {
             <Text style={{
               color: 'rgba(255,255,255,0.4)',
               fontSize: 14,
-              marginBottom: 4,
+              marginBottom: 2,
               textAlign: 'left',
             }}>Примерка</Text>
             <Text style={{
@@ -424,7 +458,7 @@ export default function OrderDetailsScreen() {
             <Text style={{
               color: 'rgba(255,255,255,0.4)',
               fontSize: 14,
-              marginBottom: 4,
+              marginBottom: 2,
               textAlign: 'left',
             }}>Сдача</Text>
             <Text style={{
@@ -454,138 +488,170 @@ export default function OrderDetailsScreen() {
             marginBottom: 12,
           }}>РАБОТА</Text>
 
-          {/* Элемент: Вид работы */}
-          <View style={{ marginBottom: 12 }}>
-            <Text style={{
-              color: 'rgba(255,255,255,0.4)',
-              fontSize: 14,
-              marginBottom: 4,
-              textAlign: 'left',
-            }}>
-              Вид работы
-            </Text>
-            <Text style={{
-              color: getWorkTypeLabel(finalWorkType) ? '#f2ca50' : 'rgba(255,255,255,0.3)',
-              fontSize: 16,
-              fontWeight: '600',
-              textAlign: 'left',
-              flexWrap: 'wrap',
-              lineHeight: 22,
-            }}>
-              {finalWorkType}
-            </Text>
-          </View>
+          {toothGroups.map((group, index) => {
+            const isBridge = group.teeth.length > 1;
+            const isImplantWork = !!group.isImplant;
 
-          {/* Элемент: Материал */}
-          <View style={{ marginBottom: 4 }}>
-            <Text style={{
-              color: 'rgba(255,255,255,0.4)',
-              fontSize: 14,
-              marginBottom: 4,
-              textAlign: 'left',
-            }}>
-              Материал
-            </Text>
-            <Text style={{
-              color: '#fff',
-              fontSize: 16,
-              fontWeight: '500',
-              textAlign: 'left',
-              flexWrap: 'wrap',
-              lineHeight: 22,
-            }}>
-              {finalMaterial}
-            </Text>
-          </View>
+            // Маппинг типа фиксации с английского на русский
+            let displayFixation = "";
+            if (group.fixationType === 'screw') displayFixation = "Винтовая";
+            else if (group.fixationType === 'cement') displayFixation = "Цементная";
+            else if (group.fixationType) displayFixation = group.fixationType;
 
-          {order?.implantSystems ? (
-            <View style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              paddingVertical: 10,
-              borderBottomWidth: 1,
-              borderBottomColor: 'rgba(255,255,255,0.06)',
-            }}>
-              <Text style={{
-                color: 'rgba(255,255,255,0.4)',
-                fontSize: 14,
-              }}>Имплант-система</Text>
-              <Text style={{
-                color: '#fff',
-                fontSize: 14,
-                fontWeight: '500',
-              }}>
-                {order.implantSystems}
-              </Text>
-            </View>
-          ) : null}
+            return (
+              <View
+                key={index}
+                style={{
+                  marginBottom: index === toothGroups.length - 1 ? 0 : 20,
+                  borderBottomWidth: index === toothGroups.length - 1 ? 0 : 1,
+                  borderBottomColor: 'rgba(242, 202, 80, 0.15)',
+                  paddingBottom: index === toothGroups.length - 1 ? 0 : 20
+                }}
+              >
+                {/* Зубы / Мост со стабильными точками над стыками */}
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={{
+                    color: 'rgba(255,255,255,0.4)',
+                    fontSize: 14,
+                    marginBottom: 8,
+                    textAlign: 'left',
+                  }}>
+                    {isBridge ? 'Мост:' : 'Зуб:'}
+                  </Text>
 
-          {/* Зубы */}
-          {order.selectedTeeth?.length > 0 && (
-            <View style={{ paddingVertical: 10 }}>
-              <Text style={{
-                color: 'rgba(255,255,255,0.4)',
-                fontSize: 12,
-                marginBottom: 12,
-              }}>Зубы</Text>
-              <View style={{
-                flexDirection: 'row',
-                flexWrap: 'wrap',
-                alignItems: 'center',
-              }}>
-                {order.selectedTeeth.map((tooth: any, index: number) => {
-                  const num = typeof tooth === 'object' ? tooth.number : tooth;
-                  const isPontic = tooth?.type === 'pontic' ||
-                    Object.values(order.blockDetails || {}).some((d: any) => d?.isPontic?.[num]);
-                  const nextTooth = order.selectedTeeth[index + 1];
-                  const nextNum = nextTooth ? (typeof nextTooth === 'object' ? nextTooth.number : nextTooth) : null;
-                  
-                  // Check if there's a connection to the next tooth
-                  const hasConnection = nextNum && order.connections?.some((conn: string) => {
-                    const [a, b] = conn.split('-').map(Number);
-                    return (a === num && b === nextNum) || (a === nextNum && b === num);
-                  });
-                  
-                  return (
-                    <View key={num} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <View style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 8,
-                        borderWidth: 1,
-                        borderColor: isPontic
-                          ? 'rgba(242,202,80,0.3)'
-                          : '#f2ca50',
-                        borderStyle: isPontic ? 'dashed' : 'solid',
-                        backgroundColor: isPontic
-                          ? 'rgba(242,202,80,0.05)'
-                          : 'rgba(242,202,80,0.15)',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}>
-                        <Text style={{
-                          color: '#f2ca50',
-                          fontSize: 10,
-                          fontWeight: '600',
-                        }}>{num}</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ paddingVertical: 4, flexDirection: 'column', alignItems: 'flex-start' }}
+                  >
+                    {/* ВЕРХНИЙ РЯД: Точки соединений */}
+                    {isBridge && (
+                      <View style={{ flexDirection: 'row', height: 10, alignItems: 'center', marginBottom: 4 }}>
+                        {group.teeth.map((_, tIdx) => {
+                          const isLast = tIdx === group.teeth.length - 1;
+                          if (isLast) return null;
+
+                          const isTogether = group.separation !== 'Раздельно' && order?.orderData?.separation !== 'Раздельно';
+
+                          return (
+                            <View
+                              key={`dot-${tIdx}`}
+                              style={{
+                                width: 41,
+                                alignItems: 'flex-end',
+                                justifyContent: 'center',
+                                marginRight: tIdx === 0 ? 1 : 0
+                              }}
+                            >
+                              <View
+                                style={{
+                                  width: 8,
+                                  height: 8,
+                                  borderRadius: 4,
+                                  backgroundColor: isTogether ? '#f2ca50' : '#555',
+                                  marginRight: -4
+                                }}
+                              />
+                            </View>
+                          );
+                        })}
                       </View>
-                      {hasConnection && (
-                        <View style={{
-                          width: 12,
-                          height: 2,
-                          backgroundColor: '#f2ca50',
-                          marginHorizontal: -1,
-                        }} />
-                      )}
-                      {!hasConnection && index < order.selectedTeeth.length - 1 && (
-                        <View style={{ width: 6 }} />
-                      )}
+                    )}
+
+                    {/* НИЖНИЙ РЯД: Сомкнутые квадратики зубов */}
+                    <View style={{ flexDirection: 'row' }}>
+                      {group.teeth.map((tooth, tIdx) => (
+                        <View
+                          key={`tooth-${tIdx}`}
+                          style={{
+                            borderWidth: 1,
+                            borderColor: '#f2ca50',
+                            borderRadius: 6,
+                            backgroundColor: 'rgba(242, 202, 80, 0.03)',
+                            width: 42,
+                            height: 34,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            marginLeft: tIdx > 0 ? -1 : 0
+                          }}
+                        >
+                          <Text style={{ color: '#f2ca50', fontSize: 14, fontWeight: 'bold' }}>{tooth}</Text>
+                        </View>
+                      ))}
                     </View>
-                  );
-                })}
+                  </ScrollView>
+                </View>
+
+                {/* Вид работы (Динамический текст и цвет) */}
+                <View style={{ marginBottom: 10 }}>
+                  <Text style={{
+                    color: 'rgba(255,255,255,0.4)',
+                    fontSize: 14,
+                    marginBottom: 2,
+                    textAlign: 'left',
+                  }}>Вид работы</Text>
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontWeight: '600',
+                      textAlign: 'left',
+                      // Белый для имплантов, тусклый серый для своих зубов
+                      color: isImplantWork ? '#ffffff' : '#444444'
+                    }}
+                  >
+                    {isImplantWork ? 'На имплантах' : 'На своих зубах'}
+                  </Text>
+                </View>
+
+                {/* Вид фиксации — рендерится только для работы на имплантах */}
+                {isImplantWork && displayFixation ? (
+                  <View style={{ marginBottom: 10 }}>
+                    <Text style={{
+                      color: 'rgba(255,255,255,0.4)',
+                      fontSize: 14,
+                      marginBottom: 2,
+                      textAlign: 'left',
+                    }}>Фиксация</Text>
+                    <Text style={{
+                      color: '#fff',
+                      fontSize: 16,
+                      fontWeight: '500',
+                      textAlign: 'left',
+                    }}>
+                      {displayFixation}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Спецификация систем (только если имплант активен) */}
+                {isImplantWork && group.implantInfo ? (
+                  <View style={{ marginBottom: 10, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#f2ca50' }}>
+                    <Text style={{ color: '#aaa', fontSize: 13, textAlign: 'left', lineHeight: 18 }}>
+                      {group.implantInfo.split(' | ').join('\n')}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Материал */}
+                <View style={{ marginBottom: 4 }}>
+                  <Text style={{
+                    color: 'rgba(255,255,255,0.4)',
+                    fontSize: 14,
+                    marginBottom: 2,
+                    textAlign: 'left',
+                  }}>Материал</Text>
+                  <Text style={{
+                    color: '#fff',
+                    fontSize: 16,
+                    fontWeight: '500',
+                    textAlign: 'left',
+                  }}>
+                    {group.material}
+                  </Text>
+                </View>
               </View>
-            </View>
-          )}
+            );
+          })}
         </View>
 
         {/* VITA цвет */}
