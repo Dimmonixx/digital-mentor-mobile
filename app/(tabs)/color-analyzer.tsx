@@ -199,7 +199,6 @@ function parseVitaJson(raw: string): VitaAnalysis | null {
 }
 
 async function analyzeWithClaude(base64: string, mediaType: 'image/jpeg' | 'image/png', calculatedShade: string): Promise<VitaAnalysis> {
-  console.log('Image base64 length:', base64.length);
   console.log('Математически рассчитанный оттенок:', calculatedShade);
   
   const vitaPrompt = `
@@ -386,9 +385,7 @@ export default function ColorAnalyzerScreen() {
     // Сначала узнаем реальные ширину и высоту картинки
     const imageInfo = await ImageManipulator.manipulateAsync(imageUri, [], { format: ImageManipulator.SaveFormat.JPEG });
     const { width: imgWidth, height: imgHeight } = imageInfo;
-    
-    console.log(`Размеры изображения: ${imgWidth}x${imgHeight}`);
-    
+
     // Используем координаты зоны 'cervical' для анализа
     const cervicalZone = zones.find(z => z.id === 'cervical');
     const cropXRatio = cervicalZone ? cervicalZone.x + cervicalZone.width * 0.4 : 0.42;
@@ -400,8 +397,6 @@ export default function ColorAnalyzerScreen() {
     const cropY = Math.round(imgHeight * cropYRatio);
     const cropWidth = Math.round(imgWidth * cropWidthRatio);
     const cropHeight = Math.round(imgHeight * cropHeightRatio);
-    
-    console.log(`Кроп координаты: X=${cropX}, Y=${cropY}, W=${cropWidth}, H=${cropHeight}`);
 
     const manipulated = await ImageManipulator.manipulateAsync(
       imageUri,
@@ -445,9 +440,8 @@ export default function ColorAnalyzerScreen() {
         pixels.push(lab);
       }
     }
-    
+
     if (pixels.length === 0) {
-      console.log('Нет валидных пикселей после фильтрации');
       return 'A2'; // Значение по умолчанию
     }
     
@@ -468,8 +462,7 @@ export default function ColorAnalyzerScreen() {
         closestShade = shade;
       }
     }
-    
-    console.log(`Математический расчет: ${closestShade}, Delta E: ${minDistance.toFixed(2)}`);
+
     return closestShade;
     
   } catch (error) {
@@ -503,7 +496,6 @@ const reset = useCallback(() => {
   zones,
   containerSize
 );
-      console.log("Рассчитанный пиксельный оттенок:", calculatedShade);
 
       // Затем отправляем в Claude с математическим ориентиром
       const analysis = await analyzeWithClaude(base64, mime, calculatedShade);

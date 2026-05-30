@@ -5,15 +5,15 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { onValue, ref, update } from 'firebase/database';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Image,
-    ImageBackground,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Image,
+  ImageBackground,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -23,6 +23,28 @@ const STATUS_FLOW = [
   { key: 'ready', label: 'Готово', color: '#4caf50', icon: '✅' },
   { key: 'delivered', label: 'Выдан', color: 'rgba(255,255,255,0.4)', icon: '📦' },
 ];
+
+const formatDateCustom = (dateVal: any) => {
+  if (!dateVal) return 'Не указана';
+  try {
+    const d = new Date(typeof dateVal === 'number' && dateVal < 1000000000000 ? dateVal * 1000 : dateVal);
+    if (isNaN(d.getTime())) return String(dateVal);
+
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = String(d.getFullYear()).slice(-2);
+
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+
+    const daysArr = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+    const dayOfWeek = daysArr[d.getDay()];
+
+    return `${day}.${month}.${year} (${dayOfWeek}) ${hours}:${minutes}`;
+  } catch (e) {
+    return String(dateVal);
+  }
+};
 
 export default function OrderDetailsScreen() {
   const insets = useSafeAreaInsets();
@@ -35,6 +57,7 @@ export default function OrderDetailsScreen() {
   const [newOrdersCount, setNewOrdersCount] = useState(0);
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [isVitaExpanded, setIsVitaExpanded] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem('user').then(data => {
@@ -47,7 +70,10 @@ export default function OrderDetailsScreen() {
     const orderRef = ref(database, `orders/${orderId}`);
     const unsubscribe = onValue(orderRef, (snapshot) => {
       const data = snapshot.val();
-      if (data) setOrder({ id: orderId, ...data });
+      if (data) {
+        const orderWithId = { id: orderId, ...data };
+        setOrder(orderWithId);
+      }
       setLoading(false);
     });
     return () => unsubscribe();
@@ -130,7 +156,57 @@ export default function OrderDetailsScreen() {
   const statusColor = getStatusColor(order.status);
   const isTechnician = user?.role === 'technician';
 
-  console.log("=== DEBUG VITA URL ===", order?.vitaResult?.imageUri);
+  // Базовые значения с верхнего уровня
+  let finalWorkType = order?.workType || order?.title || "";
+  let finalMaterial = order?.material || "";
+  let implantSystem = "";
+  let implantDiameter = "";
+
+  if (order?.blockDetails) {
+    // Находим ВСЕ ключи, которые являются номерами зубов
+    const toothKeys = Object.keys(order.blockDetails).filter(key => !isNaN(Number(key)));
+
+    // 1. Ищем материал внутри зубов, если его нет на верхнем уровне blockDetails
+    if (!finalMaterial) {
+      finalMaterial = order.blockDetails.material || "";
+    }
+
+    // Бежим по всем зубам в наряде и собираем характеристики
+    for (const key of toothKeys) {
+      const toothData = order.blockDetails[key];
+      if (!toothData) continue;
+
+      // Если материал все еще не найден, забираем из первого попавшегося зуба
+      if (!finalMaterial && toothData.material) {
+        finalMaterial = toothData.material;
+      }
+      // Если вид работы не указан сверху, забираем из зуба
+      if (!finalWorkType && toothData.workType) {
+        finalWorkType = toothData.workType;
+      }
+
+      // Собираем данные имплантов, если они есть
+      if (toothData.isImplant) {
+        if (!implantSystem) implantSystem = toothData.implantSystems?.[key] || toothData.implantSystem || "";
+        if (!implantDiameter) implantDiameter = toothData.implantDiameters?.[key] || toothData.diameter || "";
+      }
+    }
+  }
+
+  // Запасные дефолты, если в базе совсем пусто
+  if (!finalWorkType || finalWorkType === 'Не указан') finalWorkType = "Протезирование";
+  if (!finalMaterial || finalMaterial === 'Не указан') finalMaterial = "Не указан";
+
+  // Красиво склеиваем импланты, если они обнаружены
+  if (implantSystem || implantDiameter) {
+    const sysText = implantSystem ? String(implantSystem) : "";
+    const diaText = implantDiameter ? `Ø ${implantDiameter}` : "";
+    const details = [sysText, diaText].filter(Boolean).join(', ');
+
+    if (details && !finalWorkType.includes('(')) {
+      finalWorkType = `Импланты (${details})`;
+    }
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: '#090f1d' }}>
@@ -248,33 +324,50 @@ export default function OrderDetailsScreen() {
             marginBottom: 12,
           }}>УЧАСТНИКИ</Text>
 
-          {[
-            { label: 'Пациент', value: order.patientName },
-            { label: 'Врач', value: order.doctorName },
-            { label: 'Техник', value: order.technicianName || order.techName },
-          ].map(item => (
-            <View key={item.label} style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-              paddingVertical: 10,
-              borderBottomWidth: 1,
-              borderBottomColor: 'rgba(255,255,255,0.06)',
-            }}>
-              <Text style={{
-                color: 'rgba(255,255,255,0.4)',
-                fontSize: 14,
-              }}>{item.label}</Text>
-              <Text style={{
-                color: '#ffffff',
-                fontSize: 14,
-                fontWeight: '500',
-                flex: 1,
-                textAlign: 'right',
-                marginLeft: 12,
-              }}>{item.value || '—'}</Text>
-            </View>
-          ))}
+          <View style={{ marginBottom: 12 }}>
+            <Text style={{
+              color: 'rgba(255,255,255,0.4)',
+              fontSize: 14,
+              marginBottom: 4,
+              textAlign: 'left',
+            }}>Пациент</Text>
+            <Text style={{
+              color: '#ffffff',
+              fontSize: 16,
+              fontWeight: '500',
+              textAlign: 'left',
+            }}>{order?.patientName || '—'}</Text>
+          </View>
+
+          <View style={{ marginBottom: 12 }}>
+            <Text style={{
+              color: 'rgba(255,255,255,0.4)',
+              fontSize: 14,
+              marginBottom: 4,
+              textAlign: 'left',
+            }}>Врач</Text>
+            <Text style={{
+              color: '#ffffff',
+              fontSize: 16,
+              fontWeight: '500',
+              textAlign: 'left',
+            }}>{order?.doctorName || order?.doctorId || "Не указан"}</Text>
+          </View>
+
+          <View style={{ marginBottom: 4 }}>
+            <Text style={{
+              color: 'rgba(255,255,255,0.4)',
+              fontSize: 14,
+              marginBottom: 4,
+              textAlign: 'left',
+            }}>Техник</Text>
+            <Text style={{
+              color: '#ffffff',
+              fontSize: 16,
+              fontWeight: '500',
+              textAlign: 'left',
+            }}>{order?.technicianName || order?.techName || "Не указан"}</Text>
+          </View>
         </View>
 
         {/* Даты */}
@@ -293,36 +386,56 @@ export default function OrderDetailsScreen() {
             marginBottom: 12,
           }}>ДАТЫ</Text>
 
-          {[
-            { 
-              label: 'Создан', 
-              value: new Date(order.createdAt).toLocaleDateString('ru-RU') 
-            },
-            { 
-              label: 'Сдача', 
-              value: order.deliveryDate 
-                ? new Date(order.deliveryDate).toLocaleDateString('ru-RU')
-                : '—'
-            },
-          ].map(item => (
-            <View key={item.label} style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              paddingVertical: 10,
-              borderBottomWidth: 1,
-              borderBottomColor: 'rgba(255,255,255,0.06)',
+          <View style={{ marginBottom: 12 }}>
+            <Text style={{
+              color: 'rgba(255,255,255,0.4)',
+              fontSize: 14,
+              marginBottom: 4,
+              textAlign: 'left',
+            }}>Оттиски</Text>
+            <Text style={{
+              color: '#ffffff',
+              fontSize: 16,
+              fontWeight: '500',
+              textAlign: 'left',
             }}>
-              <Text style={{
-                color: 'rgba(255,255,255,0.4)',
-                fontSize: 14,
-              }}>{item.label}</Text>
-              <Text style={{
-                color: '#ffffff',
-                fontSize: 14,
-                fontWeight: '500',
-              }}>{item.value}</Text>
-            </View>
-          ))}
+              {formatDateCustom(order?.impressionDate || order?.createdAt || order?.dates?.impression)}
+            </Text>
+          </View>
+
+          <View style={{ marginBottom: 12 }}>
+            <Text style={{
+              color: 'rgba(255,255,255,0.4)',
+              fontSize: 14,
+              marginBottom: 4,
+              textAlign: 'left',
+            }}>Примерка</Text>
+            <Text style={{
+              color: '#ffffff',
+              fontSize: 16,
+              fontWeight: '500',
+              textAlign: 'left',
+            }}>
+              {order?.withoutTryIn ? 'Без примерки' : (order?.tryInDate ? formatDateCustom(order.tryInDate) : 'Не назначена')}
+            </Text>
+          </View>
+
+          <View style={{ marginBottom: 4 }}>
+            <Text style={{
+              color: 'rgba(255,255,255,0.4)',
+              fontSize: 14,
+              marginBottom: 4,
+              textAlign: 'left',
+            }}>Сдача</Text>
+            <Text style={{
+              color: '#ffffff',
+              fontSize: 16,
+              fontWeight: '500',
+              textAlign: 'left',
+            }}>
+              {formatDateCustom(order?.deliveryDate || order?.dueDate || order?.dates?.delivery)}
+            </Text>
+          </View>
         </View>
 
         {/* Работа */}
@@ -341,25 +454,71 @@ export default function OrderDetailsScreen() {
             marginBottom: 12,
           }}>РАБОТА</Text>
 
-          <View style={{
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            paddingVertical: 10,
-            borderBottomWidth: 1,
-            borderBottomColor: 'rgba(255,255,255,0.06)',
-          }}>
+          {/* Элемент: Вид работы */}
+          <View style={{ marginBottom: 12 }}>
             <Text style={{
               color: 'rgba(255,255,255,0.4)',
               fontSize: 14,
-            }}>Вид работы</Text>
-            <Text style={{
-              color: getWorkTypeLabel(order.workType) ? '#f2ca50' : 'rgba(255,255,255,0.3)',
-              fontSize: 14,
-              fontWeight: '600',
+              marginBottom: 4,
+              textAlign: 'left',
             }}>
-              {getWorkTypeLabel(order.workType) || '—'}
+              Вид работы
+            </Text>
+            <Text style={{
+              color: getWorkTypeLabel(finalWorkType) ? '#f2ca50' : 'rgba(255,255,255,0.3)',
+              fontSize: 16,
+              fontWeight: '600',
+              textAlign: 'left',
+              flexWrap: 'wrap',
+              lineHeight: 22,
+            }}>
+              {finalWorkType}
             </Text>
           </View>
+
+          {/* Элемент: Материал */}
+          <View style={{ marginBottom: 4 }}>
+            <Text style={{
+              color: 'rgba(255,255,255,0.4)',
+              fontSize: 14,
+              marginBottom: 4,
+              textAlign: 'left',
+            }}>
+              Материал
+            </Text>
+            <Text style={{
+              color: '#fff',
+              fontSize: 16,
+              fontWeight: '500',
+              textAlign: 'left',
+              flexWrap: 'wrap',
+              lineHeight: 22,
+            }}>
+              {finalMaterial}
+            </Text>
+          </View>
+
+          {order?.implantSystems ? (
+            <View style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              paddingVertical: 10,
+              borderBottomWidth: 1,
+              borderBottomColor: 'rgba(255,255,255,0.06)',
+            }}>
+              <Text style={{
+                color: 'rgba(255,255,255,0.4)',
+                fontSize: 14,
+              }}>Имплант-система</Text>
+              <Text style={{
+                color: '#fff',
+                fontSize: 14,
+                fontWeight: '500',
+              }}>
+                {order.implantSystems}
+              </Text>
+            </View>
+          ) : null}
 
           {/* Зубы */}
           {order.selectedTeeth?.length > 0 && (
@@ -439,165 +598,183 @@ export default function OrderDetailsScreen() {
             borderWidth: 1,
             borderColor: 'rgba(242,202,80,0.3)',
           }}>
-            <Text style={{
-              color: '#f2ca50',
-              fontSize: 14,
-              fontWeight: '700',
-              marginBottom: 12,
-            }}>ЦВЕТ VITA</Text>
-
-            <Text style={{
-              color: '#f2ca50',
-              fontSize: 36,
-              fontWeight: 'bold',
-              marginBottom: 12,
-            }}>
-              {order.vitaResult.primary_range ?? order.vitaResult.shade ?? '—'}
-            </Text>
-
-            {/* Фото */}
-            {order?.vitaResult?.imageUri ? (
-              <View style={{ position: 'relative', width: '100%', height: 250, borderRadius: 16, overflow: 'hidden', backgroundColor: '#0a1628', borderWidth: 1, borderColor: 'rgba(242,202,80,0.15)', justifyContent: 'center', alignItems: 'center' }}>
-                {!imageError ? (
-                  <Image
-                    source={{ uri: order.vitaResult.imageUri }}
-                    style={{ width: '100%', height: '100%' }}
-                    resizeMode="contain"
-                    onLoadStart={() => {
-                      setImageLoading(true);
-                      setImageError(false);
-                    }}
-                    onLoadEnd={() => setImageLoading(false)}
-                    onError={(e) => {
-                      console.error("Ошибка загрузки изображения:", e.nativeEvent.error);
-                      setImageLoading(false);
-                      setImageError(true);
-                    }}
-                  />
-                ) : (
-                  <Text style={{ color: '#ff4444', fontSize: 14 }}>Не удалось загрузить фото</Text>
-                )}
-
-                {imageLoading && (
-                  <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(3,20,39,0.5)', justifyContent: 'center', alignItems: 'center' }}>
-                    <ActivityIndicator size="small" color="#f2ca50" />
-                  </View>
-                )}
-              </View>
-            ) : (
-              <View style={{ width: '100%', height: 100, borderRadius: 16, backgroundColor: '#0a1628', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
-                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>Фото анализа отсутствует</Text>
-              </View>
-            )}
-
-            {/* Зоны */}
-            <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, letterSpacing: 1.5, marginBottom: 10 }}>ЗОНЫ</Text>
-            {[
-              { label: 'Шейка', value: order.vitaResult.zones?.cervical ?? order.vitaResult.zone_cervical ?? '—' },
-              { label: 'Тело', value: order.vitaResult.zones?.body ?? order.vitaResult.zone_middle ?? '—' },
-              { label: 'Режущий край', value: order.vitaResult.zones?.incisal ?? order.vitaResult.zone_incisal ?? '—' },
-            ].map(zone => (
-              <View key={zone.label} style={{
+            <TouchableOpacity
+              onPress={() => setIsVitaExpanded(!isVitaExpanded)}
+              style={{
                 flexDirection: 'row',
                 justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                paddingVertical: 8,
-                borderBottomWidth: 1,
-                borderBottomColor: 'rgba(255,255,255,0.06)',
-              }}>
+                alignItems: 'center',
+              }}
+            >
+              <View>
                 <Text style={{
-                  color: 'rgba(255,255,255,0.4)',
-                  fontSize: 13,
-                  flex: 1,
-                }}>{zone.label}</Text>
+                  color: '#f2ca50',
+                  fontSize: 14,
+                  fontWeight: '700',
+                  marginBottom: 4,
+                }}>ЦВЕТ VITA</Text>
                 <Text style={{
-                  color: '#ffffff',
-                  fontSize: 13,
-                  fontWeight: '600',
-                  flex: 2,
-                  textAlign: 'right',
-                }}>{zone.value}</Text>
+                  color: '#f2ca50',
+                  fontSize: 24,
+                  fontWeight: 'bold',
+                }}>
+                  {order.vitaResult.primary_range ?? order.vitaResult.shade ?? '—'}
+                </Text>
               </View>
-            ))}
+              <Ionicons
+                name={isVitaExpanded ? "chevron-up" : "chevron-down"}
+                size={24}
+                color="#f2ca50"
+              />
+            </TouchableOpacity>
 
-            {/* Описание характеристик */}
-            {order.vitaResult && (order.vitaResult.neck || order.vitaResult.body || order.vitaResult.edge || order.vitaResult.effects || order.vitaResult.features) && (
-              <View style={{ marginTop: 16 }}>
-                <Text style={{ color: '#f2ca50', fontSize: 16, fontWeight: '600', marginBottom: 12 }}>Анализ характеристик зуба</Text>
-                
-                {order.vitaResult.neck && (
-                  <View style={{ 
-                    backgroundColor: '#131e31', 
-                    borderRadius: 12, 
-                    paddingVertical: 16,
-                    paddingHorizontal: 16,
-                    marginBottom: 14,
-                    width: '100%',
-                    minHeight: 'auto',
-                    alignItems: 'center',
-                  }}>
-                    <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase' }}>Шейка (Пришеечная зона)</Text>
-                    <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22, textAlign: 'center' }}>{order.vitaResult.neck}</Text>
+            {isVitaExpanded && (
+              <View style={{ marginTop: 12 }}>
+                {/* Фото */}
+                {order?.vitaResult?.imageUri ? (
+                  <View style={{ position: 'relative', width: '100%', height: 250, borderRadius: 16, overflow: 'hidden', backgroundColor: '#0a1628', borderWidth: 1, borderColor: 'rgba(242,202,80,0.15)', justifyContent: 'center', alignItems: 'center', marginBottom: 12 }}>
+                    {!imageError ? (
+                      <Image
+                        source={{ uri: order.vitaResult.imageUri }}
+                        style={{ width: '100%', height: '100%' }}
+                        resizeMode="contain"
+                        onLoadStart={() => {
+                          setImageLoading(true);
+                          setImageError(false);
+                        }}
+                        onLoadEnd={() => setImageLoading(false)}
+                        onError={(e) => {
+                          console.error("Ошибка загрузки изображения:", e.nativeEvent.error);
+                          setImageLoading(false);
+                          setImageError(true);
+                        }}
+                      />
+                    ) : (
+                      <Text style={{ color: '#ff4444', fontSize: 14 }}>Не удалось загрузить фото</Text>
+                    )}
+
+                    {imageLoading && (
+                      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(3,20,39,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+                        <ActivityIndicator size="small" color="#f2ca50" />
+                      </View>
+                    )}
+                  </View>
+                ) : (
+                  <View style={{ width: '100%', height: 100, borderRadius: 16, backgroundColor: '#0a1628', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', marginBottom: 12 }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>Фото анализа отсутствует</Text>
                   </View>
                 )}
-                
-                {order.vitaResult.body && (
-                  <View style={{ 
-                    backgroundColor: '#131e31', 
-                    borderRadius: 12, 
-                    paddingVertical: 16,
-                    paddingHorizontal: 16,
-                    marginBottom: 14,
-                    width: '100%',
-                    minHeight: 'auto',
+
+                {/* Зоны */}
+                <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, letterSpacing: 1.5, marginBottom: 10 }}>ЗОНЫ</Text>
+                {[
+                  { label: 'Шейка', value: order.vitaResult.zones?.cervical ?? order.vitaResult.zone_cervical ?? '—' },
+                  { label: 'Тело', value: order.vitaResult.zones?.body ?? order.vitaResult.zone_middle ?? '—' },
+                  { label: 'Режущий край', value: order.vitaResult.zones?.incisal ?? order.vitaResult.zone_incisal ?? '—' },
+                ].map(zone => (
+                  <View key={zone.label} style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    paddingVertical: 8,
+                    borderBottomWidth: 1,
+                    borderBottomColor: 'rgba(255,255,255,0.06)',
                   }}>
-                    <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase', textAlign: 'center' }}>Тело зуба (Центральная часть)</Text>
-                    <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22 }}>{order.vitaResult.body}</Text>
+                    <Text style={{
+                      color: 'rgba(255,255,255,0.4)',
+                      fontSize: 13,
+                      flex: 1,
+                    }}>{zone.label}</Text>
+                    <Text style={{
+                      color: '#ffffff',
+                      fontSize: 13,
+                      fontWeight: '600',
+                      flex: 2,
+                      textAlign: 'right',
+                    }}>{zone.value}</Text>
                   </View>
-                )}
-                
-                {order.vitaResult.edge && (
-                  <View style={{ 
-                    backgroundColor: '#131e31', 
-                    borderRadius: 12, 
-                    paddingVertical: 16,
-                    paddingHorizontal: 16,
-                    marginBottom: 14,
-                    width: '100%',
-                    minHeight: 'auto',
-                  }}>
-                    <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase', textAlign: 'center' }}>Режущий край</Text>
-                    <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22 }}>{order.vitaResult.edge}</Text>
-                  </View>
-                )}
-                
-                {order.vitaResult.effects && (
-                  <View style={{ 
-                    backgroundColor: '#131e31', 
-                    borderRadius: 12, 
-                    paddingVertical: 16,
-                    paddingHorizontal: 16,
-                    marginBottom: 14,
-                    width: '100%',
-                    minHeight: 'auto',
-                  }}>
-                    <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase', textAlign: 'center' }}>Интенсивность и эффекты</Text>
-                    <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22 }}>{order.vitaResult.effects}</Text>
-                  </View>
-                )}
-                
-                {order.vitaResult.features && (
-                  <View style={{ 
-                    backgroundColor: '#131e31', 
-                    borderRadius: 12, 
-                    paddingVertical: 16,
-                    paddingHorizontal: 16,
-                    marginBottom: 14,
-                    width: '100%',
-                    minHeight: 'auto',
-                  }}>
-                    <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase', textAlign: 'center' }}>Особенности</Text>
-                    <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22 }}>{order.vitaResult.features}</Text>
+                ))}
+
+                {/* Описание характеристик */}
+                {order.vitaResult && (order.vitaResult.neck || order.vitaResult.body || order.vitaResult.edge || order.vitaResult.effects || order.vitaResult.features) && (
+                  <View style={{ marginTop: 16 }}>
+                    <Text style={{ color: '#f2ca50', fontSize: 16, fontWeight: '600', marginBottom: 12 }}>Анализ характеристик зуба</Text>
+
+                    {order.vitaResult.neck && (
+                      <View style={{
+                        backgroundColor: '#131e31',
+                        borderRadius: 12,
+                        paddingVertical: 16,
+                        paddingHorizontal: 16,
+                        marginBottom: 14,
+                        width: '100%',
+                        minHeight: 'auto',
+                        alignItems: 'center',
+                      }}>
+                        <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase' }}>Шейка (Пришеечная зона)</Text>
+                        <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22, textAlign: 'center' }}>{order.vitaResult.neck}</Text>
+                      </View>
+                    )}
+
+                    {order.vitaResult.body && (
+                      <View style={{
+                        backgroundColor: '#131e31',
+                        borderRadius: 12,
+                        paddingVertical: 16,
+                        paddingHorizontal: 16,
+                        marginBottom: 14,
+                        width: '100%',
+                        minHeight: 'auto',
+                      }}>
+                        <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase', textAlign: 'center' }}>Тело зуба (Центральная часть)</Text>
+                        <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22 }}>{order.vitaResult.body}</Text>
+                      </View>
+                    )}
+
+                    {order.vitaResult.edge && (
+                      <View style={{
+                        backgroundColor: '#131e31',
+                        borderRadius: 12,
+                        paddingVertical: 16,
+                        paddingHorizontal: 16,
+                        marginBottom: 14,
+                        width: '100%',
+                        minHeight: 'auto',
+                      }}>
+                        <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase', textAlign: 'center' }}>Режущий край</Text>
+                        <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22 }}>{order.vitaResult.edge}</Text>
+                      </View>
+                    )}
+
+                    {order.vitaResult.effects && (
+                      <View style={{
+                        backgroundColor: '#131e31',
+                        borderRadius: 12,
+                        paddingVertical: 16,
+                        paddingHorizontal: 16,
+                        marginBottom: 14,
+                        width: '100%',
+                        minHeight: 'auto',
+                      }}>
+                        <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase', textAlign: 'center' }}>Интенсивность и эффекты</Text>
+                        <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22 }}>{order.vitaResult.effects}</Text>
+                      </View>
+                    )}
+
+                    {order.vitaResult.features && (
+                      <View style={{
+                        backgroundColor: '#131e31',
+                        borderRadius: 12,
+                        paddingVertical: 16,
+                        paddingHorizontal: 16,
+                        marginBottom: 14,
+                        width: '100%',
+                        minHeight: 'auto',
+                      }}>
+                        <Text style={{ fontWeight: 'bold', fontSize: 14, color: '#f2ca50', marginBottom: 6, textTransform: 'uppercase', textAlign: 'center' }}>Особенности</Text>
+                        <Text style={{ fontSize: 14, color: '#fff', lineHeight: 22 }}>{order.vitaResult.features}</Text>
+                      </View>
+                    )}
                   </View>
                 )}
               </View>
