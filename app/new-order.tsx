@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { push, ref } from 'firebase/database';
+import { get, push, ref } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Image,
@@ -95,25 +95,39 @@ export default function NewOrderScreen() {
 
         const partnershipsRef = ref(database, 'partnerships');
         const snapshot = await get(partnershipsRef);
-        const partnershipsData = snapshot.val();
 
-        if (partnershipsData) {
-          const partnersList: {id: string, name: string}[] = [];
+        if (!snapshot.exists()) return;
 
-          for (const [key, partnership] of Object.entries(partnershipsData)) {
-            const p = partnership as any;
-            if (user.role === 'doctor' && p.doctorUid === userId) {
+        const partnershipsData = snapshot.val() as Record<string, {
+          doctorUid?: string;
+          doctorName?: string;
+          technicianUid?: string;
+          technicianName?: string;
+        }>;
+
+        const partnersList: { id: string; name: string }[] = [];
+        const seenIds = new Set<string>();
+
+        Object.values(partnershipsData).forEach((p) => {
+          if (!p) return;
+
+          if (user.role === 'doctor' && p.doctorUid === userId && p.technicianUid && p.technicianName) {
+            if (!seenIds.has(p.technicianUid)) {
+              seenIds.add(p.technicianUid);
               partnersList.push({ id: p.technicianUid, name: p.technicianName });
-            } else if (user.role === 'technician' && p.technicianUid === userId) {
+            }
+          } else if (user.role === 'technician' && p.technicianUid === userId && p.doctorUid && p.doctorName) {
+            if (!seenIds.has(p.doctorUid)) {
+              seenIds.add(p.doctorUid);
               partnersList.push({ id: p.doctorUid, name: p.doctorName });
             }
           }
+        });
 
-          if (user.role === 'doctor') {
-            setTechnicians(partnersList);
-          } else if (user.role === 'technician') {
-            setDoctors(partnersList);
-          }
+        if (user.role === 'doctor') {
+          setTechnicians(partnersList);
+        } else if (user.role === 'technician') {
+          setDoctors(partnersList);
         }
       } catch (error) {
         console.error('Error loading partners:', error);

@@ -8,12 +8,12 @@ import { ref as dbRef, get, set } from 'firebase/database';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Dimensions,
     FlatList,
     Image,
+    ImageBackground,
     Modal,
     ScrollView,
+    Share,
     StatusBar,
     StyleSheet,
     Text,
@@ -21,10 +21,12 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { database, storage } from '../../constants/firebase';
 import { useAuth } from '../../hooks/useAuth';
 
-const { width: screenWidth } = Dimensions.get('window');
+const GOLD = '#f2ca50';
+const DARK_BG = '#031427';
 
 const PRESET_AVATARS = [
   require('../../assets/avatars/avatar_1.jpg'),
@@ -39,7 +41,6 @@ const PRESET_AVATARS = [
   require('../../assets/avatars/avatar_10.jpg'),
 ];
 
-const POSITIONS = ['Зубной техник', 'Стоматолог'];
 const SPECIALIZATIONS = [
   'Металлокерамика',
   'Циркон',
@@ -67,8 +68,17 @@ interface Statistics {
   registrationDate: string;
 }
 
+interface LinkedPartner {
+  id: string;
+  name: string;
+  role: 'Врач' | 'Техник';
+}
+
+type FeedbackType = 'success' | 'error';
+
 export default function ProfileScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { theme, themeType } = useTheme();
   const { t } = useLanguage();
@@ -76,6 +86,7 @@ export default function ProfileScreen() {
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<'upload' | 'preset'>('upload');
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+  const [isProfDataExpanded, setIsProfDataExpanded] = useState(false);
   
   const [profile, setProfile] = useState<ProfileData>({
     firstName: '',
@@ -99,11 +110,95 @@ export default function ProfileScreen() {
   const [inviteCode, setInviteCode] = useState<string>('');
   const [partnerCode, setPartnerCode] = useState<string>('');
   const [linkingLoading, setLinkingLoading] = useState(false);
+  const [linkedPartners, setLinkedPartners] = useState<LinkedPartner[]>([]);
+  const [feedbackModal, setFeedbackModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: FeedbackType;
+    buttonLabel: string;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'success',
+    buttonLabel: 'Отлично',
+  });
+
+  const showFeedback = (
+    title: string,
+    message: string,
+    type: FeedbackType = 'success',
+    buttonLabel = type === 'success' ? 'Отлично' : 'Ок',
+  ) => {
+    setFeedbackModal({ visible: true, title, message, type, buttonLabel });
+  };
+
+  const closeFeedback = () => {
+    setFeedbackModal((prev) => ({ ...prev, visible: false }));
+  };
+
+  const loadProfilePartners = async () => {
+    try {
+      const userId = user?.id;
+      if (!userId || !user?.role) {
+        setLinkedPartners([]);
+        return;
+      }
+
+      const partnershipsRef = dbRef(database, 'partnerships');
+      const snapshot = await get(partnershipsRef);
+
+      if (!snapshot.exists()) {
+        setLinkedPartners([]);
+        return;
+      }
+
+      const partnershipsData = snapshot.val() as Record<string, {
+        doctorUid?: string;
+        doctorName?: string;
+        technicianUid?: string;
+        technicianName?: string;
+      }>;
+
+      const partners: LinkedPartner[] = [];
+      const seenIds = new Set<string>();
+
+      Object.values(partnershipsData).forEach((p) => {
+        if (!p) return;
+
+        if (user.role === 'doctor' && p.doctorUid === userId && p.technicianUid) {
+          if (!seenIds.has(p.technicianUid)) {
+            seenIds.add(p.technicianUid);
+            partners.push({
+              id: p.technicianUid,
+              name: p.technicianName || 'Коллега',
+              role: 'Техник',
+            });
+          }
+        } else if (user.role === 'technician' && p.technicianUid === userId && p.doctorUid) {
+          if (!seenIds.has(p.doctorUid)) {
+            seenIds.add(p.doctorUid);
+            partners.push({
+              id: p.doctorUid,
+              name: p.doctorName || 'Коллега',
+              role: 'Врач',
+            });
+          }
+        }
+      });
+
+      setLinkedPartners(partners);
+    } catch (error) {
+      console.error('Error loading profile partners:', error);
+    }
+  };
 
   useEffect(() => {
     loadProfile();
     loadStatistics();
     loadInviteCode();
+    loadProfilePartners();
   }, [user]);
 
   const loadProfile = async () => {
@@ -120,8 +215,14 @@ export default function ProfileScreen() {
       if (snapshot.exists()) {
         const data = snapshot.val();
         console.log('Profile: Profile data loaded:', data);
-        setProfile(data as ProfileData);
-        
+        const rolePosition =
+          user?.role === 'doctor'
+            ? 'Стоматолог'
+            : user?.role === 'technician'
+              ? 'Зубной техник'
+              : data.position;
+        setProfile({ ...(data as ProfileData), position: rolePosition });
+
         // If profile exists but firstName/lastName are empty, fallback to user.name
         if (!data.firstName && !data.lastName && user?.name) {
           const nameParts = user.name.trim().split(' ');
@@ -215,7 +316,7 @@ export default function ProfileScreen() {
       const allUsers = snapshot.val();
 
       if (!allUsers) {
-        Alert.alert('Ошибка', 'Пользователь с таким кодом не найден');
+        showFeedback('Ошибка', 'Пользователь с таким кодом не найден', 'error');
         return;
       }
 
@@ -228,16 +329,23 @@ export default function ProfileScreen() {
       }
 
       if (!targetUser) {
-        Alert.alert('Ошибка', 'Пользователь с таким кодом не найден');
+        showFeedback('Ошибка', 'Пользователь с таким кодом не найден', 'error');
         return;
       }
 
-      // Check roles
       const currentUserRole = user?.role;
       const targetUserRole = targetUser.role;
 
       if (currentUserRole === targetUserRole) {
-        Alert.alert('Ошибка', 'Нельзя связать пользователей с одинаковой ролью');
+        showFeedback('Ошибка', 'Нельзя связать пользователей с одинаковой ролью', 'error');
+        return;
+      }
+
+      const partnershipKey = `${userId}_${targetUser.uid}`;
+      const existingRef = dbRef(database, `partnerships/${partnershipKey}`);
+      const existingSnapshot = await get(existingRef);
+      if (existingSnapshot.exists()) {
+        showFeedback('Уже привязан', 'Этот коллега уже есть в вашем списке', 'error', 'Ок');
         return;
       }
 
@@ -257,11 +365,12 @@ export default function ProfileScreen() {
         createdAt: Date.now(),
       });
 
-      Alert.alert('Успешно', 'Коллега успешно привязан!');
       setPartnerCode('');
+      await loadProfilePartners();
+      showFeedback('Успешно', 'Коллега успешно привязан!');
     } catch (error) {
       console.error('Error linking partner:', error);
-      Alert.alert('Ошибка', 'Не удалось привязать коллегу');
+      showFeedback('Ошибка', 'Не удалось привязать коллегу', 'error');
     } finally {
       setLinkingLoading(false);
     }
@@ -303,7 +412,7 @@ export default function ProfileScreen() {
       }
     } catch (error) {
       console.error('Error uploading photo:', error);
-      Alert.alert('Ошибка', 'Не удалось загрузить фото');
+      showFeedback('Ошибка', 'Не удалось загрузить фото', 'error');
     }
   };
 
@@ -334,10 +443,10 @@ export default function ProfileScreen() {
 
       const profileRef = dbRef(database, `users/${userId}/profile`);
       await set(profileRef, profile);
-      Alert.alert('Успешно', 'Профиль сохранен');
+      showFeedback('Успешно', 'Профиль сохранён');
     } catch (error) {
       console.error('Error saving profile:', error);
-      Alert.alert('Ошибка', 'Не удалось сохранить профиль');
+      showFeedback('Ошибка', 'Не удалось сохранить профиль', 'error');
     } finally {
       setLoading(false);
     }
@@ -354,229 +463,136 @@ export default function ProfileScreen() {
     if (profile.avatarType === 'preset' && profile.avatarPresetId) {
       return PRESET_AVATARS[profile.avatarPresetId - 1] || PRESET_AVATARS[0];
     }
-    // Default case - show icon placeholder
     return null;
   };
 
+  const getDisplayName = () => {
+    const fromProfile = [profile.lastName, profile.firstName].filter(Boolean).join(' ').trim();
+    if (fromProfile) return fromProfile;
+    if (user?.name) return user.name;
+    return 'Пользователь';
+  };
+
+  const getRoleBadge = () => {
+    if (user?.role === 'doctor') return 'Стоматолог';
+    if (user?.role === 'technician') return 'Зубной техник';
+    return profile.position || 'Участник DiLabs';
+  };
+
+  const labFieldLabel =
+    user?.role === 'doctor' ? 'Название клиники' : 'Название лаборатории';
+
+  const onShareCode = async () => {
+    try {
+      await Share.share({
+        message: `Привет! Добавь меня в экосистеме DiLabs. Мой код связи: ${inviteCode}`,
+      });
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
   return (
-    <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <StatusBar barStyle={themeType === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.bg} />
+    <ImageBackground
+      source={require('@/assets/images/background.png')}
+      style={styles.container}
+      resizeMode="cover"
+    >
+      <View style={styles.containerInner}>
+      <StatusBar barStyle={themeType === 'dark' ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
       
-      <ScrollView 
-          style={styles.scrollView}
-          contentContainerStyle={{ paddingBottom: 120 }}
-          showsVerticalScrollIndicator={false}
-        >
-        {/* Header */}
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center',
-          paddingHorizontal: 16, 
-          paddingVertical: 12,
-          position: 'relative' 
-        }}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color={theme.accent} />
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: 130 + insets.bottom },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Nav */}
+        <View style={[styles.navBar, { paddingTop: insets.top + 4 }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.navBack}>
+            <Ionicons name="arrow-back" size={24} color={GOLD} />
           </TouchableOpacity>
-            <Text style={{ 
-              position: 'absolute', 
-              left: 0, right: 0, 
-              textAlign: 'center',
-              color: theme.accent, 
-              fontSize: 22, 
-              fontWeight: 'bold' 
-            }}>
-              {t('profile')}
-            </Text>
+          <Text style={styles.navTitle}>{t('profile')}</Text>
+          <View style={styles.navBack} />
         </View>
 
-        {/* Avatar Block */}
-        <View style={styles.avatarBlock}>
-          <TouchableOpacity onPress={handleAvatarPress}>
+        {/* 1. Profile hero */}
+        <View style={styles.heroCard}>
+          <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.9}>
             {getAvatarSource() ? (
-              <Image source={getAvatarSource()} style={styles.avatar} />
+              <Image source={getAvatarSource()!} style={styles.avatar} />
             ) : (
-              <View style={[styles.avatar, { justifyContent: 'center', alignItems: 'center' }]}>
-                <Ionicons name="person-circle-outline" size={120} color={theme.accent} />
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Ionicons name="person" size={52} color={GOLD} />
               </View>
             )}
             <View style={styles.editIcon}>
-              <Ionicons name="pencil" size={20} color={theme.bg} />
+              <Ionicons name="pencil" size={14} color={DARK_BG} />
             </View>
           </TouchableOpacity>
-        </View>
-
-        {/* Personal Data */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.accent }]}>{t('personalData')}</Text>
-          
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: theme.textSecondary }]}>{t('lastName')}</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.lastName}
-              onChangeText={(text) => setProfile(prev => ({ ...prev, lastName: text }))}
-              placeholder={t('lastName')}
-              placeholderTextColor={theme.textDim}
+          <Text style={styles.displayName}>{getDisplayName()}</Text>
+          <View style={styles.roleBadge}>
+            <Ionicons
+              name={user?.role === 'doctor' ? 'medical' : 'construct'}
+              size={14}
+              color={DARK_BG}
+              style={{ marginRight: 6 }}
             />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: theme.textSecondary }]}>Имя Отчество</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.firstName}
-              onChangeText={(text) => setProfile(prev => ({ ...prev, firstName: text }))}
-              placeholder="Имя Отчество"
-              placeholderTextColor={theme.textDim}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: theme.textSecondary }]}>{t('position')}</Text>
-            <View style={styles.pickerContainer}>
-              {POSITIONS.map((position) => (
-                <TouchableOpacity
-                  key={position}
-                  style={[
-                    styles.pickerOption,
-                    profile.position === position && styles.pickerOptionSelected,
-                  ]}
-                  onPress={() => setProfile(prev => ({ ...prev, position }))}
-                >
-                  <Text
-                    style={[
-                      styles.pickerOptionText,
-                      profile.position === position && styles.pickerOptionTextSelected,
-                    ]}
-                  >
-                    {position}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <Text style={styles.roleBadgeText}>{getRoleBadge()}</Text>
           </View>
         </View>
 
-        {/* Laboratory Info */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>О лаборатории</Text>
-          
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Название лаборатории</Text>
+        {/* 2. Statistics */}
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{statistics.ordersCount}</Text>
+            <Text style={styles.statLabel}>Заказов</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{statistics.analysesCount}</Text>
+            <Text style={styles.statLabel}>Анализов цвета</Text>
+          </View>
+        </View>
+
+        {/* 3. DiLabs network */}
+        <View style={styles.networkBlock}>
+          <View style={styles.networkHeader}>
+            <Ionicons name="planet-outline" size={18} color={GOLD} />
+            <Text style={styles.networkTitle} numberOfLines={1}>
+              СЕТЬ DILABS
+            </Text>
+          </View>
+
+          <Text style={styles.networkSubLabel}>Ваш личный код связи</Text>
+          <View style={styles.inviteCodeRow}>
+            <Text style={styles.inviteCode}>{inviteCode || '···'}</Text>
             <TouchableOpacity
-              onLongPress={() => {
-                Alert.alert('Копирование', 'Текст доступен для выбора и копирования');
-              }}
+              style={styles.shareCodeButton}
+              onPress={onShareCode}
+              disabled={!inviteCode}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <TextInput
-                style={styles.input}
-                value={profile.laboratory}
-                onChangeText={(text) => setProfile(prev => ({ ...prev, laboratory: text }))}
-                placeholder="Введите название"
-                placeholderTextColor="rgba(255,255,255,0.3)"
-              />
+              <Ionicons name="paper-plane-outline" size={22} color={GOLD} />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Город</Text>
-            <TouchableOpacity
-              onLongPress={() => {
-                Alert.alert('Копирование', 'Текст доступен для выбора и копирования');
-              }}
-            >
-              <TextInput
-                style={styles.input}
-                value={profile.city}
-                onChangeText={(text) => setProfile(prev => ({ ...prev, city: text }))}
-                placeholder="Введите город"
-                placeholderTextColor="rgba(255,255,255,0.3)"
-              />
-            </TouchableOpacity>
-          </View>
+          <View style={styles.networkDivider} />
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Стаж работы (лет)</Text>
-            <TouchableOpacity
-              onLongPress={() => {
-                Alert.alert('Копирование', 'Текст доступен для выбора и копирования');
-              }}
-            >
-              <TextInput
-                style={styles.input}
-                value={profile.experience}
-                onChangeText={(text) => setProfile(prev => ({ ...prev, experience: text }))}
-                placeholder="Введите стаж"
-                placeholderTextColor="rgba(255,255,255,0.3)"
-              />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Специализация</Text>
-            <View style={styles.specializationContainer}>
-              {SPECIALIZATIONS.map((spec) => (
-                <TouchableOpacity
-                  key={spec}
-                  style={[
-                    styles.chip,
-                    (profile.specialization || []).includes(spec) && styles.chipSelected,
-                  ]}
-                  onPress={() => toggleSpecialization(spec)}
-                >
-                  <Text
-                    style={[
-                      styles.chipText,
-                      (profile.specialization || []).includes(spec) && styles.chipTextSelected,
-                    ]}
-                  >
-                    {spec}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        </View>
-
-        {/* Statistics */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Статистика</Text>
-          <View style={styles.statsRow}>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{statistics.ordersCount}</Text>
-              <Text style={styles.statLabel}>Заказов</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{statistics.analysesCount}</Text>
-              <Text style={styles.statLabel}>Анализов цвета</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Invite Code */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Код для связи</Text>
-          <View style={styles.inviteCodeCard}>
-            <Text style={styles.inviteCodeLabel}>Ваш код для связи:</Text>
-            <Text style={styles.inviteCode}>{inviteCode || 'Загрузка...'}</Text>
-          </View>
-        </View>
-
-        {/* Link Partner */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            {user?.role === 'doctor' ? 'Добавить зубного техника' : 'Добавить врача'}
+          <Text style={styles.label}>
+            {user?.role === 'doctor' ? 'Код зубного техника' : 'Код врача'}
           </Text>
           <TextInput
             style={styles.input}
             value={partnerCode}
             onChangeText={setPartnerCode}
-            placeholder="Введите код коллеги (например, DI-7492)"
-            placeholderTextColor="rgba(255,255,255,0.3)"
+            placeholder="DI-7492"
+            placeholderTextColor="rgba(255,255,255,0.35)"
+            autoCapitalize="characters"
           />
-          <TouchableOpacity 
-            style={styles.linkButton}
+          <TouchableOpacity
+            style={[styles.linkButton, linkingLoading && styles.buttonDisabled]}
             onPress={handleLinkPartner}
             disabled={linkingLoading}
           >
@@ -584,28 +600,119 @@ export default function ProfileScreen() {
               {linkingLoading ? 'Привязка...' : 'Привязать коллегу'}
             </Text>
           </TouchableOpacity>
+
+          <Text style={styles.partnersSectionTitle}>Связанные коллеги</Text>
+          {linkedPartners.length === 0 ? (
+            <Text style={styles.partnersEmptyText}>
+              Список коллег пуст. Добавьте первого партнера по коду выше
+            </Text>
+          ) : (
+            linkedPartners.map((partner) => (
+              <View key={partner.id} style={styles.partnerCard}>
+                <View style={styles.partnerAvatar}>
+                  <Ionicons
+                    name={partner.role === 'Врач' ? 'medical' : 'construct'}
+                    size={20}
+                    color={GOLD}
+                  />
+                </View>
+                <Text style={styles.partnerName} numberOfLines={2}>
+                  {partner.name}
+                </Text>
+                <View style={styles.partnerRoleBadge}>
+                  <Text style={styles.partnerRoleText}>{partner.role}</Text>
+                </View>
+              </View>
+            ))
+          )}
         </View>
 
-        {/* Save Button */}
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={loading}>
-          <Text style={styles.saveButtonText}>
-            {loading ? 'Сохранение...' : 'Сохранить профиль'}
-          </Text>
-        </TouchableOpacity>
+        {/* 4. Professional data + save (accordion) */}
+        <View style={styles.blockCard}>
+          <TouchableOpacity
+            style={styles.profDataHeader}
+            onPress={() => setIsProfDataExpanded((prev) => !prev)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.profDataHeaderTitle}>Профессиональные данные</Text>
+            <Ionicons
+              name={isProfDataExpanded ? 'chevron-up' : 'chevron-down'}
+              size={22}
+              color={GOLD}
+            />
+          </TouchableOpacity>
 
-        {/* Logout */}
-        <TouchableOpacity 
-          style={{ marginTop: 12, marginBottom: 32, paddingVertical: 16 }} 
-          onPress={handleLogout}
-        >
-          <Text style={{ 
-            color: '#ff4444', 
-            fontSize: 16, 
-            textAlign: 'center', 
-            fontWeight: '600' 
-          }}>
-            🚪 Выйти из аккаунта
-          </Text>
+          {isProfDataExpanded && (
+            <View style={styles.profDataContent}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>{labFieldLabel}</Text>
+                <TextInput
+                  style={styles.input}
+                  value={profile.laboratory}
+                  onChangeText={(text) => setProfile((prev) => ({ ...prev, laboratory: text }))}
+                  placeholder="Введите название"
+                  placeholderTextColor="rgba(255,255,255,0.35)"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Город</Text>
+                <TextInput
+                  style={styles.input}
+                  value={profile.city}
+                  onChangeText={(text) => setProfile((prev) => ({ ...prev, city: text }))}
+                  placeholder="Введите город"
+                  placeholderTextColor="rgba(255,255,255,0.35)"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Стаж работы (лет)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={profile.experience}
+                  onChangeText={(text) => setProfile((prev) => ({ ...prev, experience: text }))}
+                  placeholder="Например: 8"
+                  placeholderTextColor="rgba(255,255,255,0.35)"
+                  keyboardType="number-pad"
+                />
+              </View>
+
+              <Text style={[styles.label, { marginTop: 4 }]}>Специализация</Text>
+              <View style={styles.specializationContainer}>
+                {SPECIALIZATIONS.map((spec) => {
+                  const selected = (profile.specialization || []).includes(spec);
+                  return (
+                    <TouchableOpacity
+                      key={spec}
+                      style={[styles.chip, selected && styles.chipSelected]}
+                      onPress={() => toggleSpecialization(spec)}
+                    >
+                      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                        {spec}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.saveButton, loading && styles.buttonDisabled]}
+                onPress={handleSave}
+                disabled={loading}
+              >
+                <Text style={styles.saveButtonText}>
+                  {loading ? 'Сохранение...' : 'Сохранить профиль'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* 5. Footer logout */}
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Ionicons name="log-out-outline" size={20} color="#ff6b6b" />
+          <Text style={styles.logoutButtonText}>Выйти из аккаунта</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -671,6 +778,38 @@ export default function ProfileScreen() {
               onPress={() => setAvatarModalVisible(false)}
             >
               <Text style={styles.modalCloseButtonText}>Отмена</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Feedback Modal */}
+      <Modal
+        visible={feedbackModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeFeedback}
+      >
+        <View style={styles.feedbackOverlay}>
+          <View style={styles.feedbackCard}>
+            <View style={[
+              styles.feedbackIconWrap,
+              feedbackModal.type === 'error' && styles.feedbackIconWrapError,
+            ]}>
+              <Ionicons
+                name={feedbackModal.type === 'success' ? 'checkmark-circle' : 'alert-circle'}
+                size={36}
+                color="#f2ca50"
+              />
+            </View>
+            <Text style={styles.feedbackTitle}>{feedbackModal.title}</Text>
+            <Text style={styles.feedbackMessage}>{feedbackModal.message}</Text>
+            <TouchableOpacity
+              style={styles.feedbackButton}
+              onPress={closeFeedback}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.feedbackButtonText}>{feedbackModal.buttonLabel}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -751,169 +890,286 @@ export default function ProfileScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+      </View>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#031427',
+  },
+  containerInner: {
+    flex: 1,
+    backgroundColor: 'transparent',
   },
   scrollView: {
     flex: 1,
-    paddingHorizontal: 20,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#FFD700',
-    textAlign: 'center',
-    marginTop: 60,
-    marginBottom: 30,
+  scrollContent: {
+    paddingHorizontal: 16,
   },
-  avatarBlock: {
+  navBar: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 30,
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
-  avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  editIcon: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: '#FFD700',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
+  navBack: {
+    width: 40,
+    height: 40,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  section: {
-    marginBottom: 25,
+  navTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: GOLD,
+    letterSpacing: 0.5,
+  },
+  heroCard: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(13, 20, 35, 0.85)',
+    borderRadius: 16,
+    paddingVertical: 28,
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.2)',
+  },
+  avatar: {
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    borderWidth: 2,
+    borderColor: GOLD,
+    backgroundColor: 'rgba(242, 202, 80, 0.08)',
+  },
+  avatarPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editIcon: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    backgroundColor: GOLD,
+    borderRadius: 14,
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: DARK_BG,
+  },
+  displayName: {
+    marginTop: 16,
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#ffffff',
+    textAlign: 'center',
+    lineHeight: 28,
+    paddingHorizontal: 8,
+  },
+  roleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: GOLD,
+  },
+  roleBadgeText: {
+    color: DARK_BG,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: 'rgba(8, 14, 28, 0.95)',
+    borderRadius: 14,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.15)',
+  },
+  statValue: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: GOLD,
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.55)',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  networkBlock: {
+    backgroundColor: 'rgba(10, 16, 30, 0.92)',
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.45)',
+    shadowColor: GOLD,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  networkHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  networkTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '800',
+    color: GOLD,
+    letterSpacing: 0.8,
+  },
+  inviteCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  shareCodeButton: {
+    padding: 6,
+    borderRadius: 20,
+    backgroundColor: 'rgba(242, 202, 80, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.35)',
+  },
+  networkSubLabel: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.5)',
+    marginBottom: 6,
+  },
+  networkDivider: {
+    height: 1,
+    backgroundColor: 'rgba(242, 202, 80, 0.15)',
+    marginVertical: 16,
+  },
+  blockCard: {
+    backgroundColor: 'rgba(13, 20, 35, 0.75)',
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.12)',
+  },
+  profDataHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  profDataHeaderTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: GOLD,
+    letterSpacing: 0.3,
+    marginRight: 8,
+  },
+  profDataContent: {
+    marginTop: 12,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFD700',
-    marginBottom: 15,
+    fontSize: 13,
+    fontWeight: '800',
+    color: GOLD,
+    marginBottom: 18,
+    letterSpacing: 1,
   },
   inputGroup: {
-    marginBottom: 15,
+    marginBottom: 14,
   },
   label: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.55)',
     marginBottom: 8,
+    fontWeight: '500',
   },
   input: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
     borderRadius: 12,
-    paddingHorizontal: 15,
+    paddingHorizontal: 14,
     paddingVertical: 12,
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 15,
     borderWidth: 1,
-    borderColor: 'rgba(255,215,0,0.2)',
-  },
-  pickerContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  pickerOption: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 20,
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,215,0,0.2)',
-  },
-  pickerOptionSelected: {
-    backgroundColor: 'rgba(255,215,0,0.2)',
-    borderColor: '#FFD700',
-  },
-  pickerOptionText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 14,
-  },
-  pickerOptionTextSelected: {
-    color: '#FFD700',
+    borderColor: 'rgba(242, 202, 80, 0.18)',
   },
   specializationContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+    marginBottom: 20,
   },
   chip: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
     borderRadius: 20,
-    paddingHorizontal: 15,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,215,0,0.2)',
+    borderColor: 'rgba(242, 202, 80, 0.2)',
   },
   chipSelected: {
-    backgroundColor: 'rgba(255,215,0,0.2)',
-    borderColor: '#FFD700',
+    backgroundColor: 'rgba(242, 202, 80, 0.18)',
+    borderColor: GOLD,
   },
   chipText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 14,
+    color: 'rgba(255,255,255,0.65)',
+    fontSize: 13,
   },
   chipTextSelected: {
-    color: '#FFD700',
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 12,
-    padding: 15,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,215,0,0.2)',
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFD700',
-    marginBottom: 5,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
-    textAlign: 'center',
-  },
-  saveButton: {
-    backgroundColor: '#FFD700',
-    borderRadius: 12,
-    paddingVertical: 15,
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-  saveButtonText: {
-    color: '#031427',
-    fontSize: 16,
+    color: GOLD,
     fontWeight: '600',
   },
-  logoutButton: {
+  saveButton: {
+    backgroundColor: GOLD,
+    borderRadius: 14,
     paddingVertical: 15,
     alignItems: 'center',
-    marginBottom: 40,
+    marginTop: 4,
+  },
+  saveButtonText: {
+    color: DARK_BG,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  buttonDisabled: {
+    opacity: 0.55,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 16,
+    marginBottom: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 68, 68, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.25)',
   },
   logoutButtonText: {
-    color: '#FF4444',
-    fontSize: 16,
-    fontWeight: '500',
+    color: '#ff6b6b',
+    fontSize: 15,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
@@ -999,35 +1255,142 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     fontSize: 16,
   },
-  inviteCodeCard: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 12,
-    padding: 20,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,215,0,0.2)',
-  },
-  inviteCodeLabel: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
-    marginBottom: 8,
-  },
   inviteCode: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#FFD700',
-    letterSpacing: 2,
+    fontSize: 34,
+    fontWeight: '800',
+    color: GOLD,
+    letterSpacing: 4,
+    textAlign: 'center',
+    flexShrink: 1,
   },
   linkButton: {
-    backgroundColor: '#FFD700',
+    backgroundColor: GOLD,
     borderRadius: 12,
-    paddingVertical: 15,
+    paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: 10,
+    marginBottom: 18,
   },
   linkButtonText: {
-    color: '#031427',
-    fontSize: 16,
+    color: DARK_BG,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  partnersSectionTitle: {
+    fontSize: 13,
     fontWeight: '600',
+    color: 'rgba(242, 202, 80, 0.85)',
+    marginBottom: 10,
+    letterSpacing: 0.3,
+  },
+  partnersEmptyText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.45)',
+    lineHeight: 20,
+    textAlign: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+  },
+  partnerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(5, 10, 22, 0.8)',
+    borderRadius: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.2)',
+  },
+  partnerAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(242, 202, 80, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  partnerName: {
+    flex: 1,
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  partnerRoleBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#f2ca50',
+    backgroundColor: 'rgba(242, 202, 80, 0.1)',
+  },
+  partnerRoleText: {
+    color: '#f2ca50',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  feedbackOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(5, 8, 16, 0.82)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 28,
+  },
+  feedbackCard: {
+    width: '100%',
+    backgroundColor: 'rgba(13, 17, 23, 0.96)',
+    borderRadius: 18,
+    paddingVertical: 28,
+    paddingHorizontal: 24,
+    borderWidth: 1,
+    borderColor: '#f2ca50',
+    alignItems: 'center',
+    shadowColor: '#f2ca50',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  feedbackIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(242, 202, 80, 0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  feedbackIconWrapError: {
+    backgroundColor: 'rgba(255, 68, 68, 0.1)',
+  },
+  feedbackTitle: {
+    color: '#f2ca50',
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  feedbackMessage: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  feedbackButton: {
+    width: '100%',
+    backgroundColor: '#f2ca50',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  feedbackButtonText: {
+    color: '#0a0f1d',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
