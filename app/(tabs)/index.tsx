@@ -5,7 +5,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import LottieView from 'lottie-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -54,11 +56,13 @@ export default function HomeScreen() {
   const { theme } = useTheme();
   const { t } = useLanguage();
   const [user, setUser] = useState<any>(null);
+  const [isAppReady, setIsAppReady] = useState(false);
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const scrollAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const ring2Anim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const welcomeFade = useRef(new Animated.Value(0)).current;
   const glowAnim = useRef(new Animated.Value(10)).current;
   const tickerAnim = useRef(new Animated.Value(400)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -83,6 +87,32 @@ export default function HomeScreen() {
       if (data) {
         setUser(JSON.parse(data));
       }
+    });
+  }, []);
+
+  useEffect(() => {
+    // Splash screen animation
+    Animated.timing(welcomeFade, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+    }).start(() => {
+      setTimeout(() => {
+        Animated.parallel([
+          Animated.timing(welcomeFade, {
+            toValue: 0,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(fadeAnim, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          setIsAppReady(true);
+        });
+      }, 2000);
     });
   }, []);
 
@@ -253,7 +283,7 @@ export default function HomeScreen() {
           shadowRadius: 12,
           elevation: 10,
         }}>
-          {/* Движущийся баннер */}
+          {/* Зацикленный широкоформатный баннер */}
           <View style={{ height: 220, overflow: 'hidden' }}>
             <Animated.View style={{
               flexDirection: 'row',
@@ -300,216 +330,293 @@ export default function HomeScreen() {
               transform: [{ rotate: rotate2 }],
             }} />
 
-            {/* Анимированный золотой объект в центре */}
-            <Animated.View style={{
-              position: 'absolute',
-              transform: [
-                { rotateY: spinY },
-                { translateY }
-              ],
-              shadowColor: '#f2ca50',
-              shadowOffset: { width: 0, height: 0 },
-              shadowOpacity: 0.6,
-              shadowRadius: 12,
-              elevation: 8
-            }}>
-              <Ionicons
-                name={user?.role === 'technician' ? "construct" : "pulse-sharp"}
-                size={42}
-                color="#f2ca50"
+            {/* Анимированный Lottie объект в центре */}
+            <View style={{ width: 180, height: 180, justifyContent: 'center', alignItems: 'center', alignSelf: 'center', overflow: 'visible' }}>
+              <LottieView
+                source={require('@/assets/images/cyber_head.json')}
+                autoPlay
+                loop
+                style={{
+                  width: 150,
+                  height: 150,
+                }}
+                resizeMode="contain"
+                onAnimationFailure={(error) => console.log("Lottie Error: ", error)}
               />
-            </Animated.View>
-
-            {/* Бегущая строка по нижнему краю баннера */}
-            <View style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              backgroundColor: 'rgba(13, 21, 39, 0.8)',
-              borderTopWidth: 1,
-              borderColor: 'rgba(242, 202, 80, 0.2)',
-              height: 26,
-              justifyContent: 'center',
-              overflow: 'hidden'
-            }}>
-              <Animated.View style={{
-                flexDirection: 'row',
-                transform: [{ translateX: scrollAnim }],
-                width: 1000
-              }}>
-                <Text style={{ color: '#f2ca50', fontSize: 12, fontWeight: 'bold' }}>
-                  Добро пожаловать в DiLabs, {user?.name ? user.name.split(' ').slice(0, 2).join(' ') : 'уважаемый гость'}!  •  
-                </Text>
-                <Text style={{ color: '#f2ca50', fontSize: 12, fontWeight: 'bold' }}>
-                   Добро пожаловать в DiLabs, {user?.name ? user.name.split(' ').slice(0, 2).join(' ') : 'уважаемый гость'}!  •  
-                </Text>
-              </Animated.View>
             </View>
           </View>
         </View>
 
-        <View style={styles.cardsContainer}>
-          {/* 1. Новый наряд / Входящие наряды */}
-          <View style={{
-            shadowColor: '#4fc3f7',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.6,
-            shadowRadius: 12,
-            marginBottom: 12,
-          }}>
-            <TouchableOpacity
-              style={styles.card}
-              onPress={() => {
-                if (user?.role === 'technician') {
-                  router.push('/(tabs)/search');
-                } else {
-                  router.push('/new-order');
-                }
-              }}
-              activeOpacity={0.8}
-            >
-              <View style={styles.iconBox}>
-                <Ionicons 
-                  name={user?.role === 'technician' ? "download-outline" : "add-circle-outline"} 
-                  size={22} 
-                  color="#f2ca50" 
-                />
-              </View>
-              <Text style={styles.labelText}>
-                {user?.role === 'technician' ? 'ВХОДЯЩИЕ НАРЯДЫ' : 'НОВЫЙ НАРЯД'}
-              </Text>
-              <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
-            </TouchableOpacity>
-          </View>
+        <Animated.View style={{ opacity: fadeAnim }}>
+          <View style={styles.cardsContainer}>
+            {/* 1. Новый наряд / Входящие наряды */}
+            <View style={{
+              shadowColor: '#4fc3f7',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.6,
+              shadowRadius: 12,
+              marginBottom: 12,
+            }}>
+              <TouchableOpacity
+                style={styles.card}
+                onPress={() => {
+                  if (user?.role === 'technician') {
+                    router.push('/(tabs)/search');
+                  } else {
+                    router.push('/new-order');
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.iconBox}>
+                  <Ionicons
+                    name={user?.role === 'technician' ? "download-outline" : "add-circle-outline"}
+                    size={22}
+                    color="#f2ca50"
+                  />
+                </View>
+                <Text style={styles.labelText}>
+                  {user?.role === 'technician' ? 'ВХОДЯЩИЕ НАРЯДЫ' : 'НОВЫЙ НАРЯД'}
+                </Text>
+                <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
+              </TouchableOpacity>
+            </View>
 
-          {/* 2. Чат техников */}
-          <View style={{
-            shadowColor: '#4fc3f7',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.6,
-            shadowRadius: 12,
-            marginBottom: 12,
-          }}>
-            <TouchableOpacity
-              style={styles.card}
-              onPress={() => router.push('/chat')}
-              activeOpacity={0.8}
-            >
-              <View style={styles.iconBox}>
-                <Ionicons name="chatbubbles-outline" size={20} color="#f2ca50" />
-              </View>
-              <Text style={styles.labelText}>{t('chatTechnicians')}</Text>
-              <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
-            </TouchableOpacity>
-          </View>
+            {/* 2. Чат техников */}
+            <View style={{
+              shadowColor: '#4fc3f7',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.6,
+              shadowRadius: 12,
+              marginBottom: 12,
+            }}>
+              <TouchableOpacity
+                style={styles.card}
+                onPress={() => router.push('/chat')}
+                activeOpacity={0.8}
+              >
+                <View style={styles.iconBox}>
+                  <Ionicons name="chatbubbles-outline" size={20} color="#f2ca50" />
+                </View>
+                <Text style={styles.labelText}>{t('chatTechnicians')}</Text>
+                <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
+              </TouchableOpacity>
+            </View>
 
-          {/* 3. Анализ цвета */}
-          <View style={{
-            shadowColor: '#4fc3f7',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.6,
-            shadowRadius: 12,
-            marginBottom: 12,
-          }}>
-            <TouchableOpacity
-              style={[styles.card, styles.cardVita]}
-              onPress={() => router.push('/color-analyzer')}
-              activeOpacity={0.8}
-            >
-              <View style={styles.iconBox}>
-                <MaterialCommunityIcons name="tooth-outline" size={20} color="#f2ca50" />
-              </View>
-              <Text style={styles.labelText} numberOfLines={1}>{t('colorAnalysis')}</Text>
-              <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
-            </TouchableOpacity>
-          </View>
+            {/* 3. Анализ цвета */}
+            <View style={{
+              shadowColor: '#4fc3f7',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.6,
+              shadowRadius: 12,
+              marginBottom: 12,
+            }}>
+              <TouchableOpacity
+                style={[styles.card, styles.cardVita]}
+                onPress={() => router.push('/color-analyzer')}
+                activeOpacity={0.8}
+              >
+                <View style={styles.iconBox}>
+                  <MaterialCommunityIcons name="tooth-outline" size={20} color="#f2ca50" />
+                </View>
+                <Text style={styles.labelText} numberOfLines={1}>{t('colorAnalysis')}</Text>
+                <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
+              </TouchableOpacity>
+            </View>
 
-          {/* 4. Тех-карта */}
-          <View style={{
-            shadowColor: '#4fc3f7',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.6,
-            shadowRadius: 12,
-            marginBottom: 24,
-          }}>
-            <TouchableOpacity
-              style={styles.card}
-              activeOpacity={0.8}
-              onPress={() => {/* Добавьте переход для тех-карты */}}
-            >
-              <View style={styles.iconBox}>
-                <Ionicons name="layers-outline" size={20} color="#f2ca50" />
-              </View>
-              <Text style={styles.labelText}>{t('techCard')}</Text>
-              <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
-            </TouchableOpacity>
-          </View>
+            {/* 4. Анализ работы */}
+            <View style={{
+              shadowColor: '#4fc3f7',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.6,
+              shadowRadius: 12,
+              marginBottom: 24,
+            }}>
+              <TouchableOpacity
+                style={styles.card}
+                activeOpacity={0.8}
+                onPress={() => router.push('/work-analysis')}
+              >
+                <View style={styles.iconBox}>
+                  <Ionicons name="analytics-outline" size={20} color="#f2ca50" />
+                </View>
+                <Text style={styles.labelText}>АНАЛИЗ РАБОТЫ</Text>
+                <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
+              </TouchableOpacity>
+            </View>
 
-          {/* 5. Морфология */}
-          <View style={{
-            shadowColor: '#4fc3f7',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.6,
-            shadowRadius: 12,
-            marginBottom: 24,
-          }}>
-            <TouchableOpacity 
-              style={styles.card} 
-              onPress={() => router.push('/morphology')}
-              activeOpacity={0.8}
-            >
-              <View style={styles.iconBox}>
-                <Ionicons name="scan" size={24} color="#f2ca50" />
-              </View>
-              <Text style={styles.labelText}>МОРФОЛОГИЯ</Text>
-              <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
-            </TouchableOpacity>
-          </View>
+            {/* 5. Тех-карта */}
+            <View style={{
+              shadowColor: '#4fc3f7',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.6,
+              shadowRadius: 12,
+              marginBottom: 24,
+            }}>
+              <TouchableOpacity
+                style={styles.card}
+                activeOpacity={0.8}
+                onPress={() => {/* Добавьте переход для тех-карты */}}
+              >
+                <View style={styles.iconBox}>
+                  <Ionicons name="layers-outline" size={20} color="#f2ca50" />
+                </View>
+                <Text style={styles.labelText}>{t('techCard')}</Text>
+                <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
+              </TouchableOpacity>
+            </View>
 
-          {/* 6. Рецепты масс */}
-          <View style={{
-            shadowColor: '#4fc3f7',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.6,
-            shadowRadius: 12,
-            marginBottom: 24,
-          }}>
-            <TouchableOpacity 
-              style={styles.card} 
-              onPress={() => router.push('/mass-calculator')}
-              activeOpacity={0.8}
-            >
-              <View style={styles.iconBox}>
-                <Ionicons name="flask" size={24} color="#f2ca50" />
-              </View>
-              <Text style={styles.labelText}>РЕЦЕПТЫ МАСС</Text>
-              <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
-            </TouchableOpacity>
-          </View>
+            {/* 5. Морфология */}
+            <View style={{
+              shadowColor: '#4fc3f7',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.6,
+              shadowRadius: 12,
+              marginBottom: 24,
+            }}>
+              <TouchableOpacity
+                style={styles.card}
+                onPress={() => router.push('/morphology')}
+                activeOpacity={0.8}
+              >
+                <View style={styles.iconBox}>
+                  <Ionicons name="scan" size={24} color="#f2ca50" />
+                </View>
+                <Text style={styles.labelText}>МОРФОЛОГИЯ</Text>
+                <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
+              </TouchableOpacity>
+            </View>
 
-          {/* 7. Анатомия зубов */}
-          <View style={{
-            shadowColor: '#4fc3f7',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.6,
-            shadowRadius: 12,
-            marginBottom: 24,
-          }}>
-            <TouchableOpacity 
-              style={styles.card} 
-              onPress={() => router.push('/anatomy-viewer')}
-              activeOpacity={0.8}
-            >
-              <View style={styles.iconBox}>
-                <MaterialCommunityIcons name="tooth-outline" size={24} color="#f2ca50" />
-              </View>
-              <Text style={styles.labelText}>АНАТОМИЯ ЗУБОВ</Text>
-              <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
-            </TouchableOpacity>
+            {/* 6. Рецепты масс */}
+            <View style={{
+              shadowColor: '#4fc3f7',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.6,
+              shadowRadius: 12,
+              marginBottom: 24,
+            }}>
+              <TouchableOpacity
+                style={styles.card}
+                onPress={() => router.push('/mass-calculator')}
+                activeOpacity={0.8}
+              >
+                <View style={styles.iconBox}>
+                  <Ionicons name="flask" size={24} color="#f2ca50" />
+                </View>
+                <Text style={styles.labelText}>РЕЦЕПТЫ МАСС</Text>
+                <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
+              </TouchableOpacity>
+            </View>
+
+            {/* 7. Анатомия зубов */}
+            <View style={{
+              shadowColor: '#4fc3f7',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.6,
+              shadowRadius: 12,
+              marginBottom: 24,
+            }}>
+              <TouchableOpacity
+                style={styles.card}
+                onPress={() => router.push('/anatomy-viewer')}
+                activeOpacity={0.8}
+              >
+                <View style={styles.iconBox}>
+                  <MaterialCommunityIcons name="tooth-outline" size={24} color="#f2ca50" />
+                </View>
+                <Text style={styles.labelText}>АНАТОМИЯ ЗУБОВ</Text>
+                <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </Animated.View>
       </ScrollView>
+
+      {/* Полноэкранный оверлей приветствия */}
+      {!isAppReady && (
+        <Animated.View style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(10, 15, 29, 0.9)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          opacity: welcomeFade
+        }}>
+          <View
+            style={{
+              borderRadius: 16,
+              overflow: 'hidden',
+              borderWidth: 1,
+              borderColor: '#f2ca50',
+              backgroundColor: 'rgba(13, 17, 23, 0.85)',
+              shadowColor: '#f2ca50',
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: 0.15,
+              shadowRadius: 12,
+              elevation: 5,
+              maxWidth: '88%',
+            }}
+          >
+            <LinearGradient
+              colors={[
+                '#050810',
+                '#0a0f1d',
+                '#152238',
+                '#1e3a5f',
+                '#152238',
+                '#0a0f1d',
+                '#050810',
+              ]}
+              locations={[0, 0.15, 0.35, 0.5, 0.65, 0.85, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{
+                borderRadius: 16,
+                paddingVertical: 36,
+                paddingHorizontal: 32,
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: 280,
+              }}
+            >
+              <Animated.Text
+                style={{
+                  color: '#f2ca50',
+                  fontSize: 22,
+                  fontWeight: 'bold',
+                  textAlign: 'center',
+                  marginBottom: 20,
+                }}
+              >
+                Добро пожаловать в
+              </Animated.Text>
+              <Image
+                source={require('@/assets/images/header-logo.png')}
+                style={{
+                  width: 182,
+                  height: 91,
+                  resizeMode: 'contain',
+                  marginBottom: 20,
+                }}
+              />
+              <Animated.Text
+                style={{
+                  color: '#ffffff',
+                  fontSize: 24,
+                  fontWeight: 'bold',
+                  textAlign: 'center',
+                }}
+              >
+                {user?.name ? user.name.split(' ').slice(0, 2).join(' ') : 'уважаемый гость'}!
+              </Animated.Text>
+            </LinearGradient>
+          </View>
+        </Animated.View>
+      )}
     </ImageBackground>
   );
 }

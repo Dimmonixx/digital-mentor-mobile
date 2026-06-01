@@ -4,20 +4,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { onValue, push, ref } from 'firebase/database';
+import { push, ref } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Image,
-    ImageBackground,
-    Keyboard,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Image,
+  ImageBackground,
+  Keyboard,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import StyledToast from '../components/ui/StyledToast';
@@ -88,23 +88,42 @@ export default function NewOrderScreen() {
   const [vitaSectionY, setVitaSectionY] = useState(0);
 
   useEffect(() => {
-    const usersRef = ref(database, 'users');
-    const unsubscribe = onValue(usersRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const usersList = Object.entries(data).map(([id, user]: any) => ({
-          id,
-          name: user.name,
-          role: user.role,
-        }));
-        const doctorsList = usersList.filter(user => user.role === 'doctor');
-        const techniciansList = usersList.filter(user => user.role === 'technician');
-        setDoctors(doctorsList);
-        setTechnicians(techniciansList);
+    const loadPartners = async () => {
+      try {
+        const userId = user?.id;
+        if (!userId) return;
+
+        const partnershipsRef = ref(database, 'partnerships');
+        const snapshot = await get(partnershipsRef);
+        const partnershipsData = snapshot.val();
+
+        if (partnershipsData) {
+          const partnersList: {id: string, name: string}[] = [];
+
+          for (const [key, partnership] of Object.entries(partnershipsData)) {
+            const p = partnership as any;
+            if (user.role === 'doctor' && p.doctorUid === userId) {
+              partnersList.push({ id: p.technicianUid, name: p.technicianName });
+            } else if (user.role === 'technician' && p.technicianUid === userId) {
+              partnersList.push({ id: p.doctorUid, name: p.doctorName });
+            }
+          }
+
+          if (user.role === 'doctor') {
+            setTechnicians(partnersList);
+          } else if (user.role === 'technician') {
+            setDoctors(partnersList);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading partners:', error);
       }
-    });
-    return () => unsubscribe();
-  }, []);
+    };
+
+    if (user) {
+      loadPartners();
+    }
+  }, [user]);
 
   useEffect(() => {
     AsyncStorage.getItem('user').then(data => {
@@ -117,24 +136,14 @@ export default function NewOrderScreen() {
   }, []);
 
   useEffect(() => {
-    if (user && doctors.length > 0 && technicians.length > 0) {
+    if (user) {
       if (user.role === 'doctor' && !selectedDoctor) {
-        const currentDoctor = doctors.find(d => d.id === user.email || d.name === user.name);
-        if (currentDoctor) {
-          setSelectedDoctor(currentDoctor);
-        } else {
-          setSelectedDoctor({ id: user.email, name: user.name });
-        }
+        setSelectedDoctor({ id: user.id, name: user.name });
       } else if (user.role === 'technician' && !selectedTechnician) {
-        const currentTechnician = technicians.find(t => t.id === user.email || t.name === user.name);
-        if (currentTechnician) {
-          setSelectedTechnician(currentTechnician);
-        } else {
-          setSelectedTechnician({ id: user.email, name: user.name });
-        }
+        setSelectedTechnician({ id: user.id, name: user.name });
       }
     }
-  }, [user, doctors, technicians, selectedDoctor, selectedTechnician]);
+  }, [user, selectedDoctor, selectedTechnician]);
 
   useEffect(() => {
     const restoreFormOnMount = async () => {
@@ -318,7 +327,7 @@ export default function NewOrderScreen() {
   };
 
   const getBlockPositionLabel = (block: { number: number }[]) =>
-    block.map(tooth => getToothPositionLabel(tooth.number)).join(' / ');
+    block.map(tooth => `№ ${tooth.number}`).join(' / ');
 
   const formatDateWithDay = (date: Date) => {
     const day = date.getDate().toString().padStart(2, '0');
@@ -327,6 +336,39 @@ export default function NewOrderScreen() {
     const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
     const dayOfWeek = days[date.getDay()];
     return `${day}.${month}.${year} (${dayOfWeek})`;
+  };
+
+  const getTeethSummary = () => {
+    if (!blockDetails || Object.keys(blockDetails).length === 0) return 'Зубы не выбраны';
+
+    const materialCounts: Record<string, number> = {};
+    let hasImplant = false;
+
+    Object.entries(blockDetails).forEach(([key, block]: [string, any]) => {
+      if (key === 'material' || key === 'workType') return;
+
+      if (block && block.material) {
+        const teethCount = key.split('-').length;
+        let mat = block.material.toLowerCase();
+        let shortMaterial = block.material;
+
+        if (mat.includes('циркон')) shortMaterial = 'циркония';
+        else if (mat.includes('металлокерам')) shortMaterial = 'МК';
+        else if (mat.includes('керам')) shortMaterial = 'керамики';
+        else if (mat.includes('пластмасс') || mat.includes('пммк')) shortMaterial = 'пластмассы';
+        else if (mat.includes('композит')) shortMaterial = 'композита';
+
+        materialCounts[shortMaterial] = (materialCounts[shortMaterial] || 0) + teethCount;
+
+        if (block.isImplant) hasImplant = true;
+      }
+    });
+
+    const pairs = Object.entries(materialCounts);
+    if (pairs.length === 0) return 'Зубы не выбраны';
+
+    const summary = pairs.map(([material, count]) => `${count} ед. ${material}`).join(' \\ ');
+    return hasImplant ? `${summary} (На имплантах)` : summary;
   };
 
   const formatTime = (date: Date) => {
@@ -1052,7 +1094,7 @@ export default function NewOrderScreen() {
                   <View style={{ marginBottom: 12 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13 }}>Имплант</Text>
+                        <Text style={{ color: !!details.isImplant ? '#ffffff' : 'rgba(255,255,255,0.5)', fontSize: 13 }}>Имплант</Text>
                         <Switch
                           value={!!details.isImplant}
                           onValueChange={(val) => {
@@ -1085,14 +1127,13 @@ export default function NewOrderScreen() {
                               ?.isPontic?.[tooth.number];
                             return (
                               <Text key={tooth.number} style={{
-                                color: isPontic 
-                                  ? 'rgba(255,255,255,0.4)' 
+                                color: isPontic
+                                  ? 'rgba(255,255,255,0.4)'
                                   : 'rgba(255,255,255,0.7)',
                                 fontSize: 13,
                               }}>
                                 {isPontic ? '🕳 ' : '🦷 '}
-                                № {tooth.number}
-                                {isPontic ? ' (пром.)' : ''}
+                                {tooth.number}
                                 {idx < block.length - 1 ? ' / ' : ''}
                               </Text>
                             );
@@ -1133,7 +1174,7 @@ export default function NewOrderScreen() {
                                 [blockKey]: {
                                   ...prev[blockKey],
                                   material: wt.label,
-                                  isImplant: wt.id === 'implant',
+                                  isImplant: prev[blockKey]?.isImplant || false,
                                   implantSystems: wt.id === 'implant' ? {} : prev[blockKey]?.implantSystems,
                                   implantDiameters: wt.id === 'implant' ? {} : prev[blockKey]?.implantDiameters,
                                 }
@@ -1270,13 +1311,32 @@ export default function NewOrderScreen() {
                                       borderColor: details.implantSystems?.[toothNum] ? '#E2BD75' : 'rgba(255,255,255,0.12)',
                                     }}
                                   >
-                                    <Text style={{ color: details.implantSystems?.[toothNum] ? '#E2BD75' : 'rgba(255,255,255,0.6)', fontSize: 12 }}>
-                                      {details.implantSystems?.[toothNum]
-                                        ? details.implantDiameters?.[toothNum]
-                                          ? `${details.implantSystems[toothNum]} ø${details.implantDiameters[toothNum]} мм`
-                                          : details.implantSystems[toothNum]
-                                        : 'Выберите систему имплантов...'}
-                                    </Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                                      <Text style={{ color: details.implantSystems?.[toothNum] ? '#E2BD75' : 'rgba(255,255,255,0.6)', fontSize: 12 }}>
+                                        {details.implantSystems?.[toothNum]
+                                          ? details.implantDiameters?.[toothNum]
+                                            ? `${details.implantSystems[toothNum]} ø${details.implantDiameters[toothNum]} мм`
+                                            : details.implantSystems[toothNum]
+                                          : 'Выберите систему имплантов...'}
+                                      </Text>
+                                      {details.implantSystems?.[toothNum] && (
+                                        <TouchableOpacity
+                                          onPress={() => {
+                                            setBlockDetails(prev => ({
+                                              ...prev,
+                                              [blockKey]: {
+                                                ...prev[blockKey],
+                                                implantSystems: { ...(prev[blockKey]?.implantSystems || {}), [toothNum]: undefined },
+                                                implantDiameters: { ...(prev[blockKey]?.implantDiameters || {}), [toothNum]: undefined },
+                                              }
+                                            }));
+                                          }}
+                                          style={{ marginLeft: 8, padding: 4 }}
+                                        >
+                                          <Ionicons name="trash-outline" size={16} color="#e74c3c" />
+                                        </TouchableOpacity>
+                                      )}
+                                    </View>
                                   </TouchableOpacity>
 
                                   {openImplantDropdownId === `${blockKey}-${toothNum}` && (
@@ -1555,7 +1615,14 @@ export default function NewOrderScreen() {
                 <Text style={{ color: '#ffffff', fontSize: 15, fontWeight: '500' }}>{formatDateWithDay(dates.delivery)} {times.delivery ? formatTime(times.delivery) : ''}</Text>
               </View>
             )}
-            
+
+            <View style={{ marginBottom: 12 }}>
+              <Text style={{ color: '#888888', fontSize: 14, marginBottom: 4 }}>Конструкция</Text>
+              <Text style={{ color: '#ffffff', fontSize: 18, fontWeight: 'bold', marginBottom: 12 }}>
+                {getTeethSummary()}
+              </Text>
+            </View>
+
             <View style={{ marginBottom: 12 }}>
               <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>Цвет</Text>
               <Text style={{ color: '#f2ca50', fontSize: 15, fontWeight: '600' }}>
@@ -1582,42 +1649,64 @@ export default function NewOrderScreen() {
                 }}>В работе:</Text>
 
                 {/* Верхняя челюсть */}
-                <ScrollView 
-                  horizontal 
+                <ScrollView
+                  horizontal
                   showsHorizontalScrollIndicator={false}
                   style={{ marginBottom: 6 }}
                 >
-                  <View style={{ flexDirection: 'row', gap: 3 }}>
-                    {[18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28].map(num => {
+                  <View style={{ flexDirection: 'row', paddingTop: 16 }}>
+                    {[18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28].map((num, idx) => {
                       const tooth = selectedTeeth.find(t => t.number === num);
                       const isSelected = !!tooth;
                       const isPontic = tooth?.type === 'pontic' ||
                         Object.values(blockDetails).some(d => d?.isPontic?.[num]);
+
+                      const nextNum = [18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28][idx + 1];
+                      const nextTooth = selectedTeeth.find(t => t.number === nextNum);
+                      const hasConnection = tooth && nextTooth && Object.keys(blockDetails).some(key => {
+                        const teeth = key.split('-').map(Number);
+                        return teeth.includes(num) && teeth.includes(nextNum);
+                      });
+
                       return (
-                        <View key={num} style={{
-                          width: 22,
-                          height: 22,
-                          borderRadius: 4,
-                          borderWidth: 1,
-                          borderColor: isSelected 
-                            ? (isPontic ? 'rgba(242,202,80,0.3)' : '#f2ca50')
-                            : 'rgba(255,255,255,0.25)',
-                          borderStyle: isPontic ? 'dashed' : 'solid',
-                          backgroundColor: isSelected
-                            ? (isPontic 
-                              ? 'rgba(242,202,80,0.05)' 
-                              : 'rgba(242,202,80,0.15)')
-                            : 'transparent',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}>
-                          <Text style={{
-                            color: isSelected 
-                              ? '#f2ca50' 
-                              : 'rgba(255,255,255,0.35)',
-                            fontSize: 7,
-                            fontWeight: isSelected ? '600' : '400',
-                          }}>{num}</Text>
+                        <View key={num} style={{ position: 'relative', overflow: 'visible' }}>
+                          <View style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: 4,
+                            borderWidth: 1,
+                            borderColor: isSelected
+                              ? (isPontic ? 'rgba(242,202,80,0.3)' : '#f2ca50')
+                              : 'rgba(255,255,255,0.25)',
+                            borderStyle: isPontic ? 'dashed' : 'solid',
+                            backgroundColor: isSelected
+                              ? (isPontic
+                                ? 'rgba(242,202,80,0.05)'
+                                : 'rgba(242,202,80,0.15)')
+                              : 'transparent',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}>
+                            <Text style={{
+                              color: isSelected
+                                ? '#f2ca50'
+                                : 'rgba(255,255,255,0.35)',
+                              fontSize: 7,
+                              fontWeight: isSelected ? '600' : '400',
+                            }}>{num}</Text>
+                          </View>
+                          {hasConnection && (
+                            <View style={{
+                              position: 'absolute',
+                              top: -14,
+                              right: -5,
+                              width: 10,
+                              height: 10,
+                              borderRadius: 5,
+                              backgroundColor: '#f2ca50',
+                              zIndex: 999,
+                            }} />
+                          )}
                         </View>
                       );
                     })}
@@ -1625,41 +1714,63 @@ export default function NewOrderScreen() {
                 </ScrollView>
 
                 {/* Нижняя челюсть */}
-                <ScrollView 
-                  horizontal 
+                <ScrollView
+                  horizontal
                   showsHorizontalScrollIndicator={false}
                 >
-                  <View style={{ flexDirection: 'row', gap: 3 }}>
-                    {[48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38].map(num => {
+                  <View style={{ flexDirection: 'row', paddingTop: 16 }}>
+                    {[48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38].map((num, idx) => {
                       const tooth = selectedTeeth.find(t => t.number === num);
                       const isSelected = !!tooth;
                       const isPontic = tooth?.type === 'pontic' ||
                         Object.values(blockDetails).some(d => d?.isPontic?.[num]);
+
+                      const nextNum = [48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38][idx + 1];
+                      const nextTooth = selectedTeeth.find(t => t.number === nextNum);
+                      const hasConnection = tooth && nextTooth && Object.keys(blockDetails).some(key => {
+                        const teeth = key.split('-').map(Number);
+                        return teeth.includes(num) && teeth.includes(nextNum);
+                      });
+
                       return (
-                        <View key={num} style={{
-                          width: 22,
-                          height: 22,
-                          borderRadius: 4,
-                          borderWidth: 1,
-                          borderColor: isSelected 
-                            ? (isPontic ? 'rgba(242,202,80,0.3)' : '#f2ca50')
-                            : 'rgba(255,255,255,0.25)',
-                          borderStyle: isPontic ? 'dashed' : 'solid',
-                          backgroundColor: isSelected
-                            ? (isPontic 
-                              ? 'rgba(242,202,80,0.05)' 
-                              : 'rgba(242,202,80,0.15)')
-                            : 'transparent',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}>
-                          <Text style={{
-                            color: isSelected 
-                              ? '#f2ca50' 
-                              : 'rgba(255,255,255,0.35)',
-                            fontSize: 7,
-                            fontWeight: isSelected ? '600' : '400',
-                          }}>{num}</Text>
+                        <View key={num} style={{ position: 'relative', overflow: 'visible' }}>
+                          <View style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: 4,
+                            borderWidth: 1,
+                            borderColor: isSelected
+                              ? (isPontic ? 'rgba(242,202,80,0.3)' : '#f2ca50')
+                              : 'rgba(255,255,255,0.25)',
+                            borderStyle: isPontic ? 'dashed' : 'solid',
+                            backgroundColor: isSelected
+                              ? (isPontic
+                                ? 'rgba(242,202,80,0.05)'
+                                : 'rgba(242,202,80,0.15)')
+                              : 'transparent',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}>
+                            <Text style={{
+                              color: isSelected
+                                ? '#f2ca50'
+                                : 'rgba(255,255,255,0.35)',
+                              fontSize: 7,
+                              fontWeight: isSelected ? '600' : '400',
+                            }}>{num}</Text>
+                          </View>
+                          {hasConnection && (
+                            <View style={{
+                              position: 'absolute',
+                              top: -14,
+                              right: -5,
+                              width: 10,
+                              height: 10,
+                              borderRadius: 5,
+                              backgroundColor: '#f2ca50',
+                              zIndex: 999,
+                            }} />
+                          )}
                         </View>
                       );
                     })}
@@ -1870,6 +1981,14 @@ export default function NewOrderScreen() {
 
                 {implantData[selectedToothForImplant!]?.system && (
                   <>
+                    <TouchableOpacity
+                      onPress={() => setImplantData(prev => ({ ...prev, [selectedToothForImplant!]: { system: null, diameter: null } }))}
+                      style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}
+                    >
+                      <Ionicons name="chevron-back" size={24} color="#f2ca50" />
+                      <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, letterSpacing: 1, marginLeft: 8 }}>Назад к системам</Text>
+                    </TouchableOpacity>
+
                     <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, letterSpacing: 1, marginBottom: 10 }}>ДИАМЕТР (мм)</Text>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
                       {IMPLANT_SYSTEMS[implantData[selectedToothForImplant!]!.system!].map(d => (
@@ -1909,22 +2028,30 @@ export default function NewOrderScreen() {
           <View style={{ backgroundColor: '#031427', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, borderWidth: 1, borderColor: 'rgba(242,202,80,0.2)', maxHeight: '70%' }}>
             <Text style={{ color: '#f2ca50', fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 }}>Выберите врача</Text>
             <ScrollView style={{ marginBottom: 20 }}>
-              {doctors.map(doctor => (
-                <TouchableOpacity
-                  key={doctor.id}
-                  onPress={() => { setSelectedDoctor(doctor); setShowDoctorModal(false); }}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, marginBottom: 8,
-                    backgroundColor: selectedDoctor?.id === doctor.id ? 'rgba(242,202,80,0.15)' : 'rgba(255,255,255,0.04)',
-                    borderWidth: 1, borderColor: selectedDoctor?.id === doctor.id ? '#f2ca50' : 'rgba(255,255,255,0.08)',
-                  }}
-                >
-                  <Text style={{ color: selectedDoctor?.id === doctor.id ? '#f2ca50' : 'rgba(255,255,255,0.7)', fontSize: 15, fontWeight: selectedDoctor?.id === doctor.id ? '600' : '400', flex: 1 }}>
-                    {doctor.name}
+              {doctors.length === 0 ? (
+                <View style={{ padding: 24, alignItems: 'center' }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, textAlign: 'center' }}>
+                    У вас пока нет привязанных коллег. Добавьте их в Профиле по коду связи.
                   </Text>
-                  {selectedDoctor?.id === doctor.id && <Ionicons name="checkmark-circle" size={20} color="#f2ca50" />}
-                </TouchableOpacity>
-              ))}
+                </View>
+              ) : (
+                doctors.map(doctor => (
+                  <TouchableOpacity
+                    key={doctor.id}
+                    onPress={() => { setSelectedDoctor(doctor); setShowDoctorModal(false); }}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, marginBottom: 8,
+                      backgroundColor: selectedDoctor?.id === doctor.id ? 'rgba(242,202,80,0.15)' : 'rgba(255,255,255,0.04)',
+                      borderWidth: 1, borderColor: selectedDoctor?.id === doctor.id ? '#f2ca50' : 'rgba(255,255,255,0.08)',
+                    }}
+                  >
+                    <Text style={{ color: selectedDoctor?.id === doctor.id ? '#f2ca50' : 'rgba(255,255,255,0.7)', fontSize: 15, fontWeight: selectedDoctor?.id === doctor.id ? '600' : '400', flex: 1 }}>
+                      {doctor.name}
+                    </Text>
+                    {selectedDoctor?.id === doctor.id && <Ionicons name="checkmark-circle" size={20} color="#f2ca50" />}
+                  </TouchableOpacity>
+                ))
+              )}
             </ScrollView>
             <TouchableOpacity onPress={() => setShowDoctorModal(false)} style={{ padding: 16, alignItems: 'center' }}>
               <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 15 }}>Отмена</Text>
@@ -1939,22 +2066,30 @@ export default function NewOrderScreen() {
           <View style={{ backgroundColor: '#031427', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, borderWidth: 1, borderColor: 'rgba(242,202,80,0.2)', maxHeight: '70%' }}>
             <Text style={{ color: '#f2ca50', fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 }}>Выберите техника</Text>
             <ScrollView style={{ marginBottom: 20 }}>
-              {technicians.map(technician => (
-                <TouchableOpacity
-                  key={technician.id}
-                  onPress={() => { setSelectedTechnician(technician); setShowTechnicianModal(false); }}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, marginBottom: 8,
-                    backgroundColor: selectedTechnician?.id === technician.id ? 'rgba(242,202,80,0.15)' : 'rgba(255,255,255,0.04)',
-                    borderWidth: 1, borderColor: selectedTechnician?.id === technician.id ? '#f2ca50' : 'rgba(255,255,255,0.08)',
-                  }}
-                >
-                  <Text style={{ color: selectedTechnician?.id === technician.id ? '#f2ca50' : 'rgba(255,255,255,0.7)', fontSize: 15, fontWeight: selectedTechnician?.id === technician.id ? '600' : '400', flex: 1 }}>
-                    {technician.name}
+              {technicians.length === 0 ? (
+                <View style={{ padding: 24, alignItems: 'center' }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, textAlign: 'center' }}>
+                    У вас пока нет привязанных коллег. Добавьте их в Профиле по коду связи.
                   </Text>
-                  {selectedTechnician?.id === technician.id && <Ionicons name="checkmark-circle" size={20} color="#f2ca50" />}
-                </TouchableOpacity>
-              ))}
+                </View>
+              ) : (
+                technicians.map(technician => (
+                  <TouchableOpacity
+                    key={technician.id}
+                    onPress={() => { setSelectedTechnician(technician); setShowTechnicianModal(false); }}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, marginBottom: 8,
+                      backgroundColor: selectedTechnician?.id === technician.id ? 'rgba(242,202,80,0.15)' : 'rgba(255,255,255,0.04)',
+                      borderWidth: 1, borderColor: selectedTechnician?.id === technician.id ? '#f2ca50' : 'rgba(255,255,255,0.08)',
+                    }}
+                  >
+                    <Text style={{ color: selectedTechnician?.id === technician.id ? '#f2ca50' : 'rgba(255,255,255,0.7)', fontSize: 15, fontWeight: selectedTechnician?.id === technician.id ? '600' : '400', flex: 1 }}>
+                      {technician.name}
+                    </Text>
+                    {selectedTechnician?.id === technician.id && <Ionicons name="checkmark-circle" size={20} color="#f2ca50" />}
+                  </TouchableOpacity>
+                ))
+              )}
             </ScrollView>
             <TouchableOpacity onPress={() => setShowTechnicianModal(false)} style={{ padding: 16, alignItems: 'center' }}>
               <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 15 }}>Отмена</Text>

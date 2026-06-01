@@ -7,6 +7,7 @@ import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     ImageBackground,
+    SafeAreaView,
     ScrollView,
     Text,
     TouchableOpacity,
@@ -237,37 +238,55 @@ export default function SearchScreen() {
       style={{ flex: 1 }}
       resizeMode="cover"
     >
-      {/* Header */}
-      <View style={{
-        paddingTop: insets.top + 8,
-        paddingHorizontal: 16,
-        paddingBottom: 4,
-      }}>
-        {/* Шапка с заголовком и стрелкой назад */}
+      {/* Полностью контролируемый кастомный Header */}
+      <SafeAreaView style={{ backgroundColor: 'transparent' }}>
         <View style={{
           flexDirection: 'row',
           alignItems: 'center',
-          marginBottom: 8,
+          justifyContent: 'space-between',
+          paddingHorizontal: 16,
+          marginTop: 20,
+          marginBottom: 20
         }}>
-          {/* Стрелка назад */}
+          {/* Левая часть: Стрелка назад + Заголовок */}
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={{ marginRight: 14, paddingVertical: 4 }}
+            >
+              <Ionicons name="chevron-back" size={26} color="#f2ca50" />
+            </TouchableOpacity>
+
+            <Text style={{ color: '#ffffff', fontSize: 24, fontWeight: 'bold' }}>
+              Наряды
+            </Text>
+          </View>
+
+          {/* Правая часть: Минималистичная круглая кнопка "Новый наряд" */}
           <TouchableOpacity
-            onPress={() => router.back()}
-            style={{ marginRight: 12, paddingVertical: 4, paddingRight: 8 }}
+            onPress={() => router.push('/new-order')}
+            style={{
+              backgroundColor: 'rgba(242, 202, 80, 0.1)',
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              justifyContent: 'center',
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: 'rgba(242, 202, 80, 0.2)'
+            }}
+            activeOpacity={0.7}
           >
-            <Ionicons name="chevron-back" size={24} color="#f2ca50" />
+            <Ionicons name="add" size={22} color="#f2ca50" />
           </TouchableOpacity>
-
-          {/* Заголовок */}
-          <Text style={{ color: '#ffffff', fontSize: 24, fontWeight: 'bold' }}>
-            Наряды
-          </Text>
         </View>
+      </SafeAreaView>
 
-        {/* Фильтры */}
+      {/* Фильтры */}
+      <View style={{ paddingHorizontal: 16, marginBottom: 4 }}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={{ marginBottom: 4 }}
         >
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {[

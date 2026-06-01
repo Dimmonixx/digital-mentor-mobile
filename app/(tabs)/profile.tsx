@@ -96,9 +96,14 @@ export default function ProfileScreen() {
     registrationDate: '',
   });
 
+  const [inviteCode, setInviteCode] = useState<string>('');
+  const [partnerCode, setPartnerCode] = useState<string>('');
+  const [linkingLoading, setLinkingLoading] = useState(false);
+
   useEffect(() => {
     loadProfile();
     loadStatistics();
+    loadInviteCode();
   }, [user]);
 
   const loadProfile = async () => {
@@ -173,6 +178,92 @@ export default function ProfileScreen() {
       });
     } catch (error) {
       console.error('Error loading statistics:', error);
+    }
+  };
+
+  const loadInviteCode = async () => {
+    try {
+      const userId = user?.id;
+      if (!userId) return;
+
+      const userRef = dbRef(database, `users/${userId}`);
+      const userSnapshot = await get(userRef);
+      const userData = userSnapshot.val();
+
+      if (userData && userData.inviteCode) {
+        setInviteCode(userData.inviteCode);
+      } else {
+        // Generate invite code if it doesn't exist
+        const code = `DI-${Math.floor(1000 + Math.random() * 9000)}`;
+        await set(userRef, { ...userData, inviteCode: code });
+        setInviteCode(code);
+      }
+    } catch (error) {
+      console.error('Error loading invite code:', error);
+    }
+  };
+
+  const handleLinkPartner = async () => {
+    try {
+      setLinkingLoading(true);
+      const userId = user?.id;
+      if (!userId) return;
+
+      // Query for user with the entered invite code
+      const usersRef = dbRef(database, 'users');
+      const snapshot = await get(usersRef);
+      const allUsers = snapshot.val();
+
+      if (!allUsers) {
+        Alert.alert('Ошибка', 'Пользователь с таким кодом не найден');
+        return;
+      }
+
+      let targetUser: any = null;
+      for (const [uid, userData] of Object.entries(allUsers)) {
+        if (userData && (userData as any).inviteCode === partnerCode) {
+          targetUser = { uid, ...userData };
+          break;
+        }
+      }
+
+      if (!targetUser) {
+        Alert.alert('Ошибка', 'Пользователь с таким кодом не найден');
+        return;
+      }
+
+      // Check roles
+      const currentUserRole = user?.role;
+      const targetUserRole = targetUser.role;
+
+      if (currentUserRole === targetUserRole) {
+        Alert.alert('Ошибка', 'Нельзя связать пользователей с одинаковой ролью');
+        return;
+      }
+
+      // Determine who is doctor and who is technician
+      const doctorUid = currentUserRole === 'doctor' ? userId : targetUser.uid;
+      const doctorName = currentUserRole === 'doctor' ? user?.name : targetUser.name;
+      const technicianUid = currentUserRole === 'technician' ? userId : targetUser.uid;
+      const technicianName = currentUserRole === 'technician' ? user?.name : targetUser.name;
+
+      // Create partnership document
+      const partnershipRef = dbRef(database, `partnerships/${userId}_${targetUser.uid}`);
+      await set(partnershipRef, {
+        doctorUid,
+        doctorName,
+        technicianUid,
+        technicianName,
+        createdAt: Date.now(),
+      });
+
+      Alert.alert('Успешно', 'Коллега успешно привязан!');
+      setPartnerCode('');
+    } catch (error) {
+      console.error('Error linking partner:', error);
+      Alert.alert('Ошибка', 'Не удалось привязать коллегу');
+    } finally {
+      setLinkingLoading(false);
     }
   };
 
@@ -461,6 +552,38 @@ export default function ProfileScreen() {
               <Text style={styles.statLabel}>Анализов цвета</Text>
             </View>
           </View>
+        </View>
+
+        {/* Invite Code */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Код для связи</Text>
+          <View style={styles.inviteCodeCard}>
+            <Text style={styles.inviteCodeLabel}>Ваш код для связи:</Text>
+            <Text style={styles.inviteCode}>{inviteCode || 'Загрузка...'}</Text>
+          </View>
+        </View>
+
+        {/* Link Partner */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            {user?.role === 'doctor' ? 'Добавить зубного техника' : 'Добавить врача'}
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={partnerCode}
+            onChangeText={setPartnerCode}
+            placeholder="Введите код коллеги (например, DI-7492)"
+            placeholderTextColor="rgba(255,255,255,0.3)"
+          />
+          <TouchableOpacity 
+            style={styles.linkButton}
+            onPress={handleLinkPartner}
+            disabled={linkingLoading}
+          >
+            <Text style={styles.linkButtonText}>
+              {linkingLoading ? 'Привязка...' : 'Привязать коллегу'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Save Button */}
@@ -875,5 +998,36 @@ const styles = StyleSheet.create({
   modalCloseButtonText: {
     color: 'rgba(255,255,255,0.7)',
     fontSize: 16,
+  },
+  inviteCodeCard: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.2)',
+  },
+  inviteCodeLabel: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+    marginBottom: 8,
+  },
+  inviteCode: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFD700',
+    letterSpacing: 2,
+  },
+  linkButton: {
+    backgroundColor: '#FFD700',
+    borderRadius: 12,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  linkButtonText: {
+    color: '#031427',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
