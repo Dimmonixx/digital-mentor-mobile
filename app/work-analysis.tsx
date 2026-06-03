@@ -1,3 +1,4 @@
+import CustomAlert from '@/components/CustomAlert';
 import { ANTHROPIC_API_KEY } from '@/constants/config';
 import { useLanguage } from '@/context/LanguageContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -5,18 +6,22 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import LottieView from 'lottie-react-native';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-    Alert,
-    Image,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Dimensions,
+  Image,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const VITA_SHADES = [
   "A1", "A2", "A3", "A3.5", "A4",
@@ -28,7 +33,7 @@ const VITA_SHADES = [
 
 const WORK_STAGES = [
   "Не указан",
-  "Бисквит после 1-го обжига",
+  "После 1-го обжига",
   "После 2-го обжига",
   "Финальный обжиг",
   "Готовая работа (глазурь)"
@@ -49,6 +54,33 @@ const UPPER_TEETH = ["18","17","16","15","14","13","12","11",
 const LOWER_TEETH = ["48","47","46","45","44","43","42","41",
                      "31","32","33","34","35","36","37","38"];
 
+const ANALYSIS_PROMPTS = {
+  general: "Ты — Сенсей, критический и бескомпромиссный эксперт в эстетической стоматологии. Оцени работу со всей строгостью. ЖЕСТКОЕ ПРАВИЛО: Забудь про дежурную вежливость и толерантность! Если работа — отстой, пиши прямо и аргументированно. Не пытайся хвалить «для галочки». Проанализируй макро- и микрорельеф, прозрачность, форму и интеграцию. Ищи малейшие изъяны.",
+  color_match: "Ты — Сенсей, жесткий эксперт-колорист. Оцени ТОЛЬКО попадание в заказанный цвет по шкале VITA. ПРАВИЛО: Никакой дипломатии. Если цвет неестественно белый или провалена прозрачность — разнеси эту ошибку профессиональным языком. Сфокусируйся на пришейке, теле и режущем крае. Оценивай ИСКЛЮЧИТЕЛЬНО цвет, игнорируй форму.",
+  morphology: "Ты — Сенсей, суровый профессор анатомии зубов. Сфокусируйся ИСКЛЮЧИТЕЛЬНО на морфологии, макрорельефе, фиссурах. ПРАВИЛО: Никакой жалости. Если мамелоны плоские, валики стерты, а форма зуба квадратная вместо анатомической — укажи на это прямо. Полностью игнорируй цвет и десну.",
+  symmetry: "Ты — Сенсей, челюстно-лицевой архитектор с синдромом идеального порядка. Твоя цель — идеальная геометрия. ПРАВИЛО: Ищи малейшие диспропорции. Наклон осей вбок, смещение зенитов шеек даже на полмиллиметра, разная ширина коронок 11 и 21 зубов — фиксируй всё. Никакой похвалы, только сухие геометрические факты отклонений. Игнорируй цвет.",
+  fun: "Ты — Сенсей, опытный ментор с едким профессиональным юмором. Коллега решил 'просто похвастаться', но если там косяки — потролли его по-дружески, но тонко и по делу, чтобы в следующий раз целился в идеал.",
+  issues: "Ты — Сенсей, злейший инспектор ОТК. Твоя единственная цель — найти технологический брак и косяки. Поры в керамике, наплывы глазури, сколы, черные треугольники, нависающие края, плохой проксимальный контакт. Пиши жестко, хлестко, пунктами, без вступлений и резюме.",
+  final_check: "Ты — Сенсей, главный врач элитной клиники перед фиксацией работы в кресле. Никаких компромиссов, ведь на кону репутация. Если работа сырая — отправляй на переделывать с жестким списком правок. Вынеси финальный вердикт: Фиксация или Доработка."
+};
+
+const ANALYSIS_TYPE_KEYS: Record<string, keyof typeof ANALYSIS_PROMPTS> = {
+  "Общий анализ работы": "general",
+  "Проверить цвет и оттенок": "color_match",
+  "Проверить форму и морфологию": "morphology",
+  "Оценить симметрию": "symmetry",
+  "Просто похвастаться 😎": "fun",
+  "Найти косяки": "issues",
+  "Финальная проверка перед сдачей": "final_check"
+};
+
+const LOADING_STATUSES = [
+  "Сенсей сканирует макро- и микрорельеф...",
+  "Анализируем соответствие заказанному цвету...",
+  "Сопоставляем геометрию с зубами-антагонистами...",
+  "Формируем финальный экспертный вердикт..."
+];
+
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
 
 function resolveMimeType(asset: ImagePicker.ImagePickerAsset): 'image/jpeg' | 'image/png' {
@@ -67,14 +99,25 @@ async function analyzeWithClaude(
   teeth: string,
   comment: string,
 ): Promise<string> {
+  const analysisTypeKey = ANALYSIS_TYPE_KEYS[analysisType] || 'general';
+  const systemPrompt = ANALYSIS_PROMPTS[analysisTypeKey];
+
   const prompt = `Ты — Сенсей, строгий и опытный зубной техник-наставник с 30-летним стажем. Ты циничен, беспристрастен и не прощаешь брака. Оцени керамическую работу на фото с профессиональной жесткостью.
 
 ПАРАМЕТРЫ РАБОТЫ:
 - Зубы: ${teeth}
-- Заказанный оттенок VITA: ${vitaShade}
+- Заказанный цвет: ${vitaShade}
 - Этап работы: ${workStage}
 - Тип анализа: ${analysisType}
 - Комментарий: ${comment}
+
+ПРАВИЛО ФИЛЬТРАЦИИ КАТЕГОРИЙ:
+- Если тип анализа "Проверить цвет и оттенок", заполни ТОЛЬКО секцию orderMatch (соответствие цвета). Во всех остальных секциях (anatomy, optics, gumAnalysis) верни строго пустые строки "" или null!
+- Если тип анализа "Проверить форму и морфологию" или "Оценить симметрию", заполни ТОЛЬКО секцию anatomy. Секции цвета (orderMatch) и розовой эстетики (gumAnalysis) верни строго пустыми ""!
+- Если тип анализа "Найти косяки", пиши строго в секцию technicalChecklist, остальные секции оставь пустыми!
+- Если тип анализа "Финальная проверка перед сдачей", заполни все секции как при общем анализе.
+- Если тип анализа "Общий анализ работы", заполни все секции.
+- Запрещено генерировать текст в секциях, которые не относятся к выбранному типу анализа!
 
 ФОРМАТ ОТВЕТА (СТРОГО ТОЛЬКО JSON, без markdown-разметки):
 Верни ТОЛЬКО валидный JSON-объект следующей структуры:
@@ -124,6 +167,7 @@ async function analyzeWithClaude(
     body: JSON.stringify({
       model: CLAUDE_MODEL,
       max_tokens: 4000,
+      system: systemPrompt,
       messages: [
         {
           role: 'user',
@@ -168,6 +212,7 @@ export default function WorkAnalysisScreen() {
   const { theme } = useTheme();
   const { t } = useLanguage();
   const backgroundColor = theme?.bg || '#0a0f1d';
+  const scrollViewRef = useRef<ScrollView>(null);
   
   const [selectedTeeth, setSelectedTeeth] = useState<string[]>([]);
   const [selectedShade, setSelectedShade] = useState<string>("Не указан");
@@ -179,6 +224,13 @@ export default function WorkAnalysisScreen() {
   const [imageMime, setImageMime] = useState<'image/jpeg' | 'image/png'>('image/jpeg');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+  const [currentStatusIndex, setCurrentStatusIndex] = useState<number>(0);
+  const [isImageModalVisible, setIsImageModalVisible] = useState<boolean>(false);
+  const [resultsY, setResultsY] = useState<number>(0);
+  const [alertVisible, setAlertVisible] = useState<boolean>(false);
+  const [alertTitle, setAlertTitle] = useState<string>('');
+  const [alertMessage, setAlertMessage] = useState<string>('');
+  const [diamondBalance, setDiamondBalance] = useState<number>(150);
 
   const toggleTooth = (tooth: string) => {
     setSelectedTeeth(prev =>
@@ -186,13 +238,34 @@ export default function WorkAnalysisScreen() {
     );
   };
 
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isLoading) {
+      setCurrentStatusIndex(0);
+      interval = setInterval(() => {
+        setCurrentStatusIndex(prev => (prev + 1) % LOADING_STATUSES.length);
+      }, 3500);
+    }
+    return () => clearInterval(interval);
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (analysisResult && scrollViewRef.current && resultsY > 0) {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({ y: resultsY, animated: true });
+      }, 300);
+    }
+  }, [analysisResult, resultsY]);
+
   const setImageFromAsset = (asset: ImagePicker.ImagePickerAsset) => {
     setImage(asset.uri);
     setAnalysisResult(null);
     const b64 = asset.base64;
     if (!b64) {
       setImageBase64(null);
-      Alert.alert('Ошибка', 'Не удалось получить данные изображения. Попробуйте выбрать фото снова.');
+      setAlertTitle('Ошибка');
+      setAlertMessage('Не удалось получить данные изображения. Попробуйте выбрать фото снова.');
+      setAlertVisible(true);
       return;
     }
     setImageBase64(b64);
@@ -229,12 +302,16 @@ export default function WorkAnalysisScreen() {
 
   const analyzeWork = async () => {
     if (!image || !imageBase64) {
-      Alert.alert('Ошибка', 'Пожалуйста, загрузите фото работы');
+      setAlertTitle('Ошибка');
+      setAlertMessage('Пожалуйста, загрузите фото работы');
+      setAlertVisible(true);
       return;
     }
 
     if (!ANTHROPIC_API_KEY?.trim()) {
-      Alert.alert('Ошибка', 'Добавьте ANTHROPIC_API_KEY в constants/config.ts');
+      setAlertTitle('Ошибка');
+      setAlertMessage('Добавьте ANTHROPIC_API_KEY в constants/config.ts');
+      setAlertVisible(true);
       return;
     }
 
@@ -255,7 +332,9 @@ export default function WorkAnalysisScreen() {
       setAnalysisResult(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не удалось выполнить анализ';
-      Alert.alert('Ошибка', message);
+      setAlertTitle('Ошибка');
+      setAlertMessage(message);
+      setAlertVisible(true);
       console.error(error);
     } finally {
       setIsLoading(false);
@@ -305,47 +384,59 @@ export default function WorkAnalysisScreen() {
     };
 
     return (
-      <View style={styles.resultContainer}>
+      <View style={styles.resultContainer} onLayout={(e) => setResultsY(e.nativeEvent.layout.y)}>
         {/* Order Match */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>📋 СООТВЕТСТВИЕ ЗАКАЗУ</Text>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(parsed.orderMatch?.status || '') }]}>
-            <Text style={styles.statusBadgeText}>{parsed.orderMatch?.status || ''}</Text>
+        {parsed.orderMatch?.text && parsed.orderMatch.text !== '' && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>📋 СООТВЕТСТВИЕ ЗАКАЗУ</Text>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(parsed.orderMatch?.status || '') }]}>
+              <Text style={styles.statusBadgeText}>{parsed.orderMatch?.status || ''}</Text>
+            </View>
+            <Text style={styles.cardText}>{parsed.orderMatch?.text || ''}</Text>
           </View>
-          <Text style={styles.cardText}>{parsed.orderMatch?.text || ''}</Text>
-        </View>
+        )}
 
         {/* Anatomy */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>🦷 АНАТОМИЯ</Text>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(parsed.anatomy?.status || '') }]}>
-            <Text style={styles.statusBadgeText}>{parsed.anatomy?.status || ''}</Text>
+        {parsed.anatomy && (parsed.anatomy.neck || parsed.anatomy.body || parsed.anatomy.edge) && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>🦷 АНАТОМИЯ</Text>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(parsed.anatomy?.status || '') }]}>
+              <Text style={styles.statusBadgeText}>{parsed.anatomy?.status || ''}</Text>
+            </View>
+            {parsed.anatomy?.neck && parsed.anatomy.neck !== '' && (
+              <View style={styles.subsection}>
+                <Text style={styles.subsectionTitle}>Пришеечная треть</Text>
+                <Text style={styles.cardText}>{parsed.anatomy?.neck || ''}</Text>
+              </View>
+            )}
+            {parsed.anatomy?.body && parsed.anatomy.body !== '' && (
+              <View style={styles.subsection}>
+                <Text style={styles.subsectionTitle}>Экватор и средняя треть</Text>
+                <Text style={styles.cardText}>{parsed.anatomy?.body || ''}</Text>
+              </View>
+            )}
+            {parsed.anatomy?.edge && parsed.anatomy.edge !== '' && (
+              <View style={styles.subsection}>
+                <Text style={styles.subsectionTitle}>Режущий край</Text>
+                <Text style={styles.cardText}>{parsed.anatomy?.edge || ''}</Text>
+              </View>
+            )}
           </View>
-          <View style={styles.subsection}>
-            <Text style={styles.subsectionTitle}>Пришеечная треть</Text>
-            <Text style={styles.cardText}>{parsed.anatomy?.neck || ''}</Text>
-          </View>
-          <View style={styles.subsection}>
-            <Text style={styles.subsectionTitle}>Экватор и средняя треть</Text>
-            <Text style={styles.cardText}>{parsed.anatomy?.body || ''}</Text>
-          </View>
-          <View style={styles.subsection}>
-            <Text style={styles.subsectionTitle}>Режущий край</Text>
-            <Text style={styles.cardText}>{parsed.anatomy?.edge || ''}</Text>
-          </View>
-        </View>
+        )}
 
         {/* Optics */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>✨ ОПТИКА</Text>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(parsed.optics?.status || '') }]}>
-            <Text style={styles.statusBadgeText}>{parsed.optics?.status || ''}</Text>
+        {parsed.optics?.text && parsed.optics.text !== '' && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>✨ ОПТИКА</Text>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(parsed.optics?.status || '') }]}>
+              <Text style={styles.statusBadgeText}>{parsed.optics?.status || ''}</Text>
+            </View>
+            <Text style={styles.cardText}>{parsed.optics?.text || ''}</Text>
           </View>
-          <Text style={styles.cardText}>{parsed.optics?.text || ''}</Text>
-        </View>
+        )}
 
         {/* Gum Analysis */}
-        {parsed.gumAnalysis?.status !== 'НЕ ПРИМЕНИМО' && (
+        {parsed.gumAnalysis?.text && parsed.gumAnalysis.text !== '' && parsed.gumAnalysis?.status !== 'НЕ ПРИМЕНИМО' && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>🌹 РОЗОВАЯ ЭСТЕТИКА</Text>
             <View style={[styles.statusBadge, { backgroundColor: getStatusColor(parsed.gumAnalysis?.status || '') }]}>
@@ -377,7 +468,7 @@ export default function WorkAnalysisScreen() {
         </View>
 
         <TouchableOpacity
-          style={styles.clearButton}
+          style={[styles.clearButton, { marginBottom: Platform.OS === 'ios' ? 30 : 20 }]}
           onPress={() => {
             setAnalysisResult(null);
             setImage(null);
@@ -394,22 +485,48 @@ export default function WorkAnalysisScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor }]}>
-      {/* DiLabs Header */}
-      <View style={styles.dilabsHeader}>
-        <TouchableOpacity style={styles.headerIconBtn}>
-          <Ionicons name="menu-outline" size={28} color="#f2ca50" />
-        </TouchableOpacity>
-        <Image
-          source={require('@/assets/images/header-logo.png')}
-          style={styles.headerLogo}
-          resizeMode="contain"
-        />
-        <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.headerIconBtn}>
-            <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
-          </TouchableOpacity>
+      {isLoading ? (
+        <View style={styles.fullScreenLoader}>
+          <LottieView
+            source={require('@/assets/images/cyber_head.json')}
+            autoPlay
+            loop
+            style={styles.loaderAnimation}
+          />
+          <Text style={styles.loaderStatusText}>
+            {LOADING_STATUSES[currentStatusIndex]}
+          </Text>
         </View>
-      </View>
+      ) : (
+        <>
+          {/* DiLabs Header */}
+          <View style={styles.headerContainer}>
+            <View style={styles.leftColumn}>
+              <TouchableOpacity style={styles.burgerButton}>
+                <Ionicons name="menu-outline" size={28} color="#f2ca50" />
+              </TouchableOpacity>
+            </View>
+            <View pointerEvents="none" style={styles.absoluteCenterLogo}>
+              <Image
+                source={require('@/assets/images/header-logo.png')}
+                style={styles.headerLogo}
+                resizeMode="contain"
+              />
+            </View>
+            <View style={styles.rightColumn}>
+              <View style={styles.diamondBadge}>
+                <Text style={styles.diamondText}>{diamondBalance}</Text>
+                <View style={styles.diamondIcon}>
+                  <Ionicons name="diamond" size={12} color="#f2ca50" />
+                </View>
+              </View>
+              <View style={styles.bellSpacing}>
+                <TouchableOpacity style={styles.bellButton}>
+                  <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
 
       {/* Local Header */}
       <View style={styles.localHeader}>
@@ -420,10 +537,10 @@ export default function WorkAnalysisScreen() {
         <View style={styles.backBtn} />
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} ref={scrollViewRef}>
         {/* 1-й БЛОК: Фото работы */}
         <View style={styles.cardBlock}>
-          <Text style={styles.cardTitle}>📷 Фото работы</Text>
+          <Text style={styles.blockHeader}>📷 Фото работы</Text>
           <View style={styles.imageButtonsCompact}>
             <TouchableOpacity style={styles.imageButtonCompact} onPress={takePhoto}>
               <Ionicons name="camera" size={20} color="#f2ca50" />
@@ -436,14 +553,16 @@ export default function WorkAnalysisScreen() {
           </View>
 
           {image && (
-            <Image source={{ uri: image }} style={styles.previewImageCompact} />
+            <TouchableOpacity onPress={() => setIsImageModalVisible(true)}>
+              <Image source={{ uri: image }} style={styles.previewImageCompact} />
+            </TouchableOpacity>
           )}
         </View>
 
         {/* 2-й БЛОК: Зубная формула */}
         <View style={styles.cardBlock}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.cardTitle}>🦷 Зубная формула</Text>
+            <Text style={styles.blockHeader}>🦷 Зубная формула</Text>
             {selectedTeeth.length > 0 && (
               <TouchableOpacity onPress={() => setSelectedTeeth([])} style={styles.clearTeethButton}>
                 <Text style={styles.clearTeethText}>Очистить</Text>
@@ -509,10 +628,10 @@ export default function WorkAnalysisScreen() {
 
         {/* 3-й БЛОК: Параметры анализа */}
         <View style={styles.cardBlock}>
-          <Text style={styles.cardTitle}>⚙️ Параметры анализа</Text>
+          <Text style={styles.blockHeader}>⚙️ Параметры анализа</Text>
           
           <View style={styles.parameterRow}>
-            <Text style={styles.parameterLabel}>Оттенок VITA</Text>
+            <Text style={styles.parameterLabel}>Заказанный цвет</Text>
             <View style={styles.pickerContainer}>
               {["Не указан", ...VITA_SHADES].map(shade => (
                 <TouchableOpacity
@@ -595,24 +714,59 @@ export default function WorkAnalysisScreen() {
           disabled={isLoading}
         >
           {isLoading ? (
-            <View style={styles.loadingContainer}>
+            <View style={styles.fullScreenLoader}>
               <LottieView
                 source={require('@/assets/images/cyber_head.json')}
                 autoPlay
                 loop
-                style={styles.lottieAnimation}
+                style={styles.loaderAnimation}
               />
+              <Text style={styles.loaderStatusText}>
+                {LOADING_STATUSES[currentStatusIndex]}
+              </Text>
             </View>
           ) : (
             <View style={styles.buttonContent}>
               <Ionicons name="sparkles" size={20} color="#0a0f1d" />
-              <Text style={styles.analyzeButtonText}>Запустить анализ Сенсея</Text>
+              <Text style={styles.analyzeButtonText}>
+                {analysisType === "Общий анализ работы" ? "Запустить общий анализ (3 💎)" : "Запустить анализ Сенсея (1 💎)"}
+              </Text>
             </View>
           )}
         </TouchableOpacity>
 
         {renderAnalysisResult()}
       </ScrollView>
+
+      <Modal
+        visible={isImageModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsImageModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setIsImageModalVisible(false)}
+        >
+          {image && <Image source={{ uri: image }} style={styles.modalImage} resizeMode="contain" />}
+          <TouchableOpacity
+            style={styles.modalCloseButton}
+            onPress={() => setIsImageModalVisible(false)}
+          >
+            <Ionicons name="close" size={32} color="#f2ca50" />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      <CustomAlert
+        visible={alertVisible}
+        title={alertTitle}
+        message={alertMessage}
+        onClose={() => setAlertVisible(false)}
+      />
+    </>
+      )}
     </SafeAreaView>
   );
 }
@@ -632,12 +786,81 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f2ca50',
   },
+  headerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 60,
+    paddingHorizontal: 16,
+    width: '100%',
+    backgroundColor: 'transparent',
+    position: 'relative',
+    marginTop: 10,
+  },
+  leftColumn: {
+    width: 50,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    height: '100%',
+    zIndex: 10,
+  },
+  absoluteCenterLogo: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  rightColumn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    width: 130,
+    height: '100%',
+    zIndex: 10,
+  },
+  burgerButton: {
+    padding: 4,
+  },
   headerIconBtn: {
     padding: 4,
   },
   headerLogo: {
     width: 180,
     height: 56,
+  },
+  diamondBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E1E1E',
+    paddingHorizontal: 8,
+    height: 28,
+    borderRadius: 8,
+    justifyContent: 'center',
+  },
+  diamondText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+    marginRight: 4,
+  },
+  diamondIcon: {
+    width: 14,
+    height: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bellSpacing: {
+    marginLeft: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: '100%',
+  },
+  bellButton: {
+    padding: 4,
   },
   headerRight: {
     flexDirection: 'row',
@@ -720,7 +943,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 10,
     marginHorizontal: 12,
-    marginBottom: 8,
+    marginBottom: 16,
+  },
+  blockHeader: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#f2ca50',
+    marginBottom: 12,
   },
   cardTitle: {
     fontSize: 15,
@@ -860,13 +1089,43 @@ const styles = StyleSheet.create({
     color: '#0a0f1d',
     marginLeft: 8,
   },
-  loadingContainer: {
-    width: 60,
-    height: 60,
+  fullScreenLoader: {
+    flex: 1,
+    backgroundColor: '#0B101D',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
   },
-  lottieAnimation: {
-    width: 60,
-    height: 60,
+  loaderAnimation: {
+    width: 180,
+    height: 180,
+  },
+  loaderStatusText: {
+    marginTop: 24,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#f2ca50',
+    textAlign: 'center',
+    paddingHorizontal: 32,
+    fontStyle: 'italic',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalImage: {
+    width: '100%',
+    height: '100%',
+  },
+  modalCloseButton: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 20,
+    padding: 8,
   },
   // Result cards
   resultContainer: {

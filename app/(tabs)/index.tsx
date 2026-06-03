@@ -138,6 +138,56 @@ export default function HomeScreen() {
 
   const screenWidth = Dimensions.get('window').width;
 
+  const renderActiveButton = (icon: any, iconType: 'ionicons' | 'material', label: string, onPress: () => void, iconSize: number = 20) => (
+    <View style={{
+      shadowColor: '#4fc3f7',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.6,
+      shadowRadius: 12,
+      marginBottom: 12,
+    }}>
+      <TouchableOpacity
+        style={styles.card}
+        onPress={onPress}
+        activeOpacity={0.8}
+      >
+        <View style={styles.iconBox}>
+          {iconType === 'ionicons' ? (
+            <Ionicons name={icon} size={iconSize} color="#f2ca50" />
+          ) : (
+            <MaterialCommunityIcons name={icon} size={iconSize} color="#f2ca50" />
+          )}
+        </View>
+        <Text style={styles.labelText}>{label}</Text>
+        <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderDisabledButton = (icon: any, iconType: 'ionicons' | 'material', label: string, iconSize: number = 20) => (
+    <View style={{
+      shadowColor: '#4fc3f7',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.6,
+      shadowRadius: 12,
+      marginBottom: 12,
+    }}>
+      <View style={[styles.card, styles.disabledCard]}>
+        <View style={styles.iconBox}>
+          {iconType === 'ionicons' ? (
+            <Ionicons name={icon} size={iconSize} color="#f2ca50" />
+          ) : (
+            <MaterialCommunityIcons name={icon} size={iconSize} color="#f2ca50" />
+          )}
+        </View>
+        <Text style={styles.labelText}>{label}</Text>
+        <View style={styles.soonBadge}>
+          <Text style={styles.soonBadgeText}>СКОРО</Text>
+        </View>
+      </View>
+    </View>
+  );
+
   useEffect(() => {
     scrollAnim.setValue(0);
     Animated.loop(
@@ -349,185 +399,58 @@ export default function HomeScreen() {
 
         <Animated.View style={{ opacity: fadeAnim }}>
           <View style={styles.cardsContainer}>
-            {/* 1. Новый наряд / Входящие наряды */}
-            <View style={{
-              shadowColor: '#4fc3f7',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.6,
-              shadowRadius: 12,
-              marginBottom: 12,
-            }}>
-              <TouchableOpacity
-                style={styles.card}
-                onPress={() => {
-                  if (user?.role === 'technician') {
-                    router.push('/(tabs)/search');
-                  } else {
-                    router.push('/new-order');
-                  }
-                }}
-                activeOpacity={0.8}
-              >
-                <View style={styles.iconBox}>
-                  <Ionicons
-                    name={user?.role === 'technician' ? "download-outline" : "add-circle-outline"}
-                    size={22}
-                    color="#f2ca50"
-                  />
-                </View>
-                <Text style={styles.labelText}>
-                  {user?.role === 'technician' ? 'ВХОДЯЩИЕ НАРЯДЫ' : 'НОВЫЙ НАРЯД'}
-                </Text>
-                <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
-              </TouchableOpacity>
-            </View>
+            {user?.role === 'technician' ? (
+              // Technician: 3 active buttons
+              <>
+                {renderActiveButton('chatbubbles-outline', 'ionicons', 'РАБОЧИЙ ЧАТ', () => router.push('/chat'))}
+                {renderActiveButton('tooth-outline', 'material', t('colorAnalysis'), () => router.push('/color-analyzer'), 20)}
+                {renderActiveButton('analytics-outline', 'ionicons', 'АНАЛИЗ РАБОТЫ', () => router.push('/work-analysis'))}
+              </>
+            ) : (
+              // Doctor: 4 active buttons
+              <>
+                <TouchableOpacity
+                  onPress={() => router.push('/new-order')}
+                  style={{
+                    backgroundColor: '#1E1E1E',
+                    borderRadius: 16,
+                    height: 90,
+                    paddingHorizontal: 16,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginVertical: 8,
+                    borderWidth: 1,
+                    borderColor: '#f2ca50',
+                    borderStyle: 'solid',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.25,
+                    shadowRadius: 3.84,
+                    elevation: 5,
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.iconBox, styles.prominentIconBox]}>
+                    <Ionicons name="add-circle-outline" size={26} color="#f2ca50" />
+                  </View>
+                  <Text style={[styles.labelText, styles.prominentLabelText]}>НОВЫЙ НАРЯД</Text>
+                  <MaterialCommunityIcons name="chevron-right" size={24} color="#f2ca50" />
+                </TouchableOpacity>
+                {renderActiveButton('chatbubbles-outline', 'ionicons', 'РАБОЧИЙ ЧАТ', () => router.push('/chat'))}
+                {renderActiveButton('tooth-outline', 'material', t('colorAnalysis'), () => router.push('/color-analyzer'), 20)}
+                {renderActiveButton('analytics-outline', 'ionicons', 'АНАЛИЗ РАБОТЫ', () => router.push('/work-analysis'))}
+              </>
+            )}
 
-            {/* 2. Чат техников */}
-            <View style={{
-              shadowColor: '#4fc3f7',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.6,
-              shadowRadius: 12,
-              marginBottom: 12,
-            }}>
-              <TouchableOpacity
-                style={styles.card}
-                onPress={() => router.push('/chat')}
-                activeOpacity={0.8}
-              >
-                <View style={styles.iconBox}>
-                  <Ionicons name="chatbubbles-outline" size={20} color="#f2ca50" />
-                </View>
-                <Text style={styles.labelText}>{t('chatTechnicians')}</Text>
-                <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
-              </TouchableOpacity>
-            </View>
+            {/* Visual gap */}
+            <View style={{ height: 24 }} />
 
-            {/* 3. Анализ цвета */}
-            <View style={{
-              shadowColor: '#4fc3f7',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.6,
-              shadowRadius: 12,
-              marginBottom: 12,
-            }}>
-              <TouchableOpacity
-                style={[styles.card, styles.cardVita]}
-                onPress={() => router.push('/color-analyzer')}
-                activeOpacity={0.8}
-              >
-                <View style={styles.iconBox}>
-                  <MaterialCommunityIcons name="tooth-outline" size={20} color="#f2ca50" />
-                </View>
-                <Text style={styles.labelText} numberOfLines={1}>{t('colorAnalysis')}</Text>
-                <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
-              </TouchableOpacity>
-            </View>
-
-            {/* 4. Анализ работы */}
-            <View style={{
-              shadowColor: '#4fc3f7',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.6,
-              shadowRadius: 12,
-              marginBottom: 24,
-            }}>
-              <TouchableOpacity
-                style={styles.card}
-                activeOpacity={0.8}
-                onPress={() => router.push('/work-analysis')}
-              >
-                <View style={styles.iconBox}>
-                  <Ionicons name="analytics-outline" size={20} color="#f2ca50" />
-                </View>
-                <Text style={styles.labelText}>АНАЛИЗ РАБОТЫ</Text>
-                <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
-              </TouchableOpacity>
-            </View>
-
-            {/* 5. Тех-карта */}
-            <View style={{
-              shadowColor: '#4fc3f7',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.6,
-              shadowRadius: 12,
-              marginBottom: 24,
-            }}>
-              <TouchableOpacity
-                style={styles.card}
-                activeOpacity={0.8}
-                onPress={() => {/* Добавьте переход для тех-карты */}}
-              >
-                <View style={styles.iconBox}>
-                  <Ionicons name="layers-outline" size={20} color="#f2ca50" />
-                </View>
-                <Text style={styles.labelText}>{t('techCard')}</Text>
-                <MaterialCommunityIcons name="chevron-right" size={22} color="#FFD700" />
-              </TouchableOpacity>
-            </View>
-
-            {/* 5. Морфология */}
-            <View style={{
-              shadowColor: '#4fc3f7',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.6,
-              shadowRadius: 12,
-              marginBottom: 24,
-            }}>
-              <TouchableOpacity
-                style={styles.card}
-                onPress={() => router.push('/morphology')}
-                activeOpacity={0.8}
-              >
-                <View style={styles.iconBox}>
-                  <Ionicons name="scan" size={24} color="#f2ca50" />
-                </View>
-                <Text style={styles.labelText}>МОРФОЛОГИЯ</Text>
-                <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
-              </TouchableOpacity>
-            </View>
-
-            {/* 6. Рецепты масс */}
-            <View style={{
-              shadowColor: '#4fc3f7',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.6,
-              shadowRadius: 12,
-              marginBottom: 24,
-            }}>
-              <TouchableOpacity
-                style={styles.card}
-                onPress={() => router.push('/mass-calculator')}
-                activeOpacity={0.8}
-              >
-                <View style={styles.iconBox}>
-                  <Ionicons name="flask" size={24} color="#f2ca50" />
-                </View>
-                <Text style={styles.labelText}>РЕЦЕПТЫ МАСС</Text>
-                <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
-              </TouchableOpacity>
-            </View>
-
-            {/* 7. Анатомия зубов */}
-            <View style={{
-              shadowColor: '#4fc3f7',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.6,
-              shadowRadius: 12,
-              marginBottom: 24,
-            }}>
-              <TouchableOpacity
-                style={styles.card}
-                onPress={() => router.push('/anatomy-viewer')}
-                activeOpacity={0.8}
-              >
-                <View style={styles.iconBox}>
-                  <MaterialCommunityIcons name="tooth-outline" size={24} color="#f2ca50" />
-                </View>
-                <Text style={styles.labelText}>АНАТОМИЯ ЗУБОВ</Text>
-                <Ionicons name="chevron-forward" size={20} color="#f2ca50" />
-              </TouchableOpacity>
-            </View>
+            {/* Disabled buttons with "Скоро" badge */}
+            {renderDisabledButton('layers-outline', 'ionicons', t('techCard'))}
+            {renderDisabledButton('scan', 'ionicons', 'МОРФОЛОГИЯ', 24)}
+            {renderDisabledButton('flask', 'ionicons', 'РЕЦЕПТЫ МАСС', 24)}
+            {renderDisabledButton('tooth-outline', 'material', 'АНАТОМИЯ ЗУБОВ', 24)}
           </View>
         </Animated.View>
       </ScrollView>
@@ -719,5 +642,44 @@ const styles = StyleSheet.create({
   },
   cardVita: {
     marginBottom: 32,
+  },
+  disabledCard: {
+    opacity: 0.6,
+  },
+  soonBadge: {
+    backgroundColor: '#f2ca50',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  soonBadgeText: {
+    color: '#031427',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  prominentCard: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 16,
+    height: 90,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  prominentBorder: {
+    backgroundColor: '#f2ca50',
+    borderRadius: 17,
+    padding: 1,
+    marginVertical: 8,
+  },
+  prominentIconBox: {
+    width: 44,
+    height: 44,
+  },
+  prominentLabelText: {
+    color: '#f2ca50',
   },
 });

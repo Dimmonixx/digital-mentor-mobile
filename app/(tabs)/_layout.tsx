@@ -3,13 +3,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Redirect, Tabs, router } from 'expo-router';
 import { onValue, ref } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
-import { Image, ImageBackground, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Image, ImageBackground, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { database } from '@/constants/firebase';
 import { HeaderHeightProvider } from '../../context/HeaderHeightContext';
 import { playSuccessSound } from '../../utils/audio';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const countNewOrdersForUser = (orders: { status?: string; doctorId?: string; doctorName?: string; technicianId?: string; technicianName?: string; techName?: string }[], currentUser: { email?: string; id?: string; name?: string; role?: string }) => {
   return orders.filter((order) => {
@@ -46,6 +48,7 @@ export default function TabLayout() {
   const [, setPreviousNewOrdersCount] = useState(0);
   const previousNewOrdersCountRef = useRef(0);
   const isInitialLoad = useRef(true);
+  const [diamondBalance, setDiamondBalance] = useState<number>(150);
 
   useEffect(() => {
     AsyncStorage.getItem('user').then((data) => {
@@ -135,24 +138,30 @@ export default function TabLayout() {
         >
           <View style={{ flex: 1, backgroundColor: 'transparent' }}>
             <View 
-              style={[styles.header, { paddingTop: insets.top + 8 }]}
+              style={[styles.headerContainer, { paddingTop: insets.top }]}
               onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
             >
-              <TouchableOpacity style={styles.headerIconBtn}>
-                <Ionicons name="menu-outline" size={28} color="#f2ca50" />
-              </TouchableOpacity>
-              <Image
-                source={require('@/assets/images/header-logo.png')}
-                style={styles.headerLogo}
-                resizeMode="contain"
-              />
-              <View style={styles.headerRight}>
-                <TouchableOpacity 
-                  style={[styles.headerIconBtn, styles.bellButton]}
+              <View style={styles.leftContainer}>
+                <TouchableOpacity style={styles.burgerButton}>
+                  <Ionicons name="menu-outline" size={28} color="#f2ca50" />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.absoluteCenter}>
+                <Image
+                  source={require('@/assets/images/header-logo.png')}
+                  style={styles.headerLogo}
+                  resizeMode="contain"
+                />
+              </View>
+              <View style={styles.rightContainer}>
+                <View style={styles.diamondBadge}>
+                  <Text style={styles.diamondText}>{diamondBalance}</Text>
+                  <Ionicons name="diamond" size={12} color="#f2ca50" />
+                </View>
+                <TouchableOpacity
+                  style={styles.bellButton}
                   onPress={() => {
-                    // Переключаемся на вкладку Наряды и фильтр "Новые"
                     router.push('/(tabs)/search');
-                    // Вызываем функцию для показа новых нарядов
                     setTimeout(() => {
                       (window as any).showNewOrders?.();
                     }, 100);
@@ -247,32 +256,68 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    backgroundColor: 'transparent',
+  headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    position: 'relative',
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#f2ca50',
+  },
+  leftContainer: {
+    width: 44,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
+  rightContainer: {
+    width: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  absoluteCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  burgerButton: {
+    padding: 4,
   },
   headerLogo: {
     width: 180,
     height: 56,
   },
-  headerRight: {
+  diamondBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    backgroundColor: '#1E1E1E',
+    paddingHorizontal: 8,
+    height: 28,
+    borderRadius: 8,
+    justifyContent: 'center',
   },
-  headerIconBtn: {
-    padding: 4,
+  diamondText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+    marginRight: 4,
+  },
+  diamondIcon: {
+    width: 14,
+    height: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bellWrapper: {
+    marginLeft: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: '100%',
   },
   bellButton: {
+    padding: 4,
     position: 'relative',
-    overflow: 'visible',
   },
   notificationBadge: {
     position: 'absolute',
