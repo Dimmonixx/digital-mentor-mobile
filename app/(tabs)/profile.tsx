@@ -4,10 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { ref as dbRef, get, remove, set } from 'firebase/database';
+import { ref as dbRef, get, onValue, remove, set } from 'firebase/database';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   FlatList,
   Image,
   ImageBackground,
@@ -74,6 +75,15 @@ interface LinkedPartner {
   role: 'Врач' | 'Техник';
 }
 
+interface ConnectionRequest {
+  id: string;
+  from: string;
+  to: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  senderName: string;
+  senderRole: 'Врач' | 'Техник';
+}
+
 type FeedbackType = 'success' | 'error';
 
 export default function ProfileScreen() {
@@ -111,6 +121,10 @@ export default function ProfileScreen() {
   const [partnerCode, setPartnerCode] = useState<string>('');
   const [linkingLoading, setLinkingLoading] = useState(false);
   const [linkedPartners, setLinkedPartners] = useState<LinkedPartner[]>([]);
+  const [recommendedPartners, setRecommendedPartners] = useState<LinkedPartner[]>([]);
+  const [incomingRequests, setIncomingRequests] = useState<ConnectionRequest[]>([]);
+  const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<{ visible: boolean; message: string }>({ visible: false, message: '' });
   const [feedbackModal, setFeedbackModal] = useState<{
     visible: boolean;
     title: string;
@@ -138,22 +152,19 @@ export default function ProfileScreen() {
     setFeedbackModal((prev) => ({ ...prev, visible: false }));
   };
 
-  const loadProfilePartners = async () => {
-    try {
-      const storedUser = await AsyncStorage.getItem('user');
-      const currentUser = storedUser ? JSON.parse(storedUser) : null;
-      const userId = currentUser?.id || user?.id;
-      const userRole = currentUser?.role || user?.role;
-      if (!userId || !userRole) {
-        setLinkedPartners([]);
-        return;
-      }
+  const loadProfilePartners = () => {
+    const userId = user?.id;
+    const userRole = user?.role;
+    if (!userId || !userRole) {
+      setLinkedPartners([]);
+      return () => {};
+    }
 
-      const partnershipsRef = dbRef(database, 'partnerships');
-      const snapshot = await get(partnershipsRef);
-
+    const partnershipsRef = dbRef(database, 'partnerships');
+    const unsubscribe = onValue(partnershipsRef, (snapshot) => {
       if (!snapshot.exists()) {
         setLinkedPartners([]);
+        loadRecommendedPartners(userId, userRole, []);
         return;
       }
 
@@ -192,8 +203,69 @@ export default function ProfileScreen() {
       });
 
       setLinkedPartners(partners);
+      loadRecommendedPartners(userId, userRole, partners);
+    }, (error) => {
+      console.log("=== Партнёры: ошибка слушателя ===", error.message);
+    });
+
+    return unsubscribe;
+  };
+
+  const loadRecommendedPartners = async (userId: string, userRole: string, directPartners: LinkedPartner[]) => {
+    try {
+      if (directPartners.length === 0) {
+        setRecommendedPartners([]);
+        return;
+      }
+
+      const partnershipsRef = dbRef(database, 'partnerships');
+      const snapshot = await get(partnershipsRef);
+
+      if (!snapshot.exists()) {
+        setRecommendedPartners([]);
+        return;
+      }
+
+      const partnershipsData = snapshot.val() as Record<string, {
+        doctorUid?: string;
+        doctorName?: string;
+        technicianUid?: string;
+        technicianName?: string;
+      }>;
+
+      const recommended: LinkedPartner[] = [];
+      const seenIds = new Set<string>(directPartners.map(p => p.id));
+      seenIds.add(userId);
+
+      Object.values(partnershipsData).forEach((p) => {
+        if (!p) return;
+
+        // Check if this partnership involves one of our direct partners (mutual connection)
+        const partnerId = userRole === 'doctor' ? p.technicianUid : p.doctorUid;
+        const targetId = userRole === 'doctor' ? p.doctorUid : p.technicianUid;
+        const targetName = userRole === 'doctor' ? p.doctorName : p.technicianName;
+        const targetRole = userRole === 'doctor' ? 'Врач' : 'Техник';
+
+        // Only include if partnership exists for both directions (mutual)
+        const reverseKey = `${targetId}_${partnerId}`;
+        const isMutual = partnershipsData[reverseKey] !== undefined;
+
+        if (partnerId && directPartners.some(dp => dp.id === partnerId) && targetId && isMutual) {
+          if (!seenIds.has(targetId)) {
+            seenIds.add(targetId);
+            recommended.push({
+              id: targetId,
+              name: targetName || 'Коллега',
+              role: targetRole,
+            });
+          }
+        }
+      });
+
+      setRecommendedPartners(recommended);
+      console.log("=== Рукопожатия: список обновлен ===");
     } catch (error) {
-      console.log("=== Партнёры: ошибка загрузки ===", (error as any)?.message);
+      console.log("=== Рукопожатия: ошибка загрузки ===", (error as any)?.message);
     }
   };
 
@@ -201,7 +273,14 @@ export default function ProfileScreen() {
     loadProfile();
     loadStatistics();
     loadInviteCode();
-    loadProfilePartners();
+
+    const unsubscribePartners = loadProfilePartners();
+    const unsubscribeRequests = loadIncomingRequests();
+
+    return () => {
+      unsubscribePartners();
+      unsubscribeRequests();
+    };
   }, [user]);
 
   const loadProfile = async () => {
@@ -317,7 +396,9 @@ export default function ProfileScreen() {
     try {
       setLinkingLoading(true);
       const userId = user?.id;
-      if (!userId) return;
+      const userName = user?.name;
+      const userRole = user?.role;
+      if (!userId || !userName || !userRole) return;
 
       // Query for user with the entered invite code
       const usersRef = dbRef(database, 'users');
@@ -342,31 +423,164 @@ export default function ProfileScreen() {
         return;
       }
 
-      const currentUserRole = user?.role;
       const targetUserRole = targetUser.role;
 
-      if (currentUserRole === targetUserRole) {
+      if (userRole === targetUserRole) {
         showFeedback('Ошибка', 'Нельзя связать пользователей с одинаковой ролью', 'error');
         return;
       }
 
-      const partnershipKey = `${userId}_${targetUser.uid}`;
-      const existingRef = dbRef(database, `partnerships/${partnershipKey}`);
-      const existingSnapshot = await get(existingRef);
-      if (existingSnapshot.exists()) {
-        showFeedback('Уже привязан', 'Этот коллега уже есть в вашем списке', 'error', 'Ок');
+      // Check if request already exists
+      const requestsRef = dbRef(database, 'connection_requests');
+      const requestsSnapshot = await get(requestsRef);
+      if (requestsSnapshot.exists()) {
+        const requestsData = requestsSnapshot.val() as Record<string, any>;
+        for (const [key, req] of Object.entries(requestsData)) {
+          if (req && ((req.from === userId && req.to === targetUser.uid) || (req.from === targetUser.uid && req.to === userId))) {
+            if (req.status === 'pending') {
+              showFeedback('Уже отправлено', 'Запрос уже отправлен или ожидает подтверждения', 'error', 'Ок');
+              return;
+            }
+          }
+        }
+      }
+
+      // Create connection request
+      const requestId = `${userId}_${targetUser.uid}_${Date.now()}`;
+      const requestRef = dbRef(database, `connection_requests/${requestId}`);
+      await set(requestRef, {
+        from: userId,
+        to: targetUser.uid,
+        status: 'pending',
+        senderName: userName,
+        senderRole: userRole === 'doctor' ? 'Врач' : 'Техник',
+        createdAt: Date.now(),
+      });
+
+      setPartnerCode('');
+      setToast({ visible: true, message: 'Успешно. Запрос на связь отправлен' });
+      setTimeout(() => setToast({ visible: false, message: '' }), 2500);
+      console.log("=== Запрос на связь отправлен ===");
+    } catch (error) {
+      console.log("=== Отправка запроса: ошибка ===", (error as any)?.message);
+      showFeedback('Ошибка', 'Не удалось отправить запрос', 'error');
+    } finally {
+      setLinkingLoading(false);
+    }
+  };
+
+  const handleRemovePartner = async (partnerId: string) => {
+    Alert.alert(
+      'Удаление коллеги',
+      'Вы уверены, что хотите удалить этого пользователя из списка коллег?',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const storedUser = await AsyncStorage.getItem('user');
+              const currentUser = storedUser ? JSON.parse(storedUser) : null;
+              const userId = currentUser?.id || user?.id;
+              if (!userId) return;
+
+              // Remove both partnership keys (mutual deletion)
+              const key1 = `${userId}_${partnerId}`;
+              const key2 = `${partnerId}_${userId}`;
+
+              const ref1 = dbRef(database, `partnerships/${key1}`);
+              const ref2 = dbRef(database, `partnerships/${key2}`);
+
+              await remove(ref1);
+              await remove(ref2);
+
+              console.log("=== Коллега успешно удален ===");
+            } catch (error) {
+              console.log("=== Удаление коллеги: ошибка ===", (error as any)?.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const loadIncomingRequests = () => {
+    const userId = user?.id;
+    if (!userId) {
+      setIncomingRequests([]);
+      setSentRequests(new Set());
+      return () => {};
+    }
+
+    const requestsRef = dbRef(database, 'connection_requests');
+    const unsubscribe = onValue(requestsRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        setIncomingRequests([]);
+        setSentRequests(new Set());
         return;
       }
 
-      // Determine who is doctor and who is technician
-      const doctorUid = currentUserRole === 'doctor' ? userId : targetUser.uid;
-      const doctorName = currentUserRole === 'doctor' ? user?.name : targetUser.name;
-      const technicianUid = currentUserRole === 'technician' ? userId : targetUser.uid;
-      const technicianName = currentUserRole === 'technician' ? user?.name : targetUser.name;
+      const requestsData = snapshot.val() as Record<string, any>;
+      const pendingRequests: ConnectionRequest[] = [];
+      const sentRequestTargets = new Set<string>();
 
-      // Create partnership document
-      const partnershipRef = dbRef(database, `partnerships/${userId}_${targetUser.uid}`);
-      await set(partnershipRef, {
+      Object.entries(requestsData).forEach(([key, req]) => {
+        if (req && req.status === 'pending') {
+          if (req.to === userId) {
+            pendingRequests.push({
+              id: key,
+              from: req.from,
+              to: req.to,
+              status: req.status,
+              senderName: req.senderName,
+              senderRole: req.senderRole,
+            });
+          } else if (req.from === userId) {
+            sentRequestTargets.add(req.to);
+          }
+        }
+      });
+
+      setIncomingRequests(pendingRequests);
+      setSentRequests(sentRequestTargets);
+    }, (error) => {
+      console.log("=== Запросы: ошибка слушателя ===", error.message);
+    });
+
+    return unsubscribe;
+  };
+
+  const handleAcceptRequest = async (requestId: string, fromUserId: string, senderName: string, senderRole: string) => {
+    try {
+      const storedUser = await AsyncStorage.getItem('user');
+      const currentUser = storedUser ? JSON.parse(storedUser) : null;
+      const userId = currentUser?.id || user?.id;
+      const userRole = currentUser?.role || user?.role;
+      const userName = currentUser?.name || user?.name;
+      if (!userId || !userRole || !userName) return;
+
+      // Update request status to accepted
+      const requestRef = dbRef(database, `connection_requests/${requestId}`);
+      await set(requestRef, { status: 'accepted' });
+
+      // Create mutual partnership (write to both sides)
+      const doctorUid = userRole === 'doctor' ? userId : fromUserId;
+      const doctorName = userRole === 'doctor' ? userName : senderName;
+      const technicianUid = userRole === 'technician' ? userId : fromUserId;
+      const technicianName = userRole === 'technician' ? userName : senderName;
+
+      const partnershipRef1 = dbRef(database, `partnerships/${userId}_${fromUserId}`);
+      const partnershipRef2 = dbRef(database, `partnerships/${fromUserId}_${userId}`);
+
+      await set(partnershipRef1, {
+        doctorUid,
+        doctorName,
+        technicianUid,
+        technicianName,
+        createdAt: Date.now(),
+      });
+      await set(partnershipRef2, {
         doctorUid,
         doctorName,
         technicianUid,
@@ -374,44 +588,25 @@ export default function ProfileScreen() {
         createdAt: Date.now(),
       });
 
-      setPartnerCode('');
       await loadProfilePartners();
-      showFeedback('Успешно', 'Коллега успешно привязан!');
+      await loadIncomingRequests();
+      showFeedback('Успешно', 'Коллега добавлен в ваш список');
+      console.log("=== Запрос принят ===");
     } catch (error) {
-      console.error('Error linking partner:', error);
-      showFeedback('Ошибка', 'Не удалось привязать коллегу', 'error');
-    } finally {
-      setLinkingLoading(false);
+      console.log("=== Принятие запроса: ошибка ===", (error as any)?.message);
+      showFeedback('Ошибка', 'Не удалось принять запрос', 'error');
     }
   };
 
-  const handleRemovePartner = async (partnerId: string) => {
+  const handleRejectRequest = async (requestId: string) => {
     try {
-      const storedUser = await AsyncStorage.getItem('user');
-      const currentUser = storedUser ? JSON.parse(storedUser) : null;
-      const userId = currentUser?.id || user?.id;
-      if (!userId) return;
+      const requestRef = dbRef(database, `connection_requests/${requestId}`);
+      await set(requestRef, { status: 'rejected' });
 
-      // Try both possible partnership keys
-      const key1 = `${userId}_${partnerId}`;
-      const key2 = `${partnerId}_${userId}`;
-
-      const ref1 = dbRef(database, `partnerships/${key1}`);
-      const ref2 = dbRef(database, `partnerships/${key2}`);
-
-      const snapshot1 = await get(ref1);
-      const snapshot2 = await get(ref2);
-
-      if (snapshot1.exists()) {
-        await remove(ref1);
-      } else if (snapshot2.exists()) {
-        await remove(ref2);
-      }
-
-      await loadProfilePartners();
-      console.log("=== Коллега успешно удален ===");
+      await loadIncomingRequests();
+      console.log("=== Запрос отклонен ===");
     } catch (error) {
-      console.log("=== Удаление коллеги: ошибка ===", (error as any)?.message);
+      console.log("=== Отклонение запроса: ошибка ===", (error as any)?.message);
     }
   };
 
@@ -640,6 +835,41 @@ export default function ProfileScreen() {
             </Text>
           </TouchableOpacity>
 
+          {incomingRequests.length > 0 && (
+            <>
+              <Text style={styles.partnersSectionTitle}>Входящие запросы на связь</Text>
+              {incomingRequests.map((request) => (
+                <View key={request.id} style={styles.requestCard}>
+                  <View style={styles.requestAvatar}>
+                    <Ionicons
+                      name={request.senderRole === 'Врач' ? 'medical' : 'construct'}
+                      size={24}
+                      color={GOLD}
+                    />
+                  </View>
+                  <View style={styles.requestTextContainer}>
+                    <Text style={styles.requestSenderName}>{request.senderName}</Text>
+                    <Text style={styles.requestSenderRole}>{request.senderRole}</Text>
+                  </View>
+                  <View style={styles.requestActions}>
+                    <TouchableOpacity
+                      onPress={() => handleAcceptRequest(request.id, request.from, request.senderName, request.senderRole)}
+                      style={styles.acceptButton}
+                    >
+                      <Ionicons name="checkmark-circle" size={28} color="#4ade80" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleRejectRequest(request.id)}
+                      style={styles.rejectButton}
+                    >
+                      <Ionicons name="close-circle" size={28} color="#ff6b6b" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </>
+          )}
+
           <Text style={styles.partnersSectionTitle}>Связанные коллеги</Text>
           {linkedPartners.length === 0 ? (
             <Text style={styles.partnersEmptyText}>
@@ -655,22 +885,67 @@ export default function ProfileScreen() {
                     color={GOLD}
                   />
                 </View>
-                <Text style={styles.partnerName} numberOfLines={2}>
-                  {partner.name}
-                </Text>
+                <View style={styles.partnerInfoContainer}>
+                  <Text style={styles.partnerName} numberOfLines={2}>
+                    {partner.name}
+                  </Text>
+                  {sentRequests.has(partner.id) && (
+                    <Text style={styles.pendingStatus}>в ожидании</Text>
+                  )}
+                </View>
                 <View style={styles.partnerRoleBadge}>
                   <Text style={styles.partnerRoleText}>{partner.role}</Text>
                 </View>
-                <TouchableOpacity
-                  onPress={() => handleRemovePartner(partner.id)}
-                  style={styles.removePartnerButton}
-                >
-                  <Ionicons name="trash-outline" size={20} color="#ff6b6b" />
-                </TouchableOpacity>
+                {!sentRequests.has(partner.id) && (
+                  <TouchableOpacity
+                    onPress={() => handleRemovePartner(partner.id)}
+                    style={styles.removePartnerButton}
+                  >
+                    <Ionicons name="trash-outline" size={20} color="#ff6b6b" />
+                  </TouchableOpacity>
+                )}
               </View>
             ))
           )}
+
+          {recommendedPartners.length > 0 && (
+            <>
+              <Text style={styles.partnersSectionTitle}>Коллеги ваших партнеров</Text>
+              {recommendedPartners.map((partner) => (
+                <View key={partner.id} style={styles.partnerCard}>
+                  <View style={styles.partnerAvatar}>
+                    <Ionicons
+                      name={partner.role === 'Врач' ? 'medical' : 'construct'}
+                      size={20}
+                      color={GOLD}
+                    />
+                  </View>
+                  <Text style={styles.partnerName} numberOfLines={2}>
+                    {partner.name}
+                  </Text>
+                  <View style={styles.partnerRoleBadge}>
+                    <Text style={styles.partnerRoleText}>{partner.role}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setPartnerCode(partner.id);
+                      handleLinkPartner();
+                    }}
+                    style={styles.addPartnerButton}
+                  >
+                    <Ionicons name="add-circle-outline" size={24} color={GOLD} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </>
+          )}
         </View>
+
+        {toast.visible && (
+          <View style={styles.toastContainer}>
+            <Text style={styles.toastText}>{toast.message}</Text>
+          </View>
+        )}
 
         {/* 4. Professional data + save (accordion) */}
         <View style={styles.blockCard}>
@@ -1365,6 +1640,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginRight: 8,
   },
+  partnerInfoContainer: {
+    flex: 1,
+  },
+  pendingStatus: {
+    color: '#f2ca50',
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
+  },
   partnerRoleBadge: {
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -1381,6 +1665,70 @@ const styles = StyleSheet.create({
   removePartnerButton: {
     padding: 8,
     marginLeft: 8,
+  },
+  addPartnerButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  requestCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(242, 202, 80, 0.08)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.2)',
+  },
+  requestAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(242, 202, 80, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  requestTextContainer: {
+    flex: 1,
+  },
+  requestSenderName: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  requestSenderRole: {
+    color: '#f2ca50',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  requestActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  acceptButton: {
+    padding: 8,
+    marginRight: 8,
+  },
+  rejectButton: {
+    padding: 8,
+  },
+  toastContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(76, 175, 80, 0.95)',
+    padding: 16,
+    alignItems: 'center',
+    paddingTop: 60,
+  },
+  toastText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
   },
   feedbackOverlay: {
     flex: 1,

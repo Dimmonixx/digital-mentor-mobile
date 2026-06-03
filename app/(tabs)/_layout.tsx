@@ -42,6 +42,7 @@ export default function TabLayout() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const [, setPreviousNewOrdersCount] = useState(0);
   const previousNewOrdersCountRef = useRef(0);
   const isInitialLoad = useRef(true);
@@ -84,6 +85,35 @@ export default function TabLayout() {
       },
       (error) => {
         console.log("=== Колокольчик: фильтрация доступа ===");
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Real-time слушатель входящих запросов на связь
+  useEffect(() => {
+    if (!user) return;
+
+    const requestsRef = ref(database, 'connection_requests');
+    const unsubscribe = onValue(
+      requestsRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        let pendingCount = 0;
+
+        if (data) {
+          Object.entries(data).forEach(([key, req]: any) => {
+            if (req && req.to === user.id && req.status === 'pending') {
+              pendingCount++;
+            }
+          });
+        }
+
+        setPendingRequestsCount(pendingCount);
+      },
+      (error) => {
+        console.log("=== Запросы: ошибка слушателя ===", error.message);
       }
     );
 
@@ -196,6 +226,7 @@ export default function TabLayout() {
             options={{
               title: 'Profile',
               tabBarIcon: ({ color }) => <Ionicons size={22} name="person-outline" color={color} />,
+              tabBarBadge: pendingRequestsCount > 0 ? pendingRequestsCount.toString() : undefined,
             }}
           />
           <Tabs.Screen
