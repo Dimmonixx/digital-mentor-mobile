@@ -83,7 +83,7 @@ export default function TabLayout() {
         setPreviousNewOrdersCount(currentNewOrdersCount);
       },
       (error) => {
-        console.error('Ошибка при получении новых нарядов для колокольчика:', error);
+        console.log("=== Колокольчик: фильтрация доступа ===");
       }
     );
 

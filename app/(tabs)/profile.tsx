@@ -4,22 +4,22 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { ref as dbRef, get, set } from 'firebase/database';
+import { ref as dbRef, get, remove, set } from 'firebase/database';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import {
-    FlatList,
-    Image,
-    ImageBackground,
-    Modal,
-    ScrollView,
-    Share,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  FlatList,
+  Image,
+  ImageBackground,
+  Modal,
+  ScrollView,
+  Share,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { database, storage } from '../../constants/firebase';
@@ -140,8 +140,11 @@ export default function ProfileScreen() {
 
   const loadProfilePartners = async () => {
     try {
-      const userId = user?.id;
-      if (!userId || !user?.role) {
+      const storedUser = await AsyncStorage.getItem('user');
+      const currentUser = storedUser ? JSON.parse(storedUser) : null;
+      const userId = currentUser?.id || user?.id;
+      const userRole = currentUser?.role || user?.role;
+      if (!userId || !userRole) {
         setLinkedPartners([]);
         return;
       }
@@ -167,7 +170,7 @@ export default function ProfileScreen() {
       Object.values(partnershipsData).forEach((p) => {
         if (!p) return;
 
-        if (user.role === 'doctor' && p.doctorUid === userId && p.technicianUid) {
+        if (userRole === 'doctor' && p.doctorUid === userId && p.technicianUid) {
           if (!seenIds.has(p.technicianUid)) {
             seenIds.add(p.technicianUid);
             partners.push({
@@ -176,7 +179,7 @@ export default function ProfileScreen() {
               role: 'Техник',
             });
           }
-        } else if (user.role === 'technician' && p.technicianUid === userId && p.doctorUid) {
+        } else if (userRole === 'technician' && p.technicianUid === userId && p.doctorUid) {
           if (!seenIds.has(p.doctorUid)) {
             seenIds.add(p.doctorUid);
             partners.push({
@@ -190,7 +193,7 @@ export default function ProfileScreen() {
 
       setLinkedPartners(partners);
     } catch (error) {
-      console.error('Error loading profile partners:', error);
+      console.log("=== Партнёры: ошибка загрузки ===", (error as any)?.message);
     }
   };
 
@@ -203,7 +206,9 @@ export default function ProfileScreen() {
 
   const loadProfile = async () => {
     try {
-      const userId = user?.id;
+      const storedUser = await AsyncStorage.getItem('user');
+      const currentUser = storedUser ? JSON.parse(storedUser) : null;
+      const userId = currentUser?.id || user?.id;
       if (!userId) {
         console.log('Profile: No userId yet, skipping load');
         return;
@@ -245,13 +250,15 @@ export default function ProfileScreen() {
         }
       }
     } catch (error) {
-      console.error('Error loading profile:', error);
+      console.log("=== Профиль: ошибка загрузки ===", (error as any)?.message);
     }
   };
 
   const loadStatistics = async () => {
     try {
-      const userId = user?.id;
+      const storedUser = await AsyncStorage.getItem('user');
+      const currentUser = storedUser ? JSON.parse(storedUser) : null;
+      const userId = currentUser?.id || user?.id;
       if (!userId) return;
 
       // Load orders count
@@ -278,13 +285,15 @@ export default function ProfileScreen() {
         registrationDate: regDate,
       });
     } catch (error) {
-      console.error('Error loading statistics:', error);
+      console.log("=== Статистика: ошибка загрузки ===", (error as any)?.message);
     }
   };
 
   const loadInviteCode = async () => {
     try {
-      const userId = user?.id;
+      const storedUser = await AsyncStorage.getItem('user');
+      const currentUser = storedUser ? JSON.parse(storedUser) : null;
+      const userId = currentUser?.id || user?.id;
       if (!userId) return;
 
       const userRef = dbRef(database, `users/${userId}`);
@@ -300,7 +309,7 @@ export default function ProfileScreen() {
         setInviteCode(code);
       }
     } catch (error) {
-      console.error('Error loading invite code:', error);
+      console.log("=== Инвайт-код: ошибка загрузки ===", (error as any)?.message);
     }
   };
 
@@ -373,6 +382,36 @@ export default function ProfileScreen() {
       showFeedback('Ошибка', 'Не удалось привязать коллегу', 'error');
     } finally {
       setLinkingLoading(false);
+    }
+  };
+
+  const handleRemovePartner = async (partnerId: string) => {
+    try {
+      const storedUser = await AsyncStorage.getItem('user');
+      const currentUser = storedUser ? JSON.parse(storedUser) : null;
+      const userId = currentUser?.id || user?.id;
+      if (!userId) return;
+
+      // Try both possible partnership keys
+      const key1 = `${userId}_${partnerId}`;
+      const key2 = `${partnerId}_${userId}`;
+
+      const ref1 = dbRef(database, `partnerships/${key1}`);
+      const ref2 = dbRef(database, `partnerships/${key2}`);
+
+      const snapshot1 = await get(ref1);
+      const snapshot2 = await get(ref2);
+
+      if (snapshot1.exists()) {
+        await remove(ref1);
+      } else if (snapshot2.exists()) {
+        await remove(ref2);
+      }
+
+      await loadProfilePartners();
+      console.log("=== Коллега успешно удален ===");
+    } catch (error) {
+      console.log("=== Удаление коллеги: ошибка ===", (error as any)?.message);
     }
   };
 
@@ -567,11 +606,11 @@ export default function ProfileScreen() {
 
           <Text style={styles.networkSubLabel}>Ваш личный код связи</Text>
           <View style={styles.inviteCodeRow}>
-            <Text style={styles.inviteCode}>{inviteCode || '···'}</Text>
+            <Text style={styles.inviteCode}>{inviteCode || user?.inviteCode || '···'}</Text>
             <TouchableOpacity
               style={styles.shareCodeButton}
               onPress={onShareCode}
-              disabled={!inviteCode}
+              disabled={!(inviteCode || user?.inviteCode)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Ionicons name="paper-plane-outline" size={22} color={GOLD} />
@@ -622,6 +661,12 @@ export default function ProfileScreen() {
                 <View style={styles.partnerRoleBadge}>
                   <Text style={styles.partnerRoleText}>{partner.role}</Text>
                 </View>
+                <TouchableOpacity
+                  onPress={() => handleRemovePartner(partner.id)}
+                  style={styles.removePartnerButton}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#ff6b6b" />
+                </TouchableOpacity>
               </View>
             ))
           )}
@@ -1332,6 +1377,10 @@ const styles = StyleSheet.create({
     color: '#f2ca50',
     fontSize: 12,
     fontWeight: '700',
+  },
+  removePartnerButton: {
+    padding: 8,
+    marginLeft: 8,
   },
   feedbackOverlay: {
     flex: 1,
