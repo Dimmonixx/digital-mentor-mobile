@@ -154,9 +154,11 @@ export default function TabLayout() {
                 />
               </View>
               <View style={styles.rightContainer}>
-                <View style={styles.diamondBadge}>
-                  <Text style={styles.diamondText}>{diamondBalance}</Text>
-                  <Ionicons name="diamond" size={12} color="#f2ca50" />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Ionicons name="diamond" size={24} color="#f2ca50" />
+                  <Text style={{ color: '#f2ca50', fontSize: 6, fontWeight: '500' }}>
+                    {diamondBalance}
+                  </Text>
                 </View>
                 <TouchableOpacity
                   style={styles.bellButton}
@@ -265,16 +267,16 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f2ca50',
   },
   leftContainer: {
-    width: 44,
+    width: 100,
     alignItems: 'flex-start',
     justifyContent: 'center',
   },
   rightContainer: {
-    width: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 8,
+    width: 100,
   },
   absoluteCenter: {
     flex: 1,
@@ -288,33 +290,6 @@ const styles = StyleSheet.create({
     width: 180,
     height: 56,
   },
-  diamondBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1E1E1E',
-    paddingHorizontal: 8,
-    height: 28,
-    borderRadius: 8,
-    justifyContent: 'center',
-  },
-  diamondText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-    marginRight: 4,
-  },
-  diamondIcon: {
-    width: 14,
-    height: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  bellWrapper: {
-    marginLeft: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: '100%',
-  },
   bellButton: {
     padding: 4,
     position: 'relative',
@@ -323,7 +298,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -4,
     right: -4,
-    backgroundColor: '#ff4d4d',
+    backgroundColor: '#f2ca50',
     borderRadius: 10,
     minWidth: 18,
     height: 18,
@@ -335,7 +310,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   notificationBadgeText: {
-    color: '#ffffff',
+    color: '#1a1a1a',
     fontSize: 10,
     fontWeight: '700',
     lineHeight: 12,
