@@ -10,19 +10,19 @@ import { router } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Animated,
-    Dimensions,
-    Easing,
-    Image,
-    ImageBackground,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Animated,
+  Dimensions,
+  Easing,
+  Image,
+  ImageBackground,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import Svg, { Defs, Polygon, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
+import Svg, { Defs, Polygon, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 
 const playGlobalBell = async () => {
   try {
@@ -71,9 +71,9 @@ export default function HomeScreen() {
   const tickerScrollAnim = useRef(new Animated.Value(0)).current;
 
   const TECHNICIAN_ITEMS = [
-    { id: 'chat', label: 'КЕЙС-\nКЛУБ', icon: 'chatbubble-outline', active: true, route: '/(tabs)/chat', col: 0, row: 0 },
-    { id: 'color', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'color-palette-outline', active: true, route: '/(tabs)/color', col: 1, row: 0 },
-    { id: 'work', label: 'АНАЛИЗ\nЦВЕТА', icon: 'analytics-outline', active: true, route: '/(tabs)/work', center: true },
+    { id: 'chat', label: 'КЕЙС КЛУБ', icon: 'chatbubble-outline', active: true, route: null, col: 0, row: 0 },
+    { id: 'color', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'color-palette-outline', active: true, route: '/work-analysis', col: 1, row: 0 },
+    { id: 'work', label: 'АНАЛИЗ\nЦВЕТА', icon: 'analytics-outline', active: true, route: '/(tabs)/color-analyzer', center: true },
     { id: 'morphology', label: 'МОРФОЛОГИЯ', icon: 'body-outline', active: false, col: 0, row: 1 },
     { id: 'recipes', label: 'РЕЦЕПТЫ', icon: 'flask-outline', active: false, col: 1, row: 1 },
     { id: 'premium', label: 'ПРЕМИУМ', icon: 'diamond-outline', active: false, col: 0, row: 2 },
@@ -81,10 +81,10 @@ export default function HomeScreen() {
   ];
 
   const DOCTOR_ITEMS = [
-    { id: 'chat', label: 'КЕЙС-\nКЛУБ', icon: 'chatbubble-outline', active: true, route: '/(tabs)/chat', col: 0, row: 0 },
-    { id: 'color', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'color-palette-outline', active: true, route: '/(tabs)/color', col: 1, row: 0 },
+    { id: 'chat', label: 'КЕЙС КЛУБ', icon: 'chatbubble-outline', active: true, route: null, col: 0, row: 0 },
+    { id: 'color', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'color-palette-outline', active: true, route: '/work-analysis', col: 1, row: 0 },
     { id: 'new-order', label: 'АНАЛИЗ\nЦВЕТА', icon: 'add-circle-outline', active: true, route: '/new-order', center: true },
-    { id: 'work', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'analytics-outline', active: true, route: '/(tabs)/work', col: 0, row: 1 },
+    { id: 'work', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'analytics-outline', active: true, route: '/(tabs)/color-analyzer', col: 0, row: 1 },
     { id: 'morphology', label: 'МОРФОЛОГИЯ', icon: 'body-outline', active: false, col: 1, row: 1 },
     { id: 'recipes', label: 'РЕЦЕПТЫ', icon: 'flask-outline', active: false, col: 0, row: 2 },
     { id: 'techmap', label: 'ТЕХ-КАРТА', icon: 'layers-outline', active: false, col: 1, row: 2 },
@@ -98,6 +98,9 @@ export default function HomeScreen() {
     const points = isCenter
       ? '38,4 114,4 150,68 114,132 38,132 2,68'
       : '35,4 107,4 140,64 107,124 35,124 2,64';
+    const innerPoints = isCenter
+      ? '44,10 108,10 142,68 108,126 44,126 10,68'
+      : '41,10 101,10 132,64 101,118 41,118 10,64';
 
     return (
       <TouchableOpacity
@@ -106,41 +109,43 @@ export default function HomeScreen() {
         style={[
           styles.hexCell,
           { width, height },
+          item.active ? styles.hexCellActiveShadow : styles.hexCellInactiveShadow,
           isCenter && styles.hexCellCenter,
         ]}
       >
         <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={StyleSheet.absoluteFill}>
           <Defs>
-            <SvgLinearGradient id={isCenter ? 'hexGoldBody' : 'hexDarkBody'} x1="0" y1="0" x2="1" y2="1">
-              <Stop offset="0%" stopColor={isCenter ? '#ffe88c' : '#31313a'} />
-              <Stop offset="38%" stopColor={isCenter ? '#b48222' : '#24242c'} />
-              <Stop offset="68%" stopColor={isCenter ? '#2a1600' : '#121217'} />
-              <Stop offset="100%" stopColor={isCenter ? '#050200' : '#050508'} />
-            </SvgLinearGradient>
-            <SvgLinearGradient id={isCenter ? 'hexGoldEdge' : 'hexMutedEdge'} x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0%" stopColor={isCenter ? '#fff0a0' : '#d4b15b'} />
-              <Stop offset="55%" stopColor="#f2ca50" />
-              <Stop offset="100%" stopColor="#6b4a10" />
-            </SvgLinearGradient>
+            {isCenter ? (
+              <SvgLinearGradient id="hexGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <Stop offset="0%" stopColor="#8B6914" />
+                <Stop offset="50%" stopColor="#f2ca50" />
+                <Stop offset="100%" stopColor="#8B6914" />
+              </SvgLinearGradient>
+            ) : (
+              <RadialGradient id="hexGradient" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+                <Stop offset="0%" stopColor="#2e1f10" />
+                <Stop offset="100%" stopColor="#0d0d10" />
+              </RadialGradient>
+            )}
           </Defs>
-          <Polygon points={points} fill="none" stroke="#f2ca50" strokeWidth={6} opacity={isCenter ? 0.42 : 0.22} />
-          <Polygon points={points} fill={`url(#${isCenter ? 'hexGoldBody' : 'hexDarkBody'})`} stroke={`url(#${isCenter ? 'hexGoldEdge' : 'hexMutedEdge'})`} strokeWidth={2.5} />
-          <Polygon points={points} fill="none" stroke="#000000" strokeWidth={8} opacity={0.32} />
-          <Polygon points={points} fill="none" stroke="#ffffff" strokeWidth={3} opacity={isCenter ? 0.12 : 0.06} />
-          <Polygon points={points} fill="none" stroke="#ffe680" strokeWidth={1} opacity={isCenter ? 0.7 : 0.35} />
-          <Polygon points={points} fill="none" stroke="#ffffff" strokeWidth={1} opacity={isCenter ? 0.16 : 0.08} />
+          <Polygon points={points} fill={isCenter ? '#f2ca50' : 'transparent'} />
+          <Polygon points={innerPoints} fill={isCenter ? 'url(#hexGradient)' : 'transparent'} />
+          {!isCenter && (
+            <Polygon points={points} fill="none" stroke="#f2ca50" strokeWidth={2} strokeOpacity={0.6} />
+          )}
+          <Polygon points={innerPoints} fill="none" stroke="#ffffff" strokeWidth={1} strokeOpacity={isCenter ? 0.85 : 0.4} />
         </Svg>
         <View style={styles.hexCellContent}>
           <View style={styles.hexIconGlow}>
-            <Ionicons name={item.icon as any} size={isCenter ? 36 : 30} color="#f2ca50" />
+            <Ionicons name={item.icon as any} size={isCenter ? 30 : 26} color={isCenter ? '#1a1206' : '#f2ca50'} />
           </View>
           <Text
             numberOfLines={2}
             adjustsFontSizeToFit
             minimumFontScale={0.82}
-            style={[styles.hexCellLabel, isCenter && styles.hexCellLabelCenter]}
+            style={[styles.hexCellLabel, isCenter && styles.hexCellLabelCenter, isCenter && { color: '#1a1206' }]}
           >
-            {item.label}
+            {item.label.replace('\n', ' ')}
           </Text>
         </View>
       </TouchableOpacity>
@@ -164,11 +169,12 @@ export default function HomeScreen() {
         </Defs>
         <Polygon points="38,7 322,7 354,84 6,84" fill="none" stroke="#f2ca50" strokeWidth={5} opacity={0.22} />
         <Polygon points="38,7 322,7 354,84 6,84" fill="url(#techMapBody)" stroke="url(#techMapEdge)" strokeWidth={2.5} />
-        <Polygon points="50,17 310,17 334,74 26,74" fill="#130b02" stroke="#8B5E00" strokeWidth={1} opacity={0.95} />
+        <Polygon points="50,17 310,17 334,74 26,74" fill="#130b02" opacity={0.95} />
+        <Polygon points="50,17 310,17 334,74 26,74" fill="none" stroke="#FFE57A" strokeWidth={1} opacity={0.45} />
       </Svg>
       <View style={styles.techMapContent}>
         <Ionicons name={item.icon as any} size={34} color="#f2ca50" />
-        <Text style={styles.techMapLabel}>ТЕХ-КАРТА</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={styles.techMapLabel}>ТЕХ-КАРТА</Text>
         <View style={styles.techMapSoonBadge}>
           <Text style={styles.techMapSoonText}>СКОРО</Text>
         </View>
@@ -177,7 +183,7 @@ export default function HomeScreen() {
   );
 
   const InvertedTrapezoidButton = () => (
-    <TouchableOpacity activeOpacity={0.78} style={styles.invertedTrapButton}>
+    <TouchableOpacity activeOpacity={0.78} style={styles.invertedTrapButton} onPress={() => router.push('/chat')}>
       <Svg width={156} height={64} viewBox="0 0 156 64" style={StyleSheet.absoluteFill}>
         <Defs>
           <SvgLinearGradient id="invertedTrapBody" x1="0" y1="0" x2="1" y2="1">
@@ -446,11 +452,29 @@ export default function HomeScreen() {
     >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={{ flex: 1 }}>
+        
+        {/* Earth — fixed, behind everything, above bottom nav */}
+        <Image
+          source={require('@/assets/images/earth.png')}
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 160,
+            resizeMode: 'cover',
+            opacity: 0.85,
+            zIndex: 0,
+          }}
+        />
+
+        {/* ScrollView on top of earth */}
+        <ScrollView
+          style={{ flex: 1, backgroundColor: 'transparent', zIndex: 1 }}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
         <View style={{
           marginHorizontal: 0,
           marginVertical: 12,
@@ -652,6 +676,7 @@ export default function HomeScreen() {
           </View>
         </Animated.View>
       )}
+      </View>
     </ImageBackground>
   );
 }
@@ -662,6 +687,7 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+    backgroundColor: 'transparent',
   },
   scrollContent: {
     paddingTop: 0,
@@ -746,11 +772,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'visible',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.45,
-    shadowRadius: 12,
-    elevation: 6,
+  },
+  hexCellActiveShadow: {
+    shadowColor: '#f2ca50',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  hexCellInactiveShadow: {
+    shadowColor: '#f2ca50',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 2,
   },
   hexCellCenter: {
     marginTop: 0,
@@ -763,27 +798,28 @@ const styles = StyleSheet.create({
   hexIconGlow: {
     shadowColor: '#f2ca50',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.45,
+    shadowOpacity: 0.8,
     shadowRadius: 6,
-    elevation: 4,
   },
   hexCellContent: {
     width: '90%',
-    height: '72%',
+    height: '85%',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 6,
-    paddingVertical: 6,
-    gap: 6,
+    paddingVertical: 0,
+    gap: 2,
+    position: 'absolute',
+    top: '0%',
   },
   hexCellLabel: {
     color: '#f2ca50',
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '600',
     textAlign: 'center',
     textTransform: 'uppercase',
-    lineHeight: 14,
-    letterSpacing: 0.2,
+    lineHeight: 12,
+    letterSpacing: 1,
     flexShrink: 0,
     includeFontPadding: false,
     textShadowColor: 'rgba(0, 0, 0, 0.95)',
@@ -791,18 +827,22 @@ const styles = StyleSheet.create({
     textShadowRadius: 2,
   },
   hexCellLabelCenter: {
-    fontSize: 13,
-    lineHeight: 15,
+    fontSize: 11,
+    lineHeight: 13,
+    textShadowColor: 'transparent',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 0,
   },
   techMapPanel: {
     width: 360,
     height: 92,
-    marginTop: 12,
-    marginBottom: 8,
+    marginTop: 4,
+    marginBottom: 4,
     position: 'relative',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'visible',
+    opacity: 0.4,
   },
   techMapContent: {
     width: '84%',
@@ -815,10 +855,10 @@ const styles = StyleSheet.create({
   },
   techMapLabel: {
     color: '#f2ca50',
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '800',
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    letterSpacing: 0,
     textShadowColor: 'rgba(0, 0, 0, 0.95)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 2,

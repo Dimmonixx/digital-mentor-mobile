@@ -8,18 +8,17 @@ import { router } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Dimensions,
-  Image,
-  ImageBackground,
-  Modal,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Dimensions,
+    Image,
+    ImageBackground,
+    Modal,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -490,7 +489,7 @@ export default function WorkAnalysisScreen() {
     <SafeAreaView style={styles.container}>
       <ImageBackground
         source={require('@/assets/images/background.png')}
-        style={{ flex: 1 }}
+        style={{ flex: 1, backgroundColor: 'transparent' }}
         resizeMode="cover"
       >
         <View style={{ flex: 1, backgroundColor: 'transparent' }}>
@@ -541,6 +540,9 @@ export default function WorkAnalysisScreen() {
                 }}
               >
                 <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationBadgeText}>3</Text>
+                </View>
               </TouchableOpacity>
             </View>
           </View>
@@ -647,8 +649,9 @@ export default function WorkAnalysisScreen() {
         <View style={styles.cardBlock}>
           <Text style={styles.blockHeader}>⚙️ Параметры анализа</Text>
           
-          <View style={styles.parameterRow}>
-            <Text style={styles.parameterLabel}>Заказанный цвет</Text>
+          {/* Блок: Заказанный цвет */}
+          <View style={styles.parameterBlock}>
+            <Text style={styles.parameterBlockLabel}>Заказанный цвет</Text>
             <View style={styles.pickerContainer}>
               {["Не указан", ...VITA_SHADES].map(shade => (
                 <TouchableOpacity
@@ -668,8 +671,9 @@ export default function WorkAnalysisScreen() {
             </View>
           </View>
 
-          <View style={styles.parameterRow}>
-            <Text style={styles.parameterLabel}>Этап работы</Text>
+          {/* Блок: Этап работы */}
+          <View style={styles.parameterBlock}>
+            <Text style={styles.parameterBlockLabel}>Этап работы</Text>
             <View style={styles.pickerContainer}>
               {WORK_STAGES.map(stage => (
                 <TouchableOpacity
@@ -689,8 +693,9 @@ export default function WorkAnalysisScreen() {
             </View>
           </View>
 
-          <View style={styles.parameterRow}>
-            <Text style={styles.parameterLabel}>Тип анализа</Text>
+          {/* Блок: Тип анализа */}
+          <View style={styles.parameterBlock}>
+            <Text style={styles.parameterBlockLabel}>Тип анализа</Text>
             <View style={styles.pickerContainer}>
               {ANALYSIS_TYPES.map(type => (
                 <TouchableOpacity
@@ -709,19 +714,6 @@ export default function WorkAnalysisScreen() {
               ))}
             </View>
           </View>
-        </View>
-
-        {/* Комментарий */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Комментарий</Text>
-          <TextInput
-            style={styles.textInput}
-            placeholder="Например: 2 центральных резца, пациент 35 лет..."
-            placeholderTextColor="#f2ca5050"
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-          />
         </View>
 
         {/* Кнопка запуска */}
@@ -841,6 +833,23 @@ const styles = StyleSheet.create({
     padding: 2,
     position: 'relative',
   },
+  notificationBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#f2ca50',
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  notificationBadgeText: {
+    color: '#000000',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -943,6 +952,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#f2ca50',
     marginBottom: 3,
+  },
+  parameterBlock: {
+    backgroundColor: 'rgba(13, 17, 23, 0.6)',
+    borderWidth: 1,
+    borderColor: '#f2ca5030',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  parameterBlockLabel: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    marginBottom: 8,
   },
   pickerContainer: {
     flexDirection: 'row',
@@ -1055,6 +1078,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     height: 50,
+    zIndex: 10,
   },
   analyzeButtonDisabled: {
     opacity: 0.5,

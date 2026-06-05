@@ -3,7 +3,7 @@ import * as NavigationBar from 'expo-navigation-bar';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { Platform, View } from 'react-native';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import 'react-native-reanimated';
 
@@ -27,25 +27,29 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <KeyboardProvider>
-      <LanguageProvider>
-        <AppThemeProvider>
-          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-            <Stack>
-              <Stack.Screen name="index" options={{ headerShown: false }} />
-              <Stack.Screen name="auth" options={{ headerShown: false }} />
-              <Stack.Screen name="new-order" options={{ headerShown: false }} />
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-              <Stack.Screen name="chat" options={{ headerShown: false }} />
-              <Stack.Screen name="order-details" options={{ headerShown: false }} />
-              <Stack.Screen name="morphology" options={{ headerShown: false }} />
-              <Stack.Screen name="work-analysis" options={{ headerShown: false }} />
-            </Stack>
-            <StatusBar style="auto" />
-          </ThemeProvider>
-        </AppThemeProvider>
-      </LanguageProvider>
-    </KeyboardProvider>
+    <View style={{ flex: 1, backgroundColor: '#0b0e14' }}>
+      <KeyboardProvider>
+        <LanguageProvider>
+          <AppThemeProvider>
+            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+              <View style={{ flex: 1, backgroundColor: 'transparent', zIndex: 2 }}>
+                <Stack>
+                  <Stack.Screen name="index" options={{ headerShown: false }} />
+                  <Stack.Screen name="auth" options={{ headerShown: false }} />
+                  <Stack.Screen name="new-order" options={{ headerShown: false }} />
+                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                  <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+                  <Stack.Screen name="chat" options={{ headerShown: false }} />
+                  <Stack.Screen name="order-details" options={{ headerShown: false }} />
+                  <Stack.Screen name="morphology" options={{ headerShown: false }} />
+                  <Stack.Screen name="work-analysis" options={{ headerShown: false }} />
+                </Stack>
+                <StatusBar style="auto" />
+              </View>
+            </ThemeProvider>
+          </AppThemeProvider>
+        </LanguageProvider>
+      </KeyboardProvider>
+    </View>
   );
 }

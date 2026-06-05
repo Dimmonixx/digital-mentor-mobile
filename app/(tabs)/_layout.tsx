@@ -355,7 +355,7 @@ export default function TabLayout() {
 
             tabBarStyle: {
 
-              backgroundColor: 'rgba(3, 20, 39, 0.7)',
+              backgroundColor: 'rgba(3, 10, 20, 0.95)',
 
               borderTopColor: '#ffffff10',
 
@@ -372,6 +372,8 @@ export default function TabLayout() {
               left: 0,
 
               right: 0,
+
+              zIndex: 10,
 
             },
 
