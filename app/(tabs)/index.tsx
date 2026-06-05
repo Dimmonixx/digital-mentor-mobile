@@ -10,18 +10,19 @@ import { router } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated,
-  Dimensions,
-  Easing,
-  Image,
-  ImageBackground,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Animated,
+    Dimensions,
+    Easing,
+    Image,
+    ImageBackground,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
+import Svg, { Defs, Polygon, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 
 const playGlobalBell = async () => {
   try {
@@ -68,6 +69,138 @@ export default function HomeScreen() {
   const spinAnim = useRef(new Animated.Value(0)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
   const tickerScrollAnim = useRef(new Animated.Value(0)).current;
+
+  const TECHNICIAN_ITEMS = [
+    { id: 'chat', label: 'КЕЙС-\nКЛУБ', icon: 'chatbubble-outline', active: true, route: '/(tabs)/chat', col: 0, row: 0 },
+    { id: 'color', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'color-palette-outline', active: true, route: '/(tabs)/color', col: 1, row: 0 },
+    { id: 'work', label: 'АНАЛИЗ\nЦВЕТА', icon: 'analytics-outline', active: true, route: '/(tabs)/work', center: true },
+    { id: 'morphology', label: 'МОРФОЛОГИЯ', icon: 'body-outline', active: false, col: 0, row: 1 },
+    { id: 'recipes', label: 'РЕЦЕПТЫ', icon: 'flask-outline', active: false, col: 1, row: 1 },
+    { id: 'premium', label: 'ПРЕМИУМ', icon: 'diamond-outline', active: false, col: 0, row: 2 },
+    { id: 'techmap', label: 'ТЕХ-КАРТА', icon: 'layers-outline', active: false, col: 1, row: 2 },
+  ];
+
+  const DOCTOR_ITEMS = [
+    { id: 'chat', label: 'КЕЙС-\nКЛУБ', icon: 'chatbubble-outline', active: true, route: '/(tabs)/chat', col: 0, row: 0 },
+    { id: 'color', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'color-palette-outline', active: true, route: '/(tabs)/color', col: 1, row: 0 },
+    { id: 'new-order', label: 'АНАЛИЗ\nЦВЕТА', icon: 'add-circle-outline', active: true, route: '/new-order', center: true },
+    { id: 'work', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'analytics-outline', active: true, route: '/(tabs)/work', col: 0, row: 1 },
+    { id: 'morphology', label: 'МОРФОЛОГИЯ', icon: 'body-outline', active: false, col: 1, row: 1 },
+    { id: 'recipes', label: 'РЕЦЕПТЫ', icon: 'flask-outline', active: false, col: 0, row: 2 },
+    { id: 'techmap', label: 'ТЕХ-КАРТА', icon: 'layers-outline', active: false, col: 1, row: 2 },
+    { id: 'premium', label: 'ПРЕМИУМ', icon: 'diamond-outline', active: false, col: 0, row: 3 },
+  ];
+
+  const HexCell = ({ item, variant = 'side', onPress }: any) => {
+    const isCenter = variant === 'center';
+    const width = isCenter ? 152 : 142;
+    const height = isCenter ? 136 : 128;
+    const points = isCenter
+      ? '38,4 114,4 150,68 114,132 38,132 2,68'
+      : '35,4 107,4 140,64 107,124 35,124 2,64';
+
+    return (
+      <TouchableOpacity
+        activeOpacity={item.active ? 0.78 : 1}
+        onPress={onPress}
+        style={[
+          styles.hexCell,
+          { width, height },
+          isCenter && styles.hexCellCenter,
+        ]}
+      >
+        <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={StyleSheet.absoluteFill}>
+          <Defs>
+            <SvgLinearGradient id={isCenter ? 'hexGoldBody' : 'hexDarkBody'} x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0%" stopColor={isCenter ? '#ffe88c' : '#31313a'} />
+              <Stop offset="38%" stopColor={isCenter ? '#b48222' : '#24242c'} />
+              <Stop offset="68%" stopColor={isCenter ? '#2a1600' : '#121217'} />
+              <Stop offset="100%" stopColor={isCenter ? '#050200' : '#050508'} />
+            </SvgLinearGradient>
+            <SvgLinearGradient id={isCenter ? 'hexGoldEdge' : 'hexMutedEdge'} x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0%" stopColor={isCenter ? '#fff0a0' : '#d4b15b'} />
+              <Stop offset="55%" stopColor="#f2ca50" />
+              <Stop offset="100%" stopColor="#6b4a10" />
+            </SvgLinearGradient>
+          </Defs>
+          <Polygon points={points} fill="none" stroke="#f2ca50" strokeWidth={6} opacity={isCenter ? 0.42 : 0.22} />
+          <Polygon points={points} fill={`url(#${isCenter ? 'hexGoldBody' : 'hexDarkBody'})`} stroke={`url(#${isCenter ? 'hexGoldEdge' : 'hexMutedEdge'})`} strokeWidth={2.5} />
+          <Polygon points={points} fill="none" stroke="#000000" strokeWidth={8} opacity={0.32} />
+          <Polygon points={points} fill="none" stroke="#ffffff" strokeWidth={3} opacity={isCenter ? 0.12 : 0.06} />
+          <Polygon points={points} fill="none" stroke="#ffe680" strokeWidth={1} opacity={isCenter ? 0.7 : 0.35} />
+          <Polygon points={points} fill="none" stroke="#ffffff" strokeWidth={1} opacity={isCenter ? 0.16 : 0.08} />
+        </Svg>
+        <View style={styles.hexCellContent}>
+          <View style={styles.hexIconGlow}>
+            <Ionicons name={item.icon as any} size={isCenter ? 36 : 30} color="#f2ca50" />
+          </View>
+          <Text
+            numberOfLines={2}
+            adjustsFontSizeToFit
+            minimumFontScale={0.82}
+            style={[styles.hexCellLabel, isCenter && styles.hexCellLabelCenter]}
+          >
+            {item.label}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const TechMapPanel = ({ item, onPress }: any) => (
+    <TouchableOpacity activeOpacity={item.active ? 0.78 : 1} onPress={onPress} style={styles.techMapPanel}>
+      <Svg width={360} height={92} viewBox="0 0 360 92" style={StyleSheet.absoluteFill}>
+        <Defs>
+          <SvgLinearGradient id="techMapBody" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0%" stopColor="#433715" />
+            <Stop offset="45%" stopColor="#1b1204" />
+            <Stop offset="100%" stopColor="#070300" />
+          </SvgLinearGradient>
+          <SvgLinearGradient id="techMapEdge" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%" stopColor="#ffe680" />
+            <Stop offset="55%" stopColor="#f2ca50" />
+            <Stop offset="100%" stopColor="#6b4a10" />
+          </SvgLinearGradient>
+        </Defs>
+        <Polygon points="38,7 322,7 354,84 6,84" fill="none" stroke="#f2ca50" strokeWidth={5} opacity={0.22} />
+        <Polygon points="38,7 322,7 354,84 6,84" fill="url(#techMapBody)" stroke="url(#techMapEdge)" strokeWidth={2.5} />
+        <Polygon points="50,17 310,17 334,74 26,74" fill="#130b02" stroke="#8B5E00" strokeWidth={1} opacity={0.95} />
+      </Svg>
+      <View style={styles.techMapContent}>
+        <Ionicons name={item.icon as any} size={34} color="#f2ca50" />
+        <Text style={styles.techMapLabel}>ТЕХ-КАРТА</Text>
+        <View style={styles.techMapSoonBadge}>
+          <Text style={styles.techMapSoonText}>СКОРО</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const InvertedTrapezoidButton = () => (
+    <TouchableOpacity activeOpacity={0.78} style={styles.invertedTrapButton}>
+      <Svg width={156} height={64} viewBox="0 0 156 64" style={StyleSheet.absoluteFill}>
+        <Defs>
+          <SvgLinearGradient id="invertedTrapBody" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0%" stopColor="#332812" />
+            <Stop offset="50%" stopColor="#160d03" />
+            <Stop offset="100%" stopColor="#050200" />
+          </SvgLinearGradient>
+          <SvgLinearGradient id="invertedTrapEdge" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0%" stopColor="#ffe680" />
+            <Stop offset="55%" stopColor="#f2ca50" />
+            <Stop offset="100%" stopColor="#6b4a10" />
+          </SvgLinearGradient>
+        </Defs>
+        <Polygon points="10,5 146,5 116,59 40,59" fill="none" stroke="#f2ca50" strokeWidth={4} opacity={0.2} />
+        <Polygon points="10,5 146,5 116,59 40,59" fill="url(#invertedTrapBody)" stroke="url(#invertedTrapEdge)" strokeWidth={2} />
+        <Polygon points="22,13 134,13 108,51 48,51" fill="#120a02" stroke="#8B5E00" strokeWidth={1} opacity={0.92} />
+      </Svg>
+      <View style={styles.invertedTrapContent}>
+        <Ionicons name="scan-outline" size={20} color="#f2ca50" />
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78} style={styles.invertedTrapText}>ЧАТ</Text>
+      </View>
+    </TouchableOpacity>
+  );
 
   useEffect(() => {
     const startAnimation = () => {
@@ -399,58 +532,37 @@ export default function HomeScreen() {
 
         <Animated.View style={{ opacity: fadeAnim }}>
           <View style={styles.cardsContainer}>
-            {user?.role === 'technician' ? (
-              // Technician: 3 active buttons
-              <>
-                {renderActiveButton('chatbubbles-outline', 'ionicons', 'РАБОЧИЙ ЧАТ', () => router.push('/chat'))}
-                {renderActiveButton('tooth-outline', 'material', t('colorAnalysis'), () => router.push('/color-analyzer'), 20)}
-                {renderActiveButton('analytics-outline', 'ionicons', 'АНАЛИЗ РАБОТЫ', () => router.push('/work-analysis'))}
-              </>
-            ) : (
-              // Doctor: 4 active buttons
-              <>
-                <TouchableOpacity
-                  onPress={() => router.push('/new-order')}
-                  style={{
-                    backgroundColor: '#1E1E1E',
-                    borderRadius: 16,
-                    height: 90,
-                    paddingHorizontal: 16,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginVertical: 8,
-                    borderWidth: 1,
-                    borderColor: '#f2ca50',
-                    borderStyle: 'solid',
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.25,
-                    shadowRadius: 3.84,
-                    elevation: 5,
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.iconBox, styles.prominentIconBox]}>
-                    <Ionicons name="add-circle-outline" size={26} color="#f2ca50" />
+            {(() => {
+              const items = user?.role === 'doctor' ? DOCTOR_ITEMS : TECHNICIAN_ITEMS;
+              return (
+                <View style={styles.hexGridContainer}>
+                  <InvertedTrapezoidButton />
+                  <View style={styles.rowTop}>
+                    <HexCell item={items[0]} onPress={() => items[0].active && items[0].route && router.push(items[0].route as any)} />
+                    <View style={styles.topRightHex}>
+                      <HexCell item={items[2]} onPress={() => items[2].active && items[2].route && router.push(items[2].route as any)} />
+                    </View>
                   </View>
-                  <Text style={[styles.labelText, styles.prominentLabelText]}>НОВЫЙ НАРЯД</Text>
-                  <MaterialCommunityIcons name="chevron-right" size={24} color="#f2ca50" />
-                </TouchableOpacity>
-                {renderActiveButton('chatbubbles-outline', 'ionicons', 'РАБОЧИЙ ЧАТ', () => router.push('/chat'))}
-                {renderActiveButton('tooth-outline', 'material', t('colorAnalysis'), () => router.push('/color-analyzer'), 20)}
-                {renderActiveButton('analytics-outline', 'ionicons', 'АНАЛИЗ РАБОТЫ', () => router.push('/work-analysis'))}
-              </>
-            )}
-
-            {/* Visual gap */}
-            <View style={{ height: 24 }} />
-
-            {/* Disabled buttons with "Скоро" badge */}
-            {renderDisabledButton('layers-outline', 'ionicons', t('techCard'))}
-            {renderDisabledButton('scan', 'ionicons', 'МОРФОЛОГИЯ', 24)}
-            {renderDisabledButton('flask', 'ionicons', 'РЕЦЕПТЫ МАСС', 24)}
-            {renderDisabledButton('tooth-outline', 'material', 'АНАТОМИЯ ЗУБОВ', 24)}
+                  <View style={styles.rowCenter}>
+                    <HexCell item={items[1]} variant="center" onPress={() => items[1].active && items[1].route && router.push(items[1].route as any)} />
+                  </View>
+                  <TechMapPanel item={items[6]} onPress={() => items[6].active && items[6].route && router.push(items[6].route as any)} />
+                  <View style={styles.soonFeaturesList}>
+                    {items.filter((item: any) => !item.active && item.id !== 'techmap').map((item: any) => (
+                      <View key={item.id} style={styles.soonFeatureCard}>
+                        <View style={styles.soonFeatureIcon}>
+                          <Ionicons name={item.icon as any} size={22} color="#f2ca50" />
+                        </View>
+                        <Text style={styles.soonFeatureLabel}>{item.label.replace('\n', ' ')}</Text>
+                        <View style={styles.soonFeatureBadge}>
+                          <Text style={styles.soonFeatureBadgeText}>СКОРО</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              );
+            })()}
           </View>
         </Animated.View>
       </ScrollView>
@@ -578,6 +690,206 @@ const styles = StyleSheet.create({
   cardsContainer: {
     paddingHorizontal: 20,
     gap: 0,
+  },
+  hexGridContainer: {
+    width: '100%',
+    minHeight: 520,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 0,
+    position: 'relative',
+  },
+  invertedTrapButton: {
+    position: 'absolute',
+    top: -2,
+    alignSelf: 'center',
+    width: 156,
+    height: 64,
+    zIndex: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'visible',
+  },
+  invertedTrapContent: {
+    height: '100%',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    maxWidth: 110,
+    paddingTop: 2,
+  },
+  invertedTrapText: {
+    color: '#f2ca50',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    textShadowColor: 'rgba(0, 0, 0, 0.95)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 2,
+  },
+  rowTop: {
+    width: 374,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  topRightHex: {
+    marginLeft: 0,
+  },
+  rowCenter: {
+    marginTop: -64,
+    zIndex: 3,
+  },
+  hexCell: {
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'visible',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  hexCellCenter: {
+    marginTop: 0,
+    shadowColor: '#f2ca50',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  hexIconGlow: {
+    shadowColor: '#f2ca50',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  hexCellContent: {
+    width: '90%',
+    height: '72%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    gap: 6,
+  },
+  hexCellLabel: {
+    color: '#f2ca50',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    lineHeight: 14,
+    letterSpacing: 0.2,
+    flexShrink: 0,
+    includeFontPadding: false,
+    textShadowColor: 'rgba(0, 0, 0, 0.95)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 2,
+  },
+  hexCellLabelCenter: {
+    fontSize: 13,
+    lineHeight: 15,
+  },
+  techMapPanel: {
+    width: 360,
+    height: 92,
+    marginTop: 12,
+    marginBottom: 8,
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'visible',
+  },
+  techMapContent: {
+    width: '84%',
+    height: '100%',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+    paddingTop: 0,
+  },
+  techMapLabel: {
+    color: '#f2ca50',
+    fontSize: 20,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    textShadowColor: 'rgba(0, 0, 0, 0.95)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 2,
+  },
+  techMapSoonBadge: {
+    minWidth: 72,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#f2ca50',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  techMapSoonText: {
+    color: '#1a0d00',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  soonFeaturesList: {
+    width: '100%',
+    marginTop: 18,
+    gap: 10,
+    paddingHorizontal: 6,
+  },
+  soonFeatureCard: {
+    minHeight: 58,
+    opacity: 0.5,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.45)',
+    backgroundColor: 'rgba(20, 20, 26, 0.86)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  soonFeatureIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.35)',
+    backgroundColor: 'rgba(242, 202, 80, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  soonFeatureLabel: {
+    flex: 1,
+    color: '#f2ca50',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  soonFeatureBadge: {
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#f2ca50',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+  soonFeatureBadgeText: {
+    color: '#1a0d00',
+    fontSize: 9,
+    fontWeight: '900',
   },
   card: {
     borderRadius: 16,
