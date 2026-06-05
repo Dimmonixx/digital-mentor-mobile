@@ -10,6 +10,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
   Image,
+  ImageBackground,
   Modal,
   Platform,
   SafeAreaView,
@@ -20,6 +21,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -209,6 +211,7 @@ async function analyzeWithClaude(
 }
 
 export default function WorkAnalysisScreen() {
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { t } = useLanguage();
   const backgroundColor = theme?.bg || '#0a0f1d';
@@ -484,7 +487,13 @@ export default function WorkAnalysisScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor }]}>
+    <SafeAreaView style={styles.container}>
+      <ImageBackground
+        source={require('@/assets/images/background.png')}
+        style={{ flex: 1 }}
+        resizeMode="cover"
+      >
+        <View style={{ flex: 1, backgroundColor: 'transparent' }}>
       {isLoading ? (
         <View style={styles.fullScreenLoader}>
           <LottieView
@@ -500,31 +509,39 @@ export default function WorkAnalysisScreen() {
       ) : (
         <>
           {/* DiLabs Header */}
-          <View style={styles.headerContainer}>
-            <View style={styles.leftColumn}>
+          <View style={[styles.headerContainer, { paddingTop: insets.top }]}>
+            <View style={styles.leftContainer}>
               <TouchableOpacity style={styles.burgerButton}>
                 <Ionicons name="menu-outline" size={28} color="#f2ca50" />
               </TouchableOpacity>
             </View>
-            <View pointerEvents="none" style={styles.absoluteCenterLogo}>
+            <View style={styles.absoluteCenter}>
               <Image
                 source={require('@/assets/images/header-logo.png')}
                 style={styles.headerLogo}
                 resizeMode="contain"
               />
             </View>
-            <View style={styles.rightColumn}>
-              <View style={styles.diamondBadge}>
-                <Text style={styles.diamondText}>{diamondBalance}</Text>
-                <View style={styles.diamondIcon}>
-                  <Ionicons name="diamond" size={12} color="#f2ca50" />
-                </View>
+            <View style={styles.rightContainer}>
+              <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{
+                  color: '#f2ca50',
+                  fontSize: 6,
+                  fontWeight: '500',
+                  marginBottom: 1,
+                }}>
+                  {diamondBalance}
+                </Text>
+                <Ionicons name="diamond" size={24} color="#f2ca50" style={{ marginTop: -3 }} />
               </View>
-              <View style={styles.bellSpacing}>
-                <TouchableOpacity style={styles.bellButton}>
-                  <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                style={styles.bellButton}
+                onPress={() => {
+                  router.push('/(tabs)/search');
+                }}
+              >
+                <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -728,7 +745,7 @@ export default function WorkAnalysisScreen() {
           ) : (
             <View style={styles.buttonContent}>
               <Ionicons name="sparkles" size={20} color="#0a0f1d" />
-              <Text style={styles.analyzeButtonText}>
+              <Text style={styles.analyzeButtonText} numberOfLines={1} adjustsFontSizeToFit>
                 {analysisType === "Общий анализ работы" ? "Запустить общий анализ (3 💎)" : "Запустить анализ Сенсея (1 💎)"}
               </Text>
             </View>
@@ -767,6 +784,8 @@ export default function WorkAnalysisScreen() {
       />
     </>
       )}
+    </View>
+    </ImageBackground>
     </SafeAreaView>
   );
 }
@@ -789,78 +808,38 @@ const styles = StyleSheet.create({
   headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    height: 60,
     paddingHorizontal: 16,
-    width: '100%',
-    backgroundColor: 'transparent',
-    position: 'relative',
-    marginTop: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f2ca50',
   },
-  leftColumn: {
-    width: 50,
+  leftContainer: {
+    width: 100,
     alignItems: 'flex-start',
     justifyContent: 'center',
-    height: '100%',
-    zIndex: 10,
   },
-  absoluteCenterLogo: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 5,
-  },
-  rightColumn: {
+  rightContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'flex-end',
-    width: 130,
-    height: '100%',
-    zIndex: 10,
+    gap: 8,
+    width: 100,
+  },
+  absoluteCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   burgerButton: {
-    padding: 4,
-  },
-  headerIconBtn: {
     padding: 4,
   },
   headerLogo: {
     width: 180,
     height: 56,
   },
-  diamondBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1E1E1E',
-    paddingHorizontal: 8,
-    height: 28,
-    borderRadius: 8,
-    justifyContent: 'center',
-  },
-  diamondText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-    marginRight: 4,
-  },
-  diamondIcon: {
-    width: 14,
-    height: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  bellSpacing: {
-    marginLeft: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: '100%',
-  },
   bellButton: {
-    padding: 4,
+    padding: 2,
+    position: 'relative',
   },
   headerRight: {
     flexDirection: 'row',
@@ -1067,13 +1046,15 @@ const styles = StyleSheet.create({
   // Analyze button
   analyzeButton: {
     backgroundColor: '#f2ca50',
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderRadius: 8,
     marginHorizontal: 12,
     marginTop: 8,
     marginBottom: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    height: 50,
   },
   analyzeButtonDisabled: {
     opacity: 0.5,
@@ -1084,7 +1065,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   analyzeButtonText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#0a0f1d',
     marginLeft: 8,
