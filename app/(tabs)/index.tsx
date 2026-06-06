@@ -10,17 +10,17 @@ import { router } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated,
-  Dimensions,
-  Easing,
-  Image,
-  ImageBackground,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Animated,
+    Dimensions,
+    Easing,
+    Image,
+    ImageBackground,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import Svg, { Defs, Polygon, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 
@@ -76,7 +76,7 @@ export default function HomeScreen() {
     { id: 'work', label: 'АНАЛИЗ\nЦВЕТА', icon: 'analytics-outline', active: true, route: '/(tabs)/color-analyzer', center: true },
     { id: 'morphology', label: 'МОРФОЛОГИЯ', icon: 'body-outline', active: false, col: 0, row: 1 },
     { id: 'recipes', label: 'РЕЦЕПТЫ', icon: 'flask-outline', active: false, col: 1, row: 1 },
-    { id: 'premium', label: 'ПРЕМИУМ', icon: 'diamond-outline', active: false, col: 0, row: 2 },
+    { id: 'premium', label: 'ПРЕМИУМ', icon: 'diamond-outline', active: false, col: 0, row: 2, route: '/(tabs)/balance' },
     { id: 'techmap', label: 'ТЕХ-КАРТА', icon: 'layers-outline', active: false, col: 1, row: 2 },
   ];
 
@@ -88,7 +88,7 @@ export default function HomeScreen() {
     { id: 'morphology', label: 'МОРФОЛОГИЯ', icon: 'body-outline', active: false, col: 1, row: 1 },
     { id: 'recipes', label: 'РЕЦЕПТЫ', icon: 'flask-outline', active: false, col: 0, row: 2 },
     { id: 'techmap', label: 'ТЕХ-КАРТА', icon: 'layers-outline', active: false, col: 1, row: 2 },
-    { id: 'premium', label: 'ПРЕМИУМ', icon: 'diamond-outline', active: false, col: 0, row: 3 },
+    { id: 'premium', label: 'ПРЕМИУМ', icon: 'diamond-outline', active: false, col: 0, row: 3, route: '/(tabs)/balance' },
   ];
 
   const HexCell = ({ item, variant = 'side', onPress }: any) => {
@@ -455,19 +455,28 @@ export default function HomeScreen() {
       <View style={{ flex: 1 }}>
         
         {/* Earth — fixed, behind everything, above bottom nav */}
-        <Image
-          source={require('@/assets/images/earth.png')}
+        <View
           style={{
             position: 'absolute',
             bottom: 0,
-            left: 0,
-            right: 0,
-            height: 160,
-            resizeMode: 'cover',
-            opacity: 0.85,
-            zIndex: 0,
+            left: -40,
+            right: -40,
+            width: '130%',
+            height: 220,
+            zIndex: 2,
           }}
-        />
+          pointerEvents="none"
+        >
+          <Image
+            source={require('@/assets/images/earth.png')}
+            style={{
+              width: '100%',
+              height: '100%',
+              resizeMode: 'cover',
+              opacity: 0.95,
+            }}
+          />
+        </View>
 
         {/* ScrollView on top of earth */}
         <ScrollView
@@ -589,6 +598,9 @@ export default function HomeScreen() {
             })()}
           </View>
         </Animated.View>
+        
+        {/* Spacer for scroll space */}
+        <View style={{ height: 180 }} />
       </ScrollView>
 
       {/* Полноэкранный оверлей приветствия */}
@@ -691,7 +703,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: 0,
-    paddingBottom: 160,
+    paddingBottom: 60,
   },
   heroWrap: {
     alignSelf: 'center',

@@ -1,4 +1,4 @@
-import { OPENAI_API_KEY } from '@/constants/config';
+import { API_BASE_URL } from '@/constants/config';
 import { database } from '@/constants/firebase';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -9,18 +9,20 @@ import { get, off, onValue, push, ref, remove, set } from 'firebase/database';
 import { TrendingUpDown } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated,
-  Clipboard,
-  FlatList,
-  Image,
-  ImageBackground,
-  Modal,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    Animated,
+    Clipboard,
+    FlatList,
+    Image,
+    ImageBackground,
+    Modal,
+    StatusBar,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -68,10 +70,12 @@ export default function ChatScreen() {
   const [username, setUsername] = useState('');
   const [showUsernameInput, setShowUsernameInput] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
+  const [aiAssistantEnabled, setAiAssistantEnabled] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [currentDiamonds, setCurrentDiamonds] = useState((globalThis as any).getDiamondBalance?.() || 150);
   const flatListRef = useRef<FlatList>(null);
   const insets = useSafeAreaInsets();
   
@@ -152,67 +156,62 @@ export default function ChatScreen() {
     return () => off(messagesRef);
   };
 
-  const getAIResponse = async (userMessage: string, history: Message[]) => {
-    try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          stream: false,
-          messages: [
-            {
-              role: 'system',
-              content: 'Ты AI наставник для зубных техников. Отвечай кратко и профессионально на русском языке.'
-            },
-            ...history.slice(-10).map(msg => ({
-              role: msg.username === 'AI Наставник 🤖' ? 'assistant' : 'user',
-              content: msg.text,
-            })),
-            { role: 'user', content: userMessage }
-          ],
-          max_tokens: 500,
-        }),
-      });
-      const data = await response.json();
-      return data.choices[0].message.content;
-    } catch (error) {
-      console.error('OpenAI error:', error);
-      return null;
-    }
+  const getClaudeResponse = async (userMessage: string, history: Message[]) => {
+    const formData = new FormData();
+    formData.append('message', userMessage);
+    const historyPayload = history.slice(-10).map(msg => ({
+      role: msg.username === 'ИИ-Ассистент 🤖' ? 'assistant' : 'user',
+      content: msg.text,
+    }));
+    formData.append('history', JSON.stringify(historyPayload));
+    const res = await fetch(`${API_BASE_URL}/chat-ai`, {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json() as { success: boolean; result?: string; error?: string };
+    if (!data.success) throw new Error(data.error ?? 'Ошибка ИИ-ассистента');
+    return data.result ?? null;
   };
 
   const sendMessage = async () => {
-    if (newMessage.trim() && username.trim()) {
-      try {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        const messagesRef = ref(database, 'chat_messages');
-        await push(messagesRef, {
-          username: username,
-          text: newMessage.trim(),
-          timestamp: Date.now(),
-        });
-        
+    if (!newMessage.trim() || !username.trim()) return;
+    const text = newMessage.trim();
+    setNewMessage('');
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const messagesRef = ref(database, 'chat_messages');
+      await push(messagesRef, {
+        username: username,
+        text,
+        timestamp: Date.now(),
+      });
+
+      if (aiAssistantEnabled) {
+        const balance = (globalThis as any).getDiamondBalance?.() ?? 0;
+        if (balance < 1) {
+          Alert.alert('Недостаточно алмазов', 'Для ИИ-Ассистента требуется 1 💎. Пожалуйста, пополните баланс.');
+          return;
+        }
         setAiThinking(true);
-        const aiReply = await getAIResponse(newMessage.trim(), messages);
+        const aiReply = await getClaudeResponse(text, messages);
         setAiThinking(false);
         if (aiReply) {
+          console.log("Текущий баланс до списания:", (globalThis as any).getDiamondBalance?.());
+          (globalThis as any).spendDiamonds?.(1);
+          (globalThis as any).forceDiamondUpdate?.();
+          setCurrentDiamonds((prev: number) => prev - 1);
+          console.log("Баланс после списания:", (globalThis as any).getDiamondBalance?.());
           await push(messagesRef, {
-            username: 'AI Наставник 🤖',
+            username: 'ИИ-Ассистент 🤖',
             text: aiReply,
             timestamp: Date.now() + 1,
             isAI: true,
           });
         }
-        
-        setNewMessage('');
-      } catch (error) {
-        console.error('Error sending message:', error);
-        setAiThinking(false);
       }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      setAiThinking(false);
     }
   };
 
@@ -339,7 +338,7 @@ export default function ChatScreen() {
                 </Text>
               </View>
             )}
-            {!item.photoURL && item.username === 'AI Наставник 🤖' ? (
+            {!item.photoURL && item.username === 'ИИ-Ассистент 🤖' ? (
               <Markdown style={{
                 body: { color: '#ffffff', fontSize: 15 },
                 strong: { color: '#f2ca50' },
@@ -451,12 +450,18 @@ export default function ChatScreen() {
           </View>
 
           <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.headerIconBtn}>
-              <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.headerIconBtn}>
-              <Ionicons name="ellipsis-vertical" size={24} color="#f2ca50" />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ color: aiAssistantEnabled ? '#4fc3f7' : '#ffffff60', fontSize: 11, fontWeight: '600' }}>
+                ИИ {currentDiamonds} 💎
+              </Text>
+              <Switch
+                value={aiAssistantEnabled}
+                onValueChange={setAiAssistantEnabled}
+                trackColor={{ false: '#ffffff20', true: '#4fc3f730' }}
+                thumbColor={aiAssistantEnabled ? '#4fc3f7' : '#ffffff50'}
+                ios_backgroundColor="#ffffff20"
+              />
+            </View>
           </View>
         </View>
 

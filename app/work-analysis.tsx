@@ -8,6 +8,7 @@ import { router } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+    Alert,
     Dimensions,
     Image,
     ImageBackground,
@@ -73,6 +74,26 @@ const ANALYSIS_TYPE_KEYS: Record<string, keyof typeof ANALYSIS_PROMPTS> = {
   "Просто похвастаться 😎": "fun",
   "Найти косяки": "issues",
   "Финальная проверка перед сдачей": "final_check"
+};
+
+const ANALYSIS_PRICES: Record<keyof typeof ANALYSIS_PROMPTS, number> = {
+  general: 3,
+  color_match: 1,
+  morphology: 2,
+  symmetry: 2,
+  fun: 1,
+  issues: 2,
+  final_check: 3,
+};
+
+const ANALYSIS_BUTTON_TITLES: Record<keyof typeof ANALYSIS_PROMPTS, string> = {
+  general: 'общий анализ',
+  color_match: 'проверку цвета',
+  morphology: 'проверку морфологии',
+  symmetry: 'проверку симметрии',
+  fun: 'похвастаться',
+  issues: 'поиск косяков',
+  final_check: 'финальную проверку',
 };
 
 const LOADING_STATUSES = [
@@ -233,6 +254,34 @@ export default function WorkAnalysisScreen() {
   const [alertTitle, setAlertTitle] = useState<string>('');
   const [alertMessage, setAlertMessage] = useState<string>('');
   const [diamondBalance, setDiamondBalance] = useState<number>(150);
+  const analysisTypeKey = ANALYSIS_TYPE_KEYS[analysisType] || 'general';
+  const analysisPrice = ANALYSIS_PRICES[analysisTypeKey];
+  const analysisButtonTitle = ANALYSIS_BUTTON_TITLES[analysisTypeKey];
+
+  // Calculate dynamic cost based on teeth count and analysis type
+  const calculateAnalysisCost = (): number => {
+    const teethCount = selectedTeeth.length;
+    const basePrice = ANALYSIS_PRICES[analysisTypeKey] || 3;
+    
+    // 1 💎: Single tooth, simple analysis
+    if (teethCount <= 1 && (analysisTypeKey === 'color_match' || analysisTypeKey === 'fun')) {
+      return 1;
+    }
+    
+    // 2 💎: Multiple teeth (2-3), or medium complexity analysis
+    if (teethCount <= 3 || analysisTypeKey === 'morphology' || analysisTypeKey === 'symmetry' || analysisTypeKey === 'issues') {
+      return 2;
+    }
+    
+    // 3 💎: Many teeth (4+), or high complexity analysis
+    if (teethCount >= 4 || analysisTypeKey === 'general' || analysisTypeKey === 'final_check') {
+      return 3;
+    }
+    
+    return basePrice;
+  };
+
+  const dynamicCost = calculateAnalysisCost();
 
   const toggleTooth = (tooth: string) => {
     setSelectedTeeth(prev =>
@@ -241,7 +290,7 @@ export default function WorkAnalysisScreen() {
   };
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: any;
     if (isLoading) {
       setCurrentStatusIndex(0);
       interval = setInterval(() => {
@@ -316,6 +365,16 @@ export default function WorkAnalysisScreen() {
       setAlertVisible(true);
       return;
     }
+
+    if (diamondBalance < dynamicCost) {
+      Alert.alert(
+        'Недостаточно алмазов',
+        `Для этого анализа требуется ${dynamicCost} 💎. Пожалуйста, пополните баланс.`
+      );
+      return;
+    }
+
+    setDiamondBalance(prev => prev - dynamicCost);
 
     setIsLoading(true);
     setAnalysisResult(null);
@@ -531,7 +590,7 @@ export default function WorkAnalysisScreen() {
                 }}>
                   {diamondBalance}
                 </Text>
-                <Ionicons name="diamond" size={24} color="#f2ca50" style={{ marginTop: -3 }} />
+                <Text style={{ fontSize: 16, marginTop: -2 }}>💎</Text>
               </View>
               <TouchableOpacity
                 style={styles.bellButton}
@@ -738,7 +797,7 @@ export default function WorkAnalysisScreen() {
             <View style={styles.buttonContent}>
               <Ionicons name="sparkles" size={20} color="#0a0f1d" />
               <Text style={styles.analyzeButtonText} numberOfLines={1} adjustsFontSizeToFit>
-                {analysisType === "Общий анализ работы" ? "Запустить общий анализ (3 💎)" : "Запустить анализ Сенсея (1 💎)"}
+                {`Запустить ${analysisButtonTitle} (${dynamicCost} 💎)`}
               </Text>
             </View>
           )}
@@ -1069,6 +1128,7 @@ const styles = StyleSheet.create({
   // Analyze button
   analyzeButton: {
     backgroundColor: '#f2ca50',
+    opacity: 1,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 8,
@@ -1079,6 +1139,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: 50,
     zIndex: 10,
+    elevation: 10,
   },
   analyzeButtonDisabled: {
     opacity: 0.5,

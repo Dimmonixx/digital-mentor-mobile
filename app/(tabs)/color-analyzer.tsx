@@ -1,5 +1,5 @@
 import {
-  ANTHROPIC_API_KEY
+    API_BASE_URL
 } from '@/constants/config';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -10,21 +10,23 @@ import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Dimensions,
-  Image,
-  ImageBackground,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    Image,
+    ImageBackground,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DraggableZones, { Zone } from '../../components/DraggableZones';
 
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
+const COLOR_ANALYSIS_PRICE = 1;
 
 const VITA_ORDER: string[] = [
   'BL1', 'BL2', 'BL3', 'BL4',
@@ -198,7 +200,7 @@ function parseVitaJson(raw: string): VitaAnalysis | null {
   return null;
 }
 
-async function analyzeWithClaude(base64: string, mediaType: 'image/jpeg' | 'image/png', calculatedShade: string): Promise<VitaAnalysis> {
+async function analyzeWithClaude(imageUri: string, mediaType: 'image/jpeg' | 'image/png', calculatedShade: string): Promise<VitaAnalysis> {
   console.log('Математически рассчитанный оттенок:', calculatedShade);
   
   const vitaPrompt = `
@@ -260,41 +262,35 @@ A5 (виртуальный эталон) = экстремальный, «нек�
 ### ТРЕБОВАНИЕ К ПОЛЮ layering_recipe:
 Поле layering_recipe должно быть заполнено строго с точки зрения зубного техника, который будет послойно наносить керамическую массу на каркас. Опирайся на выявленный primary_range и особенности зон зуба. Никакой воды, только четкие технологические ориентиры цветов.`;
   
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const VALID_API_KEY_FROM_CONFIG = process.env.EXPO_PUBLIC_API_BRIDGE_KEY ?? '';
+  const formData = new FormData();
+  formData.append('image', {
+    uri: imageUri,
+    name: mediaType === 'image/png' ? 'tooth.png' : 'tooth.jpg',
+    type: mediaType,
+  } as any);
+  formData.append('vita_shade', calculatedShade);
+  formData.append('work_stage', 'Анализ цвета VITA');
+  formData.append('analysis_type', 'Проверить цвет и оттенок');
+  formData.append('comment', vitaPrompt);
+  formData.append('teeth', 'не указаны');
+
+  console.log('Отправка запроса на анализ цвета. Используемый ключ:', VALID_API_KEY_FROM_CONFIG);
+
+  const res = await fetch(`${API_BASE_URL}/analyze-work`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
+      'Content-Type': 'multipart/form-data',
+      'x-api-key': VALID_API_KEY_FROM_CONFIG,
     },
-    body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mediaType,
-                data: base64,
-              },
-            },
-            {
-              type: 'text',
-              text: vitaPrompt,
-            },
-          ],
-        },
-      ],
-    }),
+    body: formData,
   });
 
   const data = (await res.json()) as {
     error?: { message?: string };
-    content?: Array<{ type: string; text?: string }>; 
+    result?: string;
+    text?: string;
+    content?: Array<{ type: string; text?: string }>;
   };
 
   if (!res.ok) {
@@ -302,8 +298,7 @@ A5 (виртуальный эталон) = экстремальный, «нек�
     throw new Error(msg);
   }
 
-  const textBlock = data.content?.find((c) => c.type === 'text' && c.text);
-  const text = textBlock?.text?.trim() ?? '';
+  const text = data.result ?? data.text ?? data.content?.find((c) => c.type === 'text' && c.text)?.text?.trim() ?? '';
   const parsed = parseVitaJson(text);
   if (!parsed) {
     throw new Error('Не удалось разобрать ответ модели. Попробуйте другое фото.');
@@ -481,10 +476,6 @@ const reset = useCallback(() => {
   }, []);
 
   const runAnalysis = useCallback(async (base64: string, mime: 'image/jpeg' | 'image/png') => {
-    if (!ANTHROPIC_API_KEY?.trim()) {
-      setError('Добавьте ANTHROPIC_API_KEY в constants/config.ts');
-      return;
-    }
     setLoading(true);
     setError(null);
     setResult(null);
@@ -498,7 +489,7 @@ const reset = useCallback(() => {
 );
 
       // Затем отправляем в Claude с математическим ориентиром
-      const analysis = await analyzeWithClaude(base64, mime, calculatedShade);
+      const analysis = await analyzeWithClaude(selectedImage!, mime, calculatedShade);
       setResult(analysis);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
@@ -512,6 +503,23 @@ const reset = useCallback(() => {
 
   const handleAnalyze = useCallback(() => {
     if (!pendingPayload) return;
+    const diamondBalance = (globalThis as any).getDiamondBalance?.() ?? 0;
+    if (diamondBalance < COLOR_ANALYSIS_PRICE) {
+      Alert.alert(
+        'Недостаточно алмазов',
+        'Для выполнения анализа цвета требуется 1 💎. Пожалуйста, пополните баланс.'
+      );
+      return;
+    }
+    const didSpend = (globalThis as any).spendDiamonds?.(COLOR_ANALYSIS_PRICE);
+    if (!didSpend) {
+      Alert.alert(
+        'Недостаточно алмазов',
+        'Для выполнения анализа цвета требуется 1 💎. Пожалуйста, пополните баланс.'
+      );
+      return;
+    }
+    (globalThis as any).forceDiamondUpdate?.();
     void runAnalysis(pendingPayload.base64, pendingPayload.mime);
   }, [pendingPayload, runAnalysis]);
 
@@ -749,9 +757,10 @@ const reset = useCallback(() => {
                   <TouchableOpacity
                     style={[styles.analyzeBtn, { marginTop: 16 }]}
                     onPress={handleAnalyze}
+                    activeOpacity={0.88}
                   >
-                    <Text style={styles.analyzeBtnText}>
-                      🔍 Анализировать
+                    <Text style={styles.analyzeBtnText} numberOfLines={1} adjustsFontSizeToFit>
+                      Запустить анализ цвета (1 💎)
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -1432,11 +1441,16 @@ const styles = StyleSheet.create({
   },
   analyzeBtn: {
     backgroundColor: '#f2ca50',
+    opacity: 1,
     borderRadius: 16,
-    padding: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+    minHeight: 56,
+    zIndex: 10,
+    elevation: 10,
   },
   analyzeBtnText: {
     color: '#1a1a2e',

@@ -99,6 +99,27 @@ export default function TabLayout() {
   const isInitialLoad = useRef(true);
 
   const [diamondBalance, setDiamondBalance] = useState<number>(150);
+  const diamondBalanceRef = useRef(diamondBalance);
+
+  useEffect(() => {
+    diamondBalanceRef.current = diamondBalance;
+  }, [diamondBalance]);
+
+  useEffect(() => {
+    (globalThis as any).getDiamondBalance = () => diamondBalanceRef.current;
+    (globalThis as any).spendDiamonds = (amount: number) => {
+      let didSpend = false;
+      setDiamondBalance(prev => {
+        if (prev < amount) return prev;
+        didSpend = true;
+        return prev - amount;
+      });
+      return didSpend;
+    };
+    (globalThis as any).forceDiamondUpdate = () => {
+      setDiamondBalance(prev => prev);
+    };
+  }, []);
 
 
 
@@ -312,14 +333,14 @@ export default function TabLayout() {
 
                 <View style={{ alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{
-                    color: '#f2ca50',
+                    color: '#4fc3f7',
                     fontSize: 6,
-                    fontWeight: '500',
+                    fontWeight: '700',
                     marginBottom: 1,
                   }}>
                     {diamondBalance}
                   </Text>
-                  <Ionicons name="diamond" size={24} color="#f2ca50" style={{ marginTop: -3 }} />
+                  <Text style={{ fontSize: 16, marginTop: -2 }}>💎</Text>
                 </View>
                 <TouchableOpacity
                   style={styles.bellButton}
@@ -355,49 +376,67 @@ export default function TabLayout() {
 
             tabBarStyle: {
 
-              backgroundColor: 'rgba(3, 10, 20, 0.95)',
-
-              borderTopColor: '#ffffff10',
-
-              height: 60 + (insets?.bottom || 0),
-
-              paddingTop: 4,
-
-              paddingBottom: (insets?.bottom || 0) + 12,
-
               position: 'absolute',
 
-              bottom: 0,
+              bottom: 37,
 
-              left: 0,
+              left: 20,
 
-              right: 0,
+              right: 20,
 
-              zIndex: 10,
+              borderRadius: 25,
+
+              backgroundColor: 'rgba(15, 20, 35, 0.85)',
+
+              borderWidth: 1,
+
+              borderColor: 'rgba(242, 202, 80, 0.3)',
+
+              height: 60,
+
+              paddingBottom: 0,
+
+              paddingTop: 0,
+
+              shadowColor: '#f2ca50',
+
+              shadowOffset: { width: 0, height: 4 },
+
+              shadowOpacity: 0.2,
+
+              shadowRadius: 12,
+
+              elevation: 12,
 
             },
 
             tabBarLabelStyle: {
 
-              fontSize: 11,
+              marginTop: 2,
 
-              marginTop: 0,
-
-              marginBottom: 0,
+              fontSize: 10,
 
             },
 
             tabBarIconStyle: {
 
-              marginTop: 0,
+              marginBottom: 0,
 
-              marginBottom: -2,
+              marginTop: 0,
 
             },
 
             tabBarItemStyle: {
 
               paddingVertical: 0,
+
+              justifyContent: 'center',
+
+              alignItems: 'center',
+
+              flex: 1,
+
+              height: 60,
 
             },
 
@@ -460,6 +499,22 @@ export default function TabLayout() {
               tabBarIcon: ({ color }) => <Ionicons size={22} name="person-outline" color={color} />,
 
               tabBarBadge: pendingRequestsCount > 0 ? pendingRequestsCount.toString() : undefined,
+
+            }}
+
+          />
+
+          <Tabs.Screen
+
+            name="balance"
+
+            options={{
+
+              title: 'Balance',
+
+              href: '/(tabs)/balance',
+
+              tabBarIcon: ({ color }) => <Ionicons size={22} name="diamond-outline" color={color} />,
 
             }}
 
