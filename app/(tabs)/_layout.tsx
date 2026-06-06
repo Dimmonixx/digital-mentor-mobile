@@ -330,36 +330,37 @@ export default function TabLayout() {
               </View>
 
               <View style={styles.rightContainer}>
-
-                <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{
-                    color: '#4fc3f7',
-                    fontSize: 6,
-                    fontWeight: '700',
-                    marginBottom: 1,
-                  }}>
-                    {diamondBalance}
-                  </Text>
-                  <Text style={{ fontSize: 16, marginTop: -2 }}>💎</Text>
+                <View style={styles.headerRightContent}>
+                  <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{
+                      color: '#4fc3f7',
+                      fontSize: 6,
+                      fontWeight: '700',
+                      marginBottom: 1,
+                    }}>
+                      {diamondBalance}
+                    </Text>
+                    <Text style={{ fontSize: 16, marginTop: -2 }}>💎</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.bellButton}
+                    onPress={() => {
+                      router.push('/(tabs)/search');
+                      setTimeout(() => {
+                        (window as any).showNewOrders?.();
+                      }, 100);
+                    }}
+                  >
+                    <Text style={{ fontSize: 15, marginTop: 11 }}>🔔</Text>
+                    {newOrdersCount > 0 && (
+                      <View style={styles.notificationBadge}>
+                        <Text style={styles.notificationBadgeText}>
+                          {newOrdersCount > 99 ? '99+' : newOrdersCount.toString()}
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity
-                  style={styles.bellButton}
-                  onPress={() => {
-                    router.push('/(tabs)/search');
-                    setTimeout(() => {
-                      (window as any).showNewOrders?.();
-                    }, 100);
-                  }}
-                >
-                  <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
-                  {newOrdersCount > 0 && (
-                    <View style={styles.notificationBadge}>
-                      <Text style={styles.notificationBadgeText}>
-                        {newOrdersCount > 99 ? '99+' : newOrdersCount.toString()}
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
               </View>
 
             </View>
@@ -452,7 +453,7 @@ export default function TabLayout() {
 
             options={{
 
-              title: 'Home',
+              title: 'Главная',
 
               tabBarIcon: ({ color }) => <Ionicons size={22} name="home" color={color} />,
 
@@ -480,7 +481,7 @@ export default function TabLayout() {
 
             options={{
 
-              title: 'Settings',
+              title: 'Настройки',
 
               tabBarIcon: ({ color }) => <Ionicons size={22} name="settings" color={color} />,
 
@@ -494,7 +495,7 @@ export default function TabLayout() {
 
             options={{
 
-              title: 'Profile',
+              title: 'Профиль',
 
               tabBarIcon: ({ color }) => <Ionicons size={22} name="person-outline" color={color} />,
 
@@ -510,7 +511,7 @@ export default function TabLayout() {
 
             options={{
 
-              title: 'Balance',
+              title: 'Премиум',
 
               href: '/(tabs)/balance',
 
@@ -596,6 +597,13 @@ const styles = StyleSheet.create({
 
   },
 
+  headerRightContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+
   absoluteCenter: {
 
     flex: 1,
@@ -632,13 +640,13 @@ const styles = StyleSheet.create({
 
     position: 'absolute',
 
-    top: -4,
+    top: 5,
 
     right: -4,
 
     backgroundColor: '#f2ca50',
 
-    borderRadius: 10,
+    borderRadius: 20,
 
     minWidth: 18,
 
