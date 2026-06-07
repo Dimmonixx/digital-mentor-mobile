@@ -3,21 +3,11 @@ export type CaseMedia = {
   stage: string;
 };
 
-export type SpectralShade = {
-  zone: string; // Шейка / Тело / Край
-  shade: string; // A1, A2, B1...
-  value: number; // 0-100 relative intensity for the bar
-};
-
-export type RatingStat = {
-  avg: number;
-  count: number;
-};
-
-export type CaseVotes = {
-  aesthetics: RatingStat;
-  occlusion: RatingStat;
-  anatomy: RatingStat;
+export type CaseComment = {
+  id: string;
+  author: string;
+  avatar: string;
+  text: string;
 };
 
 export type RiddleOption = {
@@ -40,17 +30,19 @@ export type ClinicalCase = {
   description: string;
   fullDescription: string;
   media: CaseMedia[];
-  comments: number;
-  votes: CaseVotes;
-  spectral: SpectralShade[];
+  commentsList: CaseComment[];
+  aiReview: string;
+  activity: number; // активность за последние 7 дней (для "Работы недели")
+  anonymous?: boolean;
+  isOwn?: boolean; // принадлежит текущему пользователю
   riddle?: CaseRiddle;
 };
 
 export const CASES: ClinicalCase[] = [
   {
     id: '1',
-    author: 'Кривоносов Д.В.',
-    role: 'Врач',
+    author: 'Кривоносов Д.И.',
+    role: 'Техник',
     avatar: 'https://i.pravatar.cc/150?img=12',
     tags: ['#Имплантация', '#Виниры', '#ISO_21'],
     description:
@@ -62,17 +54,14 @@ export const CASES: ClinicalCase[] = [
       { uri: 'https://images.unsplash.com/photo-1609840114035-3c981b782dfe?w=800&q=80', stage: 'В процессе' },
       { uri: 'https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?w=800&q=80', stage: 'После' },
     ],
-    comments: 24,
-    votes: {
-      aesthetics: { avg: 4.8, count: 42 },
-      occlusion: { avg: 4.5, count: 38 },
-      anatomy: { avg: 4.7, count: 40 },
-    },
-    spectral: [
-      { zone: 'Шейка', shade: 'A3', value: 78 },
-      { zone: 'Тело', shade: 'A2', value: 62 },
-      { zone: 'Край', shade: 'A1', value: 44 },
+    activity: 96,
+    commentsList: [
+      { id: 'c1', author: 'Литвиненко А.С.', avatar: 'https://i.pravatar.cc/150?img=33', text: 'Чистая работа! Зениты выровняли идеально.' },
+      { id: 'c2', author: 'Сергеева М.И.', avatar: 'https://i.pravatar.cc/150?img=45', text: 'Какой цемент использовали для фиксации?' },
+      { id: 'c3', author: 'Бондаренко П.Л.', avatar: 'https://i.pravatar.cc/150?img=68', text: 'Режущий край живой, опалесценция огонь.' },
     ],
+    aiReview:
+      'Уступ завален, но полировка блестит ярче, чем будущее этого зуба. Симметрия зенитов хороша, но контактный пункт между 21 и 22 просит о помощи. Эстетика на 8/10, а вот фотопротокол — на 3/10: снимайте без вспышки в лоб, это не допрос. Итог: пациент счастлив, перфекционист внутри меня — почти.',
     riddle: {
       question: 'Угадайте выбранный оттенок VITA для тела винира',
       options: [
@@ -99,17 +88,13 @@ export const CASES: ClinicalCase[] = [
       { uri: 'https://images.unsplash.com/photo-1559056199-641a0ac8b55e?w=800&q=80', stage: 'Каркас' },
       { uri: 'https://images.unsplash.com/photo-1581585504237-67d4d8c2c5b9?w=800&q=80', stage: 'Готово' },
     ],
-    comments: 18,
-    votes: {
-      aesthetics: { avg: 4.6, count: 31 },
-      occlusion: { avg: 4.9, count: 35 },
-      anatomy: { avg: 4.8, count: 33 },
-    },
-    spectral: [
-      { zone: 'Шейка', shade: 'A3.5', value: 82 },
-      { zone: 'Тело', shade: 'A3', value: 70 },
-      { zone: 'Край', shade: 'A2', value: 52 },
+    activity: 54,
+    commentsList: [
+      { id: 'c1', author: 'Кривоносов Д.И.', avatar: 'https://i.pravatar.cc/150?img=12', text: 'Окклюзия выверена безупречно.' },
+      { id: 'c2', author: 'Анонимный коллега', avatar: '', text: 'Краевые гребни можно было выразить чуть сильнее.' },
     ],
+    aiReview:
+      'Каркас плотный, фрезеровка ровная — видно, что руки растут откуда надо. Но фиссуры глубокие, словно Марианская впадина — пациент будет вылавливать оттуда семечки годами. Глазуровка ровная, но блеск на грани "стоматологической дискотеки". 7.5/10 — крепко, но без оваций.',
   },
   {
     id: '3',
@@ -125,17 +110,14 @@ export const CASES: ClinicalCase[] = [
       { uri: 'https://images.unsplash.com/photo-1607613009820-a29f7bb81c04?w=800&q=80', stage: 'До' },
       { uri: 'https://images.unsplash.com/photo-1598256989800-fe5f95da9787?w=800&q=80', stage: 'После' },
     ],
-    comments: 41,
-    votes: {
-      aesthetics: { avg: 4.7, count: 55 },
-      occlusion: { avg: 4.3, count: 47 },
-      anatomy: { avg: 4.5, count: 49 },
-    },
-    spectral: [
-      { zone: 'Шейка', shade: 'B2', value: 60 },
-      { zone: 'Тело', shade: 'B1', value: 48 },
-      { zone: 'Край', shade: 'A1', value: 38 },
+    activity: 70,
+    commentsList: [
+      { id: 'c1', author: 'Кривоносов Д.И.', avatar: 'https://i.pravatar.cc/150?img=12', text: 'Отличный переход по цвету, реставрация невидима.' },
+      { id: 'c2', author: 'Литвиненко А.С.', avatar: 'https://i.pravatar.cc/150?img=33', text: 'Мамелоны выглядят естественно.' },
+      { id: 'c3', author: 'Ольга К.', avatar: 'https://i.pravatar.cc/150?img=20', text: 'Zoom 4 и композит — классика жанра.' },
     ],
+    aiReview:
+      'Отбелили до сияния холодильника — пациент теперь освещает комнату улыбкой. Композитная реставрация аккуратна, граница невидима — респект. Но оттенок на грани: ещё чуть-чуть и это была бы не улыбка, а прожектор. 8/10, но очки выдавать не буду.',
   },
   {
     id: '4',
@@ -152,19 +134,76 @@ export const CASES: ClinicalCase[] = [
       { uri: 'https://images.unsplash.com/photo-1606265752439-1f18756aa8ed?w=800&q=80', stage: 'Фрезеровка' },
       { uri: 'https://images.unsplash.com/photo-1620912189865-1e8a44ee8d6f?w=800&q=80', stage: 'Фиксация' },
     ],
-    comments: 12,
-    votes: {
-      aesthetics: { avg: 4.9, count: 22 },
-      occlusion: { avg: 5.0, count: 24 },
-      anatomy: { avg: 5.0, count: 25 },
-    },
-    spectral: [
-      { zone: 'Шейка', shade: 'A3.5', value: 80 },
-      { zone: 'Тело', shade: 'A3', value: 66 },
-      { zone: 'Край', shade: 'A2', value: 50 },
+    activity: 40,
+    commentsList: [
+      { id: 'c1', author: 'Сергеева М.И.', avatar: 'https://i.pravatar.cc/150?img=45', text: 'Профиль прорезывания отличный, десна отлично ляжет.' },
+      { id: 'c2', author: 'Кривоносов Д.И.', avatar: 'https://i.pravatar.cc/150?img=12', text: 'Анатомия бугров на высоте.' },
     ],
+    aiReview:
+      'Абатмент хорош, коронка живая, но давайте честно: профиль прорезывания вы сделали лучше, чем некоторые делают карьеру. Градиент A3 пойман точно, фиссуры живые. Единственное — контактный пункт чуть туговат, нить будет рваться с проклятиями. 9/10 — почти завидую.',
   },
 ];
 
 export const getCaseById = (id: string | undefined) =>
   CASES.find((c) => c.id === id);
+
+// Полное название роли для бейджа
+export const roleLabel = (role: ClinicalCase['role']): string =>
+  role === 'Техник' ? 'Зубной техник' : 'Стоматолог';
+
+// Короткий едкий тизер AI-разбора (первое предложение)
+export const getAiTeaser = (review: string): string => {
+  const i = review.search(/[.!?]/);
+  return i >= 0 ? review.slice(0, i + 1).trim() : review;
+};
+
+/* ---------------- Текущий пользователь ---------------- */
+// Имя текущего пользователя (mock). Кейсы с этим автором — его собственные.
+export const CURRENT_USER_NAME = 'Кривоносов Д.И.';
+
+// Кейс принадлежит текущему пользователю (по совпадению автора с CURRENT_USER_NAME)
+export const isOwnCase = (c: ClinicalCase): boolean =>
+  !c.anonymous && (c.isOwn === true || c.author === CURRENT_USER_NAME);
+
+/* ---------------- Работа недели ---------------- */
+// Кейс с максимальной активностью (комментарии + реакции) за последние 7 дней
+export const getWorkOfTheWeek = (): ClinicalCase =>
+  CASES.reduce((best, c) =>
+    c.activity + c.commentsList.length > best.activity + best.commentsList.length ? c : best
+  , CASES[0]);
+
+/* ---------------- Индекс мастерства ---------------- */
+export type MasteryLevel = 'Ученик' | 'Мастер' | 'Эксперт' | 'Легенда';
+
+export type MasteryProgress = {
+  publishedWorks: number;
+  correctRiddles: number;
+  aiLikes: number;
+};
+
+// Мутабельный прогресс (mock-геймификация). Стартовые значения для демо.
+const masteryProgress: MasteryProgress = {
+  publishedWorks: CASES.filter(isOwnCase).length + 2,
+  correctRiddles: 3,
+  aiLikes: 7,
+};
+
+export const getMasteryProgress = (): MasteryProgress => ({ ...masteryProgress });
+
+export const registerCorrectRiddle = () => {
+  masteryProgress.correctRiddles += 1;
+};
+
+export const registerAiLike = () => {
+  masteryProgress.aiLikes += 1;
+};
+
+export const computeMasteryIndex = (p: MasteryProgress): number =>
+  p.publishedWorks * 10 + p.correctRiddles * 5 + p.aiLikes;
+
+export const getMasteryLevel = (index: number): MasteryLevel => {
+  if (index >= 200) return 'Легенда';
+  if (index >= 100) return 'Эксперт';
+  if (index >= 40) return 'Мастер';
+  return 'Ученик';
+};

@@ -71,7 +71,7 @@ export default function HomeScreen() {
   const tickerScrollAnim = useRef(new Animated.Value(0)).current;
 
   const TECHNICIAN_ITEMS = [
-    { id: 'chat', label: 'КЕЙС КЛУБ', icon: 'chatbubble-outline', active: true, route: '/case-club', col: 0, row: 0 },
+    { id: 'chat', label: 'КЕЙС КЛУБ', icon: 'chatbubble-outline', active: true, route: '/(tabs)/case-club', col: 0, row: 0 },
     { id: 'color', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'color-palette-outline', active: true, route: '/work-analysis', col: 1, row: 0 },
     { id: 'work', label: 'АНАЛИЗ\nЦВЕТА', icon: 'analytics-outline', active: true, route: '/(tabs)/color-analyzer', center: true },
     { id: 'morphology', label: 'МОРФОЛОГИЯ', icon: 'body-outline', active: false, col: 0, row: 1 },
@@ -85,7 +85,7 @@ export default function HomeScreen() {
   ];
 
   const DOCTOR_ITEMS = [
-    { id: 'chat', label: 'КЕЙС КЛУБ', icon: 'chatbubble-outline', active: true, route: '/case-club', col: 0, row: 0 },
+    { id: 'chat', label: 'КЕЙС КЛУБ', icon: 'chatbubble-outline', active: true, route: '/(tabs)/case-club', col: 0, row: 0 },
     { id: 'color', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'color-palette-outline', active: true, route: '/work-analysis', col: 1, row: 0 },
     { id: 'new-order', label: 'АНАЛИЗ\nЦВЕТА', icon: 'add-circle-outline', active: true, route: '/new-order', center: true },
     { id: 'work', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'analytics-outline', active: true, route: '/(tabs)/color-analyzer', col: 0, row: 1 },

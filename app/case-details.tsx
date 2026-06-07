@@ -1,13 +1,24 @@
-import { getCaseById, RatingStat, SpectralShade } from '@/data/cases';
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { router, useLocalSearchParams } from 'expo-router';
-import React, { useMemo, useRef, useState } from 'react';
+import { DemoOverlay, DemoOverlayData, PostActionsSheet } from '@/components/case-post-actions';
 import {
+    CaseComment,
+    CaseMedia,
+    getCaseById,
+    isOwnCase,
+    registerAiLike,
+    registerCorrectRiddle,
+    roleLabel,
+} from '@/data/cases';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { router, useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+    Alert,
     Dimensions,
     FlatList,
     Image,
     ImageBackground,
+    ImageSourcePropType,
+    Modal,
     ScrollView,
     StatusBar,
     StyleSheet,
@@ -18,12 +29,34 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Polygon, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CONTENT_WIDTH = SCREEN_WIDTH - 40;
 const MEDIA_WIDTH = CONTENT_WIDTH;
 
+const AI_REVIEW_COST = 3;
+
+// Компактная сетка гексагонов (4 в ряд)
+const HEX_GAP = 8;
+const HEX_COLS = 4;
+const HEX_W = Math.floor((CONTENT_WIDTH - 32 - HEX_GAP * (HEX_COLS - 1)) / HEX_COLS);
+const HEX_H = 60;
+
+type Identity = { name: string; avatarSource: ImageSourcePropType | null } | undefined;
+
+/* ---------------- Avatar ---------------- */
+const AuthorAvatar = ({ source, size = 48 }: { source: ImageSourcePropType | null; size?: number }) => {
+  if (!source) {
+    return (
+      <View style={[styles.avatar, styles.avatarSilhouette, { width: size, height: size, borderRadius: size / 2 }]}>
+        <Ionicons name="person" size={size * 0.55} color="rgba(242,202,80,0.7)" />
+      </View>
+    );
+  }
+  return <Image source={source} style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]} />;
+};
+
 /* ---------------- Media carousel ---------------- */
-const MediaCarousel = ({ media }: { media: { uri: string; stage: string }[] }) => {
+const MediaCarousel = ({ media, onPressPhoto }: { media: CaseMedia[]; onPressPhoto: (i: number) => void }) => {
   const [activeIndex, setActiveIndex] = useState(0);
   const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 60 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
@@ -40,13 +73,17 @@ const MediaCarousel = ({ media }: { media: { uri: string; stage: string }[] }) =
         showsHorizontalScrollIndicator={false}
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
-        renderItem={({ item }) => (
-          <View style={{ width: MEDIA_WIDTH }}>
+        renderItem={({ item, index }) => (
+          <TouchableOpacity activeOpacity={0.95} onPress={() => onPressPhoto(index)} style={{ width: MEDIA_WIDTH }}>
             <Image source={{ uri: item.uri }} style={styles.mediaImage} />
             <View style={styles.stageBadge}>
               <Text style={styles.stageBadgeText}>{item.stage}</Text>
             </View>
-          </View>
+            <View style={styles.counterBadge}>
+              <Ionicons name="images-outline" size={12} color="#fff" />
+              <Text style={styles.counterText}>{index + 1} из {media.length}</Text>
+            </View>
+          </TouchableOpacity>
         )}
       />
       <View style={styles.dotsRow}>
@@ -58,102 +95,7 @@ const MediaCarousel = ({ media }: { media: { uri: string; stage: string }[] }) =
   );
 };
 
-/* ---------------- Spectral analysis VITA ---------------- */
-const SHADE_COLORS: Record<string, string> = {
-  A1: '#f4e6c8',
-  A2: '#ecd6a6',
-  'A3': '#e2c485',
-  'A3.5': '#d4b06a',
-  B1: '#f0e4bf',
-  B2: '#e6d29a',
-  C2: '#cdbf9a',
-};
-
-const SpectralBlock = ({ data }: { data: SpectralShade[] }) => (
-  <View style={styles.spectralWrap}>
-    <View style={styles.spectralHeader}>
-      <Ionicons name="color-filter-outline" size={18} color="#4fc3f7" />
-      <Text style={styles.spectralTitle}>Спектральный анализ VITA</Text>
-      <View style={styles.aiTag}>
-        <Text style={styles.aiTagText}>AI</Text>
-      </View>
-    </View>
-    <View style={styles.spectralRow}>
-      {data.map((z) => (
-        <View key={z.zone} style={styles.spectralBlock}>
-          <Text style={styles.spectralZone}>{z.zone}</Text>
-          <View style={styles.spectralBarTrack}>
-            <LinearGradient
-              colors={[SHADE_COLORS[z.shade] || '#f2ca50', '#8B6914']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={[styles.spectralBarFill, { height: `${z.value}%` }]}
-            />
-          </View>
-          <View
-            style={[
-              styles.spectralSwatch,
-              { backgroundColor: SHADE_COLORS[z.shade] || '#f2ca50' },
-            ]}
-          />
-          <Text style={styles.spectralShade}>{z.shade}</Text>
-        </View>
-      ))}
-    </View>
-  </View>
-);
-
-/* ---------------- Expert voting (crystals) ---------------- */
-const recompute = (base: RatingStat, userVote: number | null): number => {
-  if (userVote == null) return base.avg;
-  return (base.avg * base.count + userVote) / (base.count + 1);
-};
-
-const CrystalRow = ({
-  label,
-  base,
-  vote,
-  onVote,
-}: {
-  label: string;
-  base: RatingStat;
-  vote: number | null;
-  onVote: (v: number) => void;
-}) => {
-  const avg = recompute(base, vote);
-  return (
-    <View style={styles.crystalRow}>
-      <View style={styles.crystalLabelRow}>
-        <Text style={styles.crystalLabel}>{label}</Text>
-        <Text style={styles.crystalAvg}>{avg.toFixed(1)} 💎</Text>
-      </View>
-      <View style={styles.crystalsLine}>
-        {[1, 2, 3, 4, 5].map((n) => {
-          const active = vote != null && n <= vote;
-          return (
-            <TouchableOpacity
-              key={n}
-              activeOpacity={0.7}
-              style={styles.crystalBtn}
-              onPress={() => onVote(n)}
-            >
-              <Ionicons
-                name="diamond"
-                size={26}
-                color={active ? '#4fc3f7' : 'rgba(255,255,255,0.18)'}
-              />
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-      {vote != null && (
-        <Text style={styles.crystalVoted}>Ваш голос: {vote} 💎</Text>
-      )}
-    </View>
-  );
-};
-
-/* ---------------- Riddle hex button ---------------- */
+/* ---------------- Riddle hex button (compact) ---------------- */
 const HexButton = ({
   label,
   selected,
@@ -169,12 +111,10 @@ const HexButton = ({
   correct: boolean;
   onPress: () => void;
 }) => {
-  const W = (CONTENT_WIDTH - 24 - 24) / 2; // 2 per row, gaps
-  const H = 92;
   const stroke = revealed && correct ? '#7CFC8A' : selected ? '#4fc3f7' : '#f2ca50';
   return (
-    <TouchableOpacity activeOpacity={0.85} style={{ width: W, height: H }} onPress={onPress} disabled={revealed}>
-      <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={StyleSheet.absoluteFill}>
+    <TouchableOpacity activeOpacity={0.85} style={{ width: HEX_W, height: HEX_H }} onPress={onPress} disabled={revealed}>
+      <Svg width={HEX_W} height={HEX_H} viewBox={`0 0 ${HEX_W} ${HEX_H}`} style={StyleSheet.absoluteFill}>
         <Defs>
           <SvgLinearGradient id="hexBtnBody" x1="0" y1="0" x2="1" y2="1">
             <Stop offset="0%" stopColor="#1c2536" />
@@ -182,10 +122,10 @@ const HexButton = ({
           </SvgLinearGradient>
         </Defs>
         <Polygon
-          points={`${W * 0.25},4 ${W * 0.75},4 ${W - 4},${H / 2} ${W * 0.75},${H - 4} ${W * 0.25},${H - 4} 4,${H / 2}`}
+          points={`${HEX_W * 0.28},3 ${HEX_W * 0.72},3 ${HEX_W - 3},${HEX_H / 2} ${HEX_W * 0.72},${HEX_H - 3} ${HEX_W * 0.28},${HEX_H - 3} 3,${HEX_H / 2}`}
           fill="url(#hexBtnBody)"
           stroke={stroke}
-          strokeWidth={2}
+          strokeWidth={1.5}
         />
       </Svg>
       <View style={styles.hexContent}>
@@ -198,17 +138,39 @@ const HexButton = ({
 
 const RiddleBlock = ({
   riddle,
+  onReward,
 }: {
   riddle: NonNullable<ReturnType<typeof getCaseById>>['riddle'];
+  onReward: () => void;
 }) => {
   const [picked, setPicked] = useState<string | null>(null);
+  const [rewarded, setRewarded] = useState(false);
   if (!riddle) return null;
+
+  const onPick = (label: string) => {
+    if (picked != null) return;
+    setPicked(label);
+    if (label === riddle.correct && !rewarded) {
+      setRewarded(true);
+      (globalThis as any).spendDiamonds?.(-1); // начисляем +1 💎
+      (globalThis as any).forceDiamondUpdate?.();
+      registerCorrectRiddle();
+      onReward();
+    }
+  };
+
   return (
     <View style={styles.section}>
+      {/* Заголовок и награда — на отдельных строках, чтобы текст не обрезался */}
       <View style={styles.sectionTitleRow}>
         <Ionicons name="help-circle-outline" size={20} color="#f2ca50" />
         <Text style={styles.sectionTitle}>Кейс-загадка</Text>
       </View>
+      <View style={styles.rewardLine}>
+        <Ionicons name="diamond-outline" size={13} color="#4fc3f7" />
+        <Text style={styles.rewardLineText}>+1 💎 за верный ответ</Text>
+      </View>
+
       <Text style={styles.riddleQuestion}>{riddle.question}</Text>
       <View style={styles.hexGrid}>
         {riddle.options.map((opt) => (
@@ -219,14 +181,14 @@ const RiddleBlock = ({
             revealed={picked != null}
             percent={opt.percent}
             correct={opt.label === riddle.correct}
-            onPress={() => setPicked(opt.label)}
+            onPress={() => onPick(opt.label)}
           />
         ))}
       </View>
       {picked != null && (
-        <Text style={styles.riddleResult}>
+        <Text style={[styles.riddleResult, picked !== riddle.correct && styles.riddleResultWrong]}>
           {picked === riddle.correct
-            ? `Верно! Большинство коллег выбрали ${riddle.correct}.`
+            ? `Верно! Вам начислен +1 💎. Большинство коллег выбрали ${riddle.correct}.`
             : `Правильный ответ — ${riddle.correct}. Вы выбрали ${picked}.`}
         </Text>
       )}
@@ -234,34 +196,222 @@ const RiddleBlock = ({
   );
 };
 
+/* ---------------- AI review (harsh critic) ---------------- */
+const AiReviewBlock = ({ review, onSpent }: { review: string; onSpent: () => void }) => {
+  const [revealed, setRevealed] = useState(false);
+  const [liked, setLiked] = useState(false);
+
+  const runReview = () => {
+    const ok = (globalThis as any).spendDiamonds?.(AI_REVIEW_COST);
+    if (!ok) {
+      Alert.alert('Недостаточно 💎', `Для AI-разбора нужно ${AI_REVIEW_COST} 💎. Пополните баланс в разделе «Премиум».`);
+      return;
+    }
+    (globalThis as any).forceDiamondUpdate?.();
+    onSpent();
+    setRevealed(true);
+  };
+
+  const toggleLike = () => {
+    if (!liked) {
+      setLiked(true);
+      registerAiLike();
+    }
+  };
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionTitleRow}>
+        <Ionicons name="skull-outline" size={20} color="#ff6b6b" />
+        <Text style={styles.sectionTitle}>AI-разбор работы</Text>
+        <View style={styles.aiTag}>
+          <Text style={styles.aiTagText}>СУДЬЯ</Text>
+        </View>
+      </View>
+
+      {!revealed ? (
+        <>
+          <Text style={styles.aiHint}>
+            Беспощадный ИИ-критик с профессиональным юмором разберёт работу по косточкам. Доступно автору и читателям.
+          </Text>
+          <TouchableOpacity activeOpacity={0.85} style={styles.aiRunButton} onPress={runReview}>
+            <Ionicons name="flash" size={18} color="#0b0e14" />
+            <Text style={styles.aiRunText}>Запустить AI-разбор · {AI_REVIEW_COST} 💎</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <>
+          <View style={styles.aiReviewBubble}>
+            <Text style={styles.aiReviewText}>{review}</Text>
+          </View>
+          <TouchableOpacity style={styles.aiLikeRow} activeOpacity={0.7} onPress={toggleLike}>
+            <Ionicons name={liked ? 'thumbs-up' : 'thumbs-up-outline'} size={18} color="#f2ca50" />
+            <Text style={styles.aiLikeText}>{liked ? 'Полезный разбор' : 'Отметить разбор полезным'}</Text>
+          </TouchableOpacity>
+        </>
+      )}
+    </View>
+  );
+};
+
+/* ---------------- Comments ---------------- */
+const CommentsSection = ({ comments }: { comments: CaseComment[] }) => (
+  <View style={styles.section}>
+    <View style={styles.sectionTitleRow}>
+      <Ionicons name="chatbubble-ellipses-outline" size={20} color="#4fc3f7" />
+      <Text style={styles.sectionTitle}>Обсуждение · {comments.length}</Text>
+    </View>
+    {comments.map((c) => (
+      <View key={c.id} style={styles.commentRow}>
+        <AuthorAvatar source={c.avatar ? { uri: c.avatar } : null} size={30} />
+        <View style={styles.commentBubble}>
+          <Text style={styles.commentAuthor}>{c.author}</Text>
+          <Text style={styles.commentText}>{c.text}</Text>
+        </View>
+      </View>
+    ))}
+    <TouchableOpacity style={styles.addCommentRow} activeOpacity={0.7}>
+      <Ionicons name="add-circle-outline" size={18} color="#f2ca50" />
+      <Text style={styles.addCommentText}>Написать комментарий…</Text>
+    </TouchableOpacity>
+  </View>
+);
+
+/* ---------------- Fullscreen viewer ---------------- */
+const FullscreenViewer = ({
+  media,
+  initialIndex,
+  onClose,
+}: {
+  media: CaseMedia[] | null;
+  initialIndex: number;
+  onClose: () => void;
+}) => {
+  const [index, setIndex] = useState(initialIndex);
+  useEffect(() => setIndex(initialIndex), [initialIndex, media]);
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems.length > 0) setIndex(viewableItems[0].index ?? 0);
+  }).current;
+
+  return (
+    <Modal visible={!!media} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.viewerBackdrop}>
+        <TouchableOpacity style={styles.viewerClose} onPress={onClose} activeOpacity={0.8}>
+          <Ionicons name="close" size={30} color="#fff" />
+        </TouchableOpacity>
+        {media && (
+          <>
+            <View style={styles.viewerCounter}>
+              <Text style={styles.viewerCounterText}>{index + 1} из {media.length}</Text>
+            </View>
+            <FlatList
+              data={media}
+              keyExtractor={(_, i) => String(i)}
+              horizontal
+              pagingEnabled
+              initialScrollIndex={initialIndex}
+              getItemLayout={(_, i) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * i, index: i })}
+              showsHorizontalScrollIndicator={false}
+              onViewableItemsChanged={onViewableItemsChanged}
+              renderItem={({ item }) => (
+                <View style={styles.viewerSlide}>
+                  <Image source={{ uri: item.uri }} style={styles.viewerImage} resizeMode="contain" />
+                  <View style={styles.viewerStage}>
+                    <Text style={styles.stageBadgeText}>{item.stage}</Text>
+                  </View>
+                </View>
+              )}
+            />
+          </>
+        )}
+      </View>
+    </Modal>
+  );
+};
+
+/* ---------------- Branded DiLabs header ---------------- */
+const DiLabsHeader = ({ diamonds, topInset }: { diamonds: number; topInset: number }) => (
+  <View style={[styles.headerContainer, { paddingTop: topInset + 6 }]}>
+    <View style={styles.headerSide}>
+      <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7} onPress={() => router.back()}>
+        <Ionicons name="arrow-back" size={26} color="#f2ca50" />
+      </TouchableOpacity>
+    </View>
+    <View style={styles.headerCenter}>
+      <Image source={require('@/assets/images/header-logo.png')} style={styles.headerLogo} resizeMode="contain" />
+    </View>
+    <View style={[styles.headerSide, styles.headerRight]}>
+      <View style={styles.diamondWrap}>
+        <Text style={styles.diamondCount}>{diamonds}</Text>
+        <Text style={{ fontSize: 16, marginTop: -2 }}>💎</Text>
+      </View>
+      <TouchableOpacity style={styles.bellButton} activeOpacity={0.7} onPress={() => router.push('/(tabs)/search' as any)}>
+        <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
+      </TouchableOpacity>
+    </View>
+  </View>
+);
+
 /* ---------------- Screen ---------------- */
 export default function CaseDetailsScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const item = useMemo(() => getCaseById(id), [id]);
+  const [identity, setIdentity] = useState<Identity>(() => (globalThis as any).getCaseClubIdentity?.());
+  const [viewer, setViewer] = useState<{ media: CaseMedia[]; index: number } | null>(null);
+  const [diamonds, setDiamonds] = useState<number>(() => (globalThis as any).getDiamondBalance?.() ?? 0);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [overlay, setOverlay] = useState<DemoOverlayData>(null);
 
-  const [aesthetics, setAesthetics] = useState<number | null>(null);
-  const [occlusion, setOcclusion] = useState<number | null>(null);
-  const [anatomy, setAnatomy] = useState<number | null>(null);
+  const refreshDiamonds = () => setDiamonds((globalThis as any).getDiamondBalance?.() ?? 0);
+
+  useEffect(() => {
+    setIdentity((globalThis as any).getCaseClubIdentity?.());
+    refreshDiamonds();
+  }, []);
 
   if (!item) {
     return (
-      <ImageBackground
-        source={require('@/assets/images/background.png')}
-        style={{ flex: 1 }}
-        resizeMode="cover"
-      >
-        <View style={[styles.container, { paddingTop: insets.top }]}>
-          <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={28} color="#f2ca50" />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Кейс не найден</Text>
-          </View>
+      <ImageBackground source={require('@/assets/images/background.png')} style={{ flex: 1 }} resizeMode="cover">
+        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <DiLabsHeader diamonds={diamonds} topInset={insets.top} />
+        <View style={styles.notFound}>
+          <Text style={styles.notFoundText}>Кейс не найден</Text>
         </View>
       </ImageBackground>
     );
   }
+
+  const isOwn = isOwnCase(item);
+  const isAnon = !!item.anonymous;
+  const isTech = item.role === 'Техник';
+  const displayName = isAnon ? 'Анонимный коллега' : isOwn && identity?.name ? identity.name : item.author;
+  const avatarSource: ImageSourcePropType | null = isAnon
+    ? null
+    : isOwn && identity?.avatarSource
+      ? identity.avatarSource
+      : { uri: item.avatar };
+
+  /* ---- Custom menu actions (без системных Alert) ---- */
+  const handleEditText = () => {
+    setMenuVisible(false);
+    setOverlay({ title: 'Редактирование текста', message: 'Открыт редактор описания (демо).', icon: 'create-outline' });
+  };
+  const handleDeletePhoto = () => {
+    setMenuVisible(false);
+    setOverlay({ title: 'Удаление фото', message: 'Выберите фото для удаления (демо).', icon: 'image-outline' });
+  };
+  const handleDeletePost = () => {
+    setMenuVisible(false);
+    setOverlay({
+      title: 'Удалить пост?',
+      message: 'Это действие нельзя отменить.',
+      icon: 'trash-outline',
+      danger: true,
+      confirmText: 'Удалить',
+      onConfirm: () => { setOverlay(null); router.back(); },
+    });
+  };
 
   return (
     <ImageBackground
@@ -270,116 +420,107 @@ export default function CaseDetailsScreen() {
       resizeMode="cover"
     >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={28} color="#f2ca50" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle} numberOfLines={1}>Детали кейса</Text>
+      <DiLabsHeader diamonds={diamonds} topInset={insets.top} />
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* Author */}
+        <View style={styles.authorBlock}>
+          <AuthorAvatar source={avatarSource} size={62} />
+          <View style={styles.authorInfo}>
+            <Text style={styles.authorName}>{displayName}</Text>
+            <View style={[styles.roleBadge, isTech && styles.roleBadgeTech]}>
+              <Text style={[styles.roleBadgeText, isTech && styles.roleBadgeTextTech]}>{roleLabel(item.role)}</Text>
+            </View>
+          </View>
+          {isOwn && (
+            <TouchableOpacity style={styles.manageButton} activeOpacity={0.7} onPress={() => setMenuVisible(true)}>
+              <Ionicons name="ellipsis-vertical" size={22} color="#f2ca50" />
+            </TouchableOpacity>
+          )}
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          {/* Author */}
-          <View style={styles.authorBlock}>
-            <Image source={{ uri: item.avatar }} style={styles.avatar} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.authorName}>{item.author}</Text>
-              <View style={[styles.roleBadge, item.role === 'Техник' && styles.roleBadgeTech]}>
-                <Text style={[styles.roleBadgeText, item.role === 'Техник' && styles.roleBadgeTextTech]}>
-                  {item.role}
-                </Text>
-              </View>
+        {/* Media */}
+        <MediaCarousel media={item.media} onPressPhoto={(i) => setViewer({ media: item.media, index: i })} />
+
+        {/* Tags */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsRow}>
+          {item.tags.map((tag) => (
+            <View key={tag} style={styles.tagChip}>
+              <Text style={styles.tagText}>{tag}</Text>
             </View>
-          </View>
-
-          {/* Media */}
-          <MediaCarousel media={item.media} />
-
-          {/* Tags */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsRow}>
-            {item.tags.map((tag) => (
-              <View key={tag} style={styles.tagChip}>
-                <Text style={styles.tagText}>{tag}</Text>
-              </View>
-            ))}
-          </ScrollView>
-
-          {/* Full description */}
-          <View style={styles.section}>
-            <View style={styles.sectionTitleRow}>
-              <Ionicons name="document-text-outline" size={20} color="#f2ca50" />
-              <Text style={styles.sectionTitle}>Клиническая ситуация</Text>
-            </View>
-            <Text style={styles.fullDescription}>{item.fullDescription}</Text>
-          </View>
-
-          {/* Spectral analysis */}
-          <View style={styles.section}>
-            <SpectralBlock data={item.spectral} />
-          </View>
-
-          {/* Expert voting */}
-          <View style={styles.section}>
-            <View style={styles.sectionTitleRow}>
-              <Ionicons name="ribbon-outline" size={20} color="#f2ca50" />
-              <Text style={styles.sectionTitle}>Экспертное голосование</Text>
-            </View>
-            <CrystalRow label="Эстетика" base={item.votes.aesthetics} vote={aesthetics} onVote={setAesthetics} />
-            <CrystalRow label="Функция / Окклюзия" base={item.votes.occlusion} vote={occlusion} onVote={setOcclusion} />
-            <CrystalRow label="Анатомия / Морфология" base={item.votes.anatomy} vote={anatomy} onVote={setAnatomy} />
-          </View>
-
-          {/* Riddle */}
-          {item.riddle && <RiddleBlock riddle={item.riddle} />}
-
-          <View style={{ height: 40 }} />
+          ))}
         </ScrollView>
-      </View>
+
+        {/* Описание клинической ситуации — сразу после хэштегов */}
+        <View style={styles.section}>
+          <View style={styles.sectionTitleRow}>
+            <Ionicons name="document-text-outline" size={20} color="#f2ca50" />
+            <Text style={styles.sectionTitle}>Клиническая ситуация</Text>
+          </View>
+          <Text style={styles.fullDescription}>{item.fullDescription}</Text>
+        </View>
+
+        {/* AI-разбор — под описанием */}
+        <AiReviewBlock review={item.aiReview} onSpent={refreshDiamonds} />
+
+        {/* Riddle */}
+        {item.riddle && <RiddleBlock riddle={item.riddle} onReward={refreshDiamonds} />}
+
+        {/* Comments at the very bottom */}
+        <CommentsSection comments={item.commentsList} />
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+
+      <FullscreenViewer
+        media={viewer?.media ?? null}
+        initialIndex={viewer?.index ?? 0}
+        onClose={() => setViewer(null)}
+      />
+
+      <PostActionsSheet
+        visible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+        onEditText={handleEditText}
+        onDeletePhoto={handleDeletePhoto}
+        onDeletePost={handleDeletePost}
+      />
+      <DemoOverlay data={overlay} onClose={() => setOverlay(null)} />
     </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'transparent' },
-  header: {
+  /* Branded header */
+  headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingHorizontal: 12,
+    paddingBottom: 10,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(242, 202, 80, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ffffff',
-    letterSpacing: 0.5,
-  },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 60 },
+  headerSide: { width: 96, flexDirection: 'row', alignItems: 'center' },
+  headerRight: { justifyContent: 'flex-end', gap: 10 },
+  headerCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  headerIconBtn: { padding: 4 },
+  headerLogo: { width: 150, height: 48 },
+  diamondWrap: { alignItems: 'center', justifyContent: 'center' },
+  diamondCount: { color: '#4fc3f7', fontSize: 9, fontWeight: '700', marginBottom: -2 },
+  bellButton: { padding: 2 },
 
-  authorBlock: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
+  notFound: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  notFoundText: { fontSize: 18, fontWeight: '700', color: '#ffffff' },
+
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 60, paddingTop: 4 },
+
+  authorBlock: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  authorInfo: { flex: 1, marginLeft: 14 },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    marginRight: 12,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: 'rgba(242, 202, 80, 0.6)',
     backgroundColor: '#1a2030',
   },
-  authorName: { fontSize: 16, fontWeight: '600', color: '#ffffff', marginBottom: 4 },
+  avatarSilhouette: { alignItems: 'center', justifyContent: 'center' },
+  authorName: { fontSize: 17, fontWeight: '700', color: '#ffffff', marginBottom: 6 },
   roleBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 12,
@@ -392,6 +533,7 @@ const styles = StyleSheet.create({
   roleBadgeTech: { borderColor: 'rgba(79, 195, 247, 0.5)', backgroundColor: 'rgba(79, 195, 247, 0.1)' },
   roleBadgeText: { fontSize: 12, fontWeight: '700', color: '#f2ca50', letterSpacing: 0.5 },
   roleBadgeTextTech: { color: '#4fc3f7' },
+  manageButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
 
   mediaWrap: { borderRadius: 16, overflow: 'hidden', marginBottom: 14 },
   mediaImage: { width: MEDIA_WIDTH, height: 240, borderRadius: 16, backgroundColor: '#10141f' },
@@ -407,6 +549,21 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.18)',
   },
   stageBadgeText: { fontSize: 11, fontWeight: '700', color: '#ffffff', letterSpacing: 0.5, textTransform: 'uppercase' },
+  counterBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(11, 14, 20, 0.8)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+  },
+  counterText: { fontSize: 11, fontWeight: '700', color: '#ffffff', letterSpacing: 0.3 },
   dotsRow: { position: 'absolute', bottom: 10, alignSelf: 'center', flexDirection: 'row', gap: 6 },
   dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: 'rgba(255, 255, 255, 0.4)' },
   dotActive: { backgroundColor: '#f2ca50', width: 18 },
@@ -435,64 +592,111 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontWeight: '700', color: '#ffffff', letterSpacing: 0.3 },
   fullDescription: { fontSize: 14, lineHeight: 22, color: 'rgba(255, 255, 255, 0.82)' },
 
-  /* Spectral */
-  spectralWrap: {},
-  spectralHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
-  spectralTitle: { flex: 1, fontSize: 15, fontWeight: '700', color: '#4fc3f7' },
+  /* AI review */
   aiTag: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
-    backgroundColor: 'rgba(79, 195, 247, 0.18)',
+    backgroundColor: 'rgba(255, 107, 107, 0.18)',
     borderWidth: 1,
-    borderColor: 'rgba(79, 195, 247, 0.5)',
+    borderColor: 'rgba(255, 107, 107, 0.5)',
   },
-  aiTagText: { fontSize: 10, fontWeight: '900', color: '#4fc3f7', letterSpacing: 1 },
-  spectralRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
-  spectralBlock: {
-    flex: 1,
+  aiTagText: { fontSize: 10, fontWeight: '900', color: '#ff6b6b', letterSpacing: 1 },
+  aiHint: { fontSize: 13, lineHeight: 19, color: 'rgba(255,255,255,0.65)', marginBottom: 14 },
+  aiRunButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(10, 15, 26, 0.6)',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#f2ca50',
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: 13,
+  },
+  aiRunText: { fontSize: 15, fontWeight: '800', color: '#0b0e14', letterSpacing: 0.3 },
+  aiReviewBubble: {
+    backgroundColor: 'rgba(255, 107, 107, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 107, 107, 0.3)',
+    borderRadius: 12,
+    padding: 14,
   },
-  spectralZone: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: 10, textTransform: 'uppercase' },
-  spectralBarTrack: {
-    width: 16,
-    height: 90,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-    marginBottom: 10,
-  },
-  spectralBarFill: { width: '100%', borderRadius: 8 },
-  spectralSwatch: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-    marginBottom: 6,
-  },
-  spectralShade: { fontSize: 14, fontWeight: '800', color: '#f2ca50' },
-
-  /* Crystals */
-  crystalRow: { marginBottom: 18 },
-  crystalLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  crystalLabel: { fontSize: 14, fontWeight: '600', color: 'rgba(255,255,255,0.9)' },
-  crystalAvg: { fontSize: 14, fontWeight: '800', color: '#4fc3f7' },
-  crystalsLine: { flexDirection: 'row', gap: 8 },
-  crystalBtn: { padding: 2 },
-  crystalVoted: { fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 6 },
+  aiReviewText: { fontSize: 14, lineHeight: 22, color: 'rgba(255,255,255,0.9)', fontStyle: 'italic' },
+  aiLikeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
+  aiLikeText: { fontSize: 13, fontWeight: '600', color: '#f2ca50' },
 
   /* Riddle */
-  riddleQuestion: { fontSize: 14, lineHeight: 20, color: 'rgba(255,255,255,0.85)', marginBottom: 16 },
-  hexGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 24, justifyContent: 'space-between' },
-  hexContent: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 2 },
-  hexLabel: { fontSize: 18, fontWeight: '800', letterSpacing: 0.5 },
-  hexPercent: { fontSize: 13, fontWeight: '700', color: '#ffffff' },
+  rewardLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: 'rgba(79, 195, 247, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(79, 195, 247, 0.4)',
+    marginBottom: 14,
+  },
+  rewardLineText: { fontSize: 12, fontWeight: '700', color: '#4fc3f7' },
+  riddleQuestion: { fontSize: 14, lineHeight: 20, color: 'rgba(255,255,255,0.85)', marginBottom: 14 },
+  hexGrid: { flexDirection: 'row', justifyContent: 'space-between' },
+  hexContent: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 1 },
+  hexLabel: { fontSize: 14, fontWeight: '800', letterSpacing: 0.3 },
+  hexPercent: { fontSize: 10, fontWeight: '700', color: '#ffffff' },
   riddleResult: { fontSize: 13, fontWeight: '600', color: '#7CFC8A', marginTop: 16, textAlign: 'center' },
+  riddleResultWrong: { color: '#ff9e9e' },
+
+  /* Comments */
+  commentRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 12 },
+  commentBubble: {
+    flex: 1,
+    backgroundColor: 'rgba(10, 15, 26, 0.6)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  commentAuthor: { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.9)', marginBottom: 2 },
+  commentText: { fontSize: 13, lineHeight: 18, color: 'rgba(255,255,255,0.7)' },
+  addCommentRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 },
+  addCommentText: { fontSize: 13, color: 'rgba(242, 202, 80, 0.8)', fontWeight: '500' },
+
+  /* Fullscreen viewer */
+  viewerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center' },
+  viewerClose: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewerCounter: {
+    position: 'absolute',
+    top: 58,
+    alignSelf: 'center',
+    zIndex: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  viewerCounterText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  viewerSlide: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT, alignItems: 'center', justifyContent: 'center' },
+  viewerImage: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.7 },
+  viewerStage: {
+    position: 'absolute',
+    bottom: 90,
+    alignSelf: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(11, 14, 20, 0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+  },
 });

@@ -2,17 +2,17 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  ImageBackground,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Dimensions,
+    ImageBackground,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Polygon, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
@@ -79,6 +79,7 @@ export default function CreateCaseScreen() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isRiddle, setIsRiddle] = useState(false);
   const [riddleAnswer, setRiddleAnswer] = useState<string | null>(null);
+  const [isAnonymous, setIsAnonymous] = useState(false);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>
@@ -199,6 +200,32 @@ export default function CreateCaseScreen() {
                     );
                   })}
                 </View>
+              </View>
+            )}
+          </View>
+
+          {/* Anonymous (blind) publication switch */}
+          <View style={styles.section}>
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.switchTitle}>Анонимная публикация (Слепая)</Text>
+                <Text style={styles.switchHint}>
+                  Вместо имени — «Анонимный коллега», аватар скрыт силуэтом
+                </Text>
+              </View>
+              <Switch
+                value={isAnonymous}
+                onValueChange={setIsAnonymous}
+                trackColor={{ false: 'rgba(255,255,255,0.15)', true: 'rgba(79,195,247,0.5)' }}
+                thumbColor={isAnonymous ? '#4fc3f7' : '#f2ca50'}
+              />
+            </View>
+            {isAnonymous && (
+              <View style={styles.anonPreview}>
+                <View style={styles.anonAvatar}>
+                  <Ionicons name="person" size={20} color="rgba(242,202,80,0.7)" />
+                </View>
+                <Text style={styles.anonName}>Анонимный коллега</Text>
               </View>
             )}
           </View>
@@ -325,6 +352,27 @@ const styles = StyleSheet.create({
   shadeChipActive: { backgroundColor: 'rgba(79, 195, 247, 0.18)', borderColor: '#4fc3f7' },
   shadeChipText: { fontSize: 14, fontWeight: '800', color: '#f2ca50' },
   shadeChipTextActive: { color: '#4fc3f7' },
+
+  anonPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  anonAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1a2030',
+    borderWidth: 1.5,
+    borderColor: 'rgba(242, 202, 80, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  anonName: { fontSize: 14, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
 
   publishButton: {
     width: CONTENT_WIDTH,

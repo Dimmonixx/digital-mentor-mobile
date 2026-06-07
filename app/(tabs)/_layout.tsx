@@ -537,6 +537,22 @@ export default function TabLayout() {
 
           />
 
+          <Tabs.Screen
+
+            name="case-club"
+
+            options={{
+
+              headerShown: false,
+
+              tabBarButton: () => null,
+
+              tabBarItemStyle: { display: 'none' },
+
+            }}
+
+          />
+
         </Tabs>
 
       </View>
