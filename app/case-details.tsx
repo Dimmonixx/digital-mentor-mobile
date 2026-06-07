@@ -1,30 +1,35 @@
-import { DemoOverlay, DemoOverlayData, PostActionsSheet } from '@/components/case-post-actions';
+import { PostActionsSheet } from '@/components/case-post-actions';
+import GlobalHeader from '@/components/global-header';
 import {
-    CaseComment,
-    CaseMedia,
-    getCaseById,
-    isOwnCase,
-    registerAiLike,
-    registerCorrectRiddle,
-    roleLabel,
+  CASES,
+  CaseComment,
+  CaseMedia,
+  ClinicalCase,
+  deleteCaseById,
+  getCaseById,
+  isOwnCase,
+  registerAiLike,
+  registerCorrectRiddle,
+  roleLabel
 } from '@/data/cases';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Alert,
-    Dimensions,
-    FlatList,
-    Image,
-    ImageBackground,
-    ImageSourcePropType,
-    Modal,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Dimensions,
+  FlatList,
+  Image,
+  ImageBackground,
+  ImageSourcePropType,
+  Modal,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Polygon, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
@@ -38,8 +43,8 @@ const AI_REVIEW_COST = 3;
 // Компактная сетка гексагонов (4 в ряд)
 const HEX_GAP = 8;
 const HEX_COLS = 4;
-const HEX_W = Math.floor((CONTENT_WIDTH - 32 - HEX_GAP * (HEX_COLS - 1)) / HEX_COLS);
-const HEX_H = 60;
+const HEX_W = Math.floor((CONTENT_WIDTH - 32 - HEX_GAP * (HEX_COLS - 1)) / HEX_COLS * 0.8);
+const HEX_H = 48;
 
 type Identity = { name: string; avatarSource: ImageSourcePropType | null } | undefined;
 
@@ -222,21 +227,23 @@ const AiReviewBlock = ({ review, onSpent }: { review: string; onSpent: () => voi
   return (
     <View style={styles.section}>
       <View style={styles.sectionTitleRow}>
-        <Ionicons name="skull-outline" size={20} color="#ff6b6b" />
+        <Ionicons name="skull-outline" size={28} color="#ff6b6b" />
         <Text style={styles.sectionTitle}>AI-разбор работы</Text>
+      </View>
+      <View style={styles.aiBadgeRow}>
         <View style={styles.aiTag}>
-          <Text style={styles.aiTagText}>СУДЬЯ</Text>
+          <Text style={styles.aiTagText}>ИНКВИЗИТОР</Text>
         </View>
       </View>
 
       {!revealed ? (
         <>
           <Text style={styles.aiHint}>
-            Беспощадный ИИ-критик с профессиональным юмором разберёт работу по косточкам. Доступно автору и читателям.
+            Беспощадный цифровой Инквизитор найдет нависающие края, оценит уступ и устроит тотальную профессиональную прожарку керамики без цензуры.
           </Text>
           <TouchableOpacity activeOpacity={0.85} style={styles.aiRunButton} onPress={runReview}>
             <Ionicons name="flash" size={18} color="#0b0e14" />
-            <Text style={styles.aiRunText}>Запустить AI-разбор · {AI_REVIEW_COST} 💎</Text>
+            <Text style={styles.aiRunText}>Включить прожарку ИИ · {AI_REVIEW_COST} 💎</Text>
           </TouchableOpacity>
         </>
       ) : (
@@ -329,29 +336,6 @@ const FullscreenViewer = ({
   );
 };
 
-/* ---------------- Branded DiLabs header ---------------- */
-const DiLabsHeader = ({ diamonds, topInset }: { diamonds: number; topInset: number }) => (
-  <View style={[styles.headerContainer, { paddingTop: topInset + 6 }]}>
-    <View style={styles.headerSide}>
-      <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7} onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={26} color="#f2ca50" />
-      </TouchableOpacity>
-    </View>
-    <View style={styles.headerCenter}>
-      <Image source={require('@/assets/images/header-logo.png')} style={styles.headerLogo} resizeMode="contain" />
-    </View>
-    <View style={[styles.headerSide, styles.headerRight]}>
-      <View style={styles.diamondWrap}>
-        <Text style={styles.diamondCount}>{diamonds}</Text>
-        <Text style={{ fontSize: 16, marginTop: -2 }}>💎</Text>
-      </View>
-      <TouchableOpacity style={styles.bellButton} activeOpacity={0.7} onPress={() => router.push('/(tabs)/search' as any)}>
-        <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
-      </TouchableOpacity>
-    </View>
-  </View>
-);
-
 /* ---------------- Screen ---------------- */
 export default function CaseDetailsScreen() {
   const insets = useSafeAreaInsets();
@@ -361,20 +345,26 @@ export default function CaseDetailsScreen() {
   const [viewer, setViewer] = useState<{ media: CaseMedia[]; index: number } | null>(null);
   const [diamonds, setDiamonds] = useState<number>(() => (globalThis as any).getDiamondBalance?.() ?? 0);
   const [menuVisible, setMenuVisible] = useState(false);
-  const [overlay, setOverlay] = useState<DemoOverlayData>(null);
+  const [localCase, setLocalCase] = useState<ClinicalCase | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedDescription, setEditedDescription] = useState('');
 
   const refreshDiamonds = () => setDiamonds((globalThis as any).getDiamondBalance?.() ?? 0);
 
   useEffect(() => {
     setIdentity((globalThis as any).getCaseClubIdentity?.());
     refreshDiamonds();
-  }, []);
+    if (item) {
+      setLocalCase({ ...item });
+      setEditedDescription(item.fullDescription);
+    }
+  }, [item]);
 
   if (!item) {
     return (
       <ImageBackground source={require('@/assets/images/background.png')} style={{ flex: 1 }} resizeMode="cover">
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-        <DiLabsHeader diamonds={diamonds} topInset={insets.top} />
+        <GlobalHeader diamonds={diamonds} newOrdersCount={3} />
         <View style={styles.notFound}>
           <Text style={styles.notFoundText}>Кейс не найден</Text>
         </View>
@@ -392,25 +382,46 @@ export default function CaseDetailsScreen() {
       ? identity.avatarSource
       : { uri: item.avatar };
 
-  /* ---- Custom menu actions (без системных Alert) ---- */
+  /* ---- Real menu actions ---- */
   const handleEditText = () => {
     setMenuVisible(false);
-    setOverlay({ title: 'Редактирование текста', message: 'Открыт редактор описания (демо).', icon: 'create-outline' });
+    setIsEditing(true);
   };
+
+  const handleSaveEdit = () => {
+    if (localCase) {
+      setLocalCase({ ...localCase, fullDescription: editedDescription });
+      // Update the original CASES array
+      const index = CASES.findIndex(c => c.id === localCase.id);
+      if (index !== -1) {
+        CASES[index].fullDescription = editedDescription;
+      }
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditedDescription(localCase?.fullDescription || '');
+  };
+
   const handleDeletePhoto = () => {
     setMenuVisible(false);
-    setOverlay({ title: 'Удаление фото', message: 'Выберите фото для удаления (демо).', icon: 'image-outline' });
+    if (localCase && localCase.media.length > 0) {
+      const updatedMedia = localCase.media.slice(1);
+      setLocalCase({ ...localCase, media: updatedMedia });
+      // Update the original CASES array
+      const index = CASES.findIndex(c => c.id === localCase.id);
+      if (index !== -1) {
+        CASES[index].media = updatedMedia;
+      }
+    }
   };
+
   const handleDeletePost = () => {
     setMenuVisible(false);
-    setOverlay({
-      title: 'Удалить пост?',
-      message: 'Это действие нельзя отменить.',
-      icon: 'trash-outline',
-      danger: true,
-      confirmText: 'Удалить',
-      onConfirm: () => { setOverlay(null); router.back(); },
-    });
+    deleteCaseById(item.id);
+    router.back();
   };
 
   return (
@@ -420,17 +431,24 @@ export default function CaseDetailsScreen() {
       resizeMode="cover"
     >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <DiLabsHeader diamonds={diamonds} topInset={insets.top} />
+      <GlobalHeader diamonds={diamonds} newOrdersCount={3} />
+
+      <View style={styles.navBar}>
+        <TouchableOpacity style={styles.navBackButton} activeOpacity={0.7} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={24} color="#f2ca50" />
+        </TouchableOpacity>
+        <Text style={styles.navTitle}>Просмотр кейса</Text>
+      </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Author */}
         <View style={styles.authorBlock}>
           <AuthorAvatar source={avatarSource} size={62} />
           <View style={styles.authorInfo}>
-            <Text style={styles.authorName}>{displayName}</Text>
             <View style={[styles.roleBadge, isTech && styles.roleBadgeTech]}>
               <Text style={[styles.roleBadgeText, isTech && styles.roleBadgeTextTech]}>{roleLabel(item.role)}</Text>
             </View>
+            <Text style={styles.authorName}>{displayName}</Text>
           </View>
           {isOwn && (
             <TouchableOpacity style={styles.manageButton} activeOpacity={0.7} onPress={() => setMenuVisible(true)}>
@@ -440,11 +458,11 @@ export default function CaseDetailsScreen() {
         </View>
 
         {/* Media */}
-        <MediaCarousel media={item.media} onPressPhoto={(i) => setViewer({ media: item.media, index: i })} />
+        <MediaCarousel media={localCase?.media || item.media} onPressPhoto={(i) => setViewer({ media: localCase?.media || item.media, index: i })} />
 
         {/* Tags */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsRow}>
-          {item.tags.map((tag) => (
+          {(localCase || item).tags.map((tag) => (
             <View key={tag} style={styles.tagChip}>
               <Text style={styles.tagText}>{tag}</Text>
             </View>
@@ -457,7 +475,28 @@ export default function CaseDetailsScreen() {
             <Ionicons name="document-text-outline" size={20} color="#f2ca50" />
             <Text style={styles.sectionTitle}>Клиническая ситуация</Text>
           </View>
-          <Text style={styles.fullDescription}>{item.fullDescription}</Text>
+          {isEditing ? (
+            <View style={styles.editContainer}>
+              <TextInput
+                style={styles.editInput}
+                value={editedDescription}
+                onChangeText={setEditedDescription}
+                multiline
+                placeholder="Введите описание кейса..."
+                placeholderTextColor="rgba(255,255,255,0.5)"
+              />
+              <View style={styles.editButtons}>
+                <TouchableOpacity style={styles.editButton} activeOpacity={0.7} onPress={handleCancelEdit}>
+                  <Text style={styles.editButtonText}>Отмена</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.editButton, styles.editButtonSave]} activeOpacity={0.7} onPress={handleSaveEdit}>
+                  <Text style={styles.editButtonTextSave}>Сохранить</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <Text style={styles.fullDescription}>{localCase?.fullDescription || item.fullDescription}</Text>
+          )}
         </View>
 
         {/* AI-разбор — под описанием */}
@@ -465,9 +504,6 @@ export default function CaseDetailsScreen() {
 
         {/* Riddle */}
         {item.riddle && <RiddleBlock riddle={item.riddle} onReward={refreshDiamonds} />}
-
-        {/* Comments at the very bottom */}
-        <CommentsSection comments={item.commentsList} />
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -485,32 +521,33 @@ export default function CaseDetailsScreen() {
         onDeletePhoto={handleDeletePhoto}
         onDeletePost={handleDeletePost}
       />
-      <DemoOverlay data={overlay} onClose={() => setOverlay(null)} />
     </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  /* Branded header */
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingBottom: 10,
-  },
-  headerSide: { width: 96, flexDirection: 'row', alignItems: 'center' },
-  headerRight: { justifyContent: 'flex-end', gap: 10 },
-  headerCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  headerIconBtn: { padding: 4 },
-  headerLogo: { width: 150, height: 48 },
-  diamondWrap: { alignItems: 'center', justifyContent: 'center' },
-  diamondCount: { color: '#4fc3f7', fontSize: 9, fontWeight: '700', marginBottom: -2 },
-  bellButton: { padding: 2 },
-
   notFound: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   notFoundText: { fontSize: 18, fontWeight: '700', color: '#ffffff' },
 
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 60, paddingTop: 4 },
+  navBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  navBackButton: {
+    position: 'absolute',
+    left: 16,
+    padding: 8,
+  },
+  navTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 60, paddingTop: 12 },
 
   authorBlock: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   authorInfo: { flex: 1, marginLeft: 14 },
@@ -591,17 +628,47 @@ const styles = StyleSheet.create({
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   sectionTitle: { fontSize: 16, fontWeight: '700', color: '#ffffff', letterSpacing: 0.3 },
   fullDescription: { fontSize: 14, lineHeight: 22, color: 'rgba(255, 255, 255, 0.82)' },
+  editContainer: { marginBottom: 12 },
+  editInput: {
+    backgroundColor: 'rgba(11, 14, 20, 0.6)',
+    borderRadius: 12,
+    padding: 14,
+    color: '#ffffff',
+    fontSize: 14,
+    lineHeight: 20,
+    minHeight: 100,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    marginBottom: 12,
+  },
+  editButtons: { flexDirection: 'row', gap: 10 },
+  editButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+  },
+  editButtonSave: {
+    backgroundColor: '#f2ca50',
+    borderColor: '#f2ca50',
+  },
+  editButtonText: { fontSize: 14, fontWeight: '600', color: '#ffffff' },
+  editButtonTextSave: { fontSize: 14, fontWeight: '700', color: '#0b0e14' },
 
   /* AI review */
+  aiBadgeRow: { marginBottom: 12 },
   aiTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255, 107, 107, 0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 107, 107, 0.5)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(20, 10, 10, 0.8)',
+    borderWidth: 2,
+    borderColor: '#8b0000',
   },
-  aiTagText: { fontSize: 10, fontWeight: '900', color: '#ff6b6b', letterSpacing: 1 },
+  aiTagText: { fontSize: 11, fontWeight: '900', color: '#ff4444', letterSpacing: 1 },
   aiHint: { fontSize: 13, lineHeight: 19, color: 'rgba(255,255,255,0.65)', marginBottom: 14 },
   aiRunButton: {
     flexDirection: 'row',
@@ -642,8 +709,8 @@ const styles = StyleSheet.create({
   riddleQuestion: { fontSize: 14, lineHeight: 20, color: 'rgba(255,255,255,0.85)', marginBottom: 14 },
   hexGrid: { flexDirection: 'row', justifyContent: 'space-between' },
   hexContent: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 1 },
-  hexLabel: { fontSize: 14, fontWeight: '800', letterSpacing: 0.3 },
-  hexPercent: { fontSize: 10, fontWeight: '700', color: '#ffffff' },
+  hexLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
+  hexPercent: { fontSize: 9, fontWeight: '700', color: '#ffffff' },
   riddleResult: { fontSize: 13, fontWeight: '600', color: '#7CFC8A', marginTop: 16, textAlign: 'center' },
   riddleResultWrong: { color: '#ff9e9e' },
 
@@ -660,6 +727,37 @@ const styles = StyleSheet.create({
   commentText: { fontSize: 13, lineHeight: 18, color: 'rgba(255,255,255,0.7)' },
   addCommentRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 },
   addCommentText: { fontSize: 13, color: 'rgba(242, 202, 80, 0.8)', fontWeight: '500' },
+
+  /* Bottom Tab Bar */
+  bottomTabBar: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    borderRadius: 25,
+    backgroundColor: 'rgba(15, 20, 35, 0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.3)',
+    height: 60,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    shadowColor: '#f2ca50',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 12,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 60,
+  },
+  tabLabel: {
+    fontSize: 10,
+    marginTop: 2,
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
 
   /* Fullscreen viewer */
   viewerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center' },

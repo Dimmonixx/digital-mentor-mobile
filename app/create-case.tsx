@@ -1,10 +1,13 @@
+import { CASES } from '@/data/cases';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    Alert,
     Dimensions,
+    Image,
     ImageBackground,
+    Modal,
     ScrollView,
     StatusBar,
     StyleSheet,
@@ -12,89 +15,83 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Defs, Polygon, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CONTENT_WIDTH = SCREEN_WIDTH - 40;
-
-const AVAILABLE_TAGS = [
-  '#Виниры',
-  '#Имплантация',
-  '#Цирконий',
-  '#Мост',
-  '#Окклюзия',
-  '#Реставрация',
-  '#ISO_21',
-  '#ISO_14',
-  '#ISO_11',
-];
 
 const MEDIA_SLOTS = ['До', 'В процессе', 'После'];
 
 const VITA_SHADES = ['A1', 'A2', 'A3', 'A3.5', 'B1', 'B2', 'C2', 'D3'];
 
-/* Hexagonal tag chip */
-const HexTag = ({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) => {
-  const W = Math.max(96, label.length * 9 + 44);
-  const H = 44;
-  const stroke = active ? '#4fc3f7' : 'rgba(242, 202, 80, 0.5)';
-  return (
-    <TouchableOpacity activeOpacity={0.85} style={{ width: W, height: H, marginRight: 10 }} onPress={onPress}>
-      <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={StyleSheet.absoluteFill}>
-        <Defs>
-          <SvgLinearGradient id="hexTagBody" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0%" stopColor={active ? '#16314a' : '#1c2536'} />
-            <Stop offset="100%" stopColor="#0a0f1a" />
-          </SvgLinearGradient>
-        </Defs>
-        <Polygon
-          points={`14,3 ${W - 14},3 ${W - 3},${H / 2} ${W - 14},${H - 3} 14,${H - 3} 3,${H / 2}`}
-          fill="url(#hexTagBody)"
-          stroke={stroke}
-          strokeWidth={1.5}
-        />
-      </Svg>
-      <View style={styles.hexTagContent}>
-        {active && <Ionicons name="checkmark" size={14} color="#4fc3f7" />}
-        <Text style={[styles.hexTagText, { color: active ? '#4fc3f7' : '#f2ca50' }]}>{label}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-};
 
 export default function CreateCaseScreen() {
   const insets = useSafeAreaInsets();
   const [description, setDescription] = useState('');
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [media, setMedia] = useState<{ uri: string; stage: string }[]>([]);
   const [isRiddle, setIsRiddle] = useState(false);
   const [riddleAnswer, setRiddleAnswer] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [overlay, setOverlay] = useState<{ title: string; message: string; icon?: string } | null>(null);
 
-  const toggleTag = (tag: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    );
+  const pickImage = async (index: number) => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 1,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      const newMedia = [...media];
+      newMedia[index] = { uri: result.assets[0].uri, stage: MEDIA_SLOTS[index] };
+      setMedia(newMedia);
+    }
   };
 
   const handlePublish = () => {
-    Alert.alert(
-      'Кейс отправлен',
-      'Кейс успешно отправлен на модерацию. Вам начислено +10 💎 за вклад в сообщество!',
-      [{ text: 'Отлично', onPress: () => router.back() }]
-    );
-    (globalThis as any).spendDiamonds?.(-10);
-    (globalThis as any).forceDiamondUpdate?.();
+    if (!description.trim()) {
+      setOverlay({ title: 'Ошибка', message: 'Пожалуйста, добавьте описание кейса', icon: 'alert-circle-outline' });
+      return;
+    }
+
+    const newCase = {
+      id: Date.now().toString(),
+      author: isAnonymous ? 'Анонимный коллега' : 'Кривоносов Д.И.',
+      role: 'Врач' as const,
+      avatar: isAnonymous ? '' : 'https://i.pravatar.cc/150?img=12',
+      tags: [],
+      description: description.slice(0, 100),
+      fullDescription: description,
+      media: media.filter(m => m.uri),
+      commentsList: [],
+      aiReview: 'Кейс опубликован. Ожидайте AI-анализ.',
+      activity: 0,
+      anonymous: isAnonymous,
+      riddle: isRiddle && riddleAnswer ? {
+        question: 'Угадайте оттенок VITA',
+        options: [
+          { label: 'A1', percent: 20 },
+          { label: 'A2', percent: 30 },
+          { label: 'A3', percent: 30 },
+          { label: 'B1', percent: 20 },
+        ],
+        correct: riddleAnswer,
+      } : undefined,
+    };
+
+    CASES.unshift(newCase);
+    setOverlay({
+      title: 'Кейс опубликован',
+      message: 'Кейс успешно добавлен в ленту!',
+      icon: 'checkmark-circle-outline'
+    });
+    setTimeout(() => {
+      setOverlay(null);
+      router.back();
+    }, 1500);
   };
 
   return (
@@ -114,6 +111,36 @@ export default function CreateCaseScreen() {
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          {/* Media upload */}
+          <View style={styles.section}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="images-outline" size={20} color="#f2ca50" />
+              <Text style={styles.sectionTitle}>Фото</Text>
+            </View>
+            <View style={styles.mediaRow}>
+              {MEDIA_SLOTS.map((slot, index) => {
+                const mediaItem = media[index];
+                return (
+                  <TouchableOpacity
+                    key={slot}
+                    activeOpacity={0.8}
+                    style={styles.mediaSlot}
+                    onPress={() => pickImage(index)}
+                  >
+                    {mediaItem?.uri ? (
+                      <Image source={{ uri: mediaItem.uri }} style={styles.mediaSlotImage} />
+                    ) : (
+                      <>
+                        <Ionicons name="camera-outline" size={30} color="#f2ca50" />
+                        <Text style={styles.mediaSlotText}>{slot}</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
           {/* Description */}
           <View style={styles.section}>
             <View style={styles.sectionTitleRow}>
@@ -129,40 +156,6 @@ export default function CreateCaseScreen() {
               value={description}
               onChangeText={setDescription}
             />
-          </View>
-
-          {/* Tags */}
-          <View style={styles.section}>
-            <View style={styles.sectionTitleRow}>
-              <Ionicons name="pricetags-outline" size={20} color="#f2ca50" />
-              <Text style={styles.sectionTitle}>Категории</Text>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsScroll}>
-              {AVAILABLE_TAGS.map((tag) => (
-                <HexTag
-                  key={tag}
-                  label={tag}
-                  active={selectedTags.includes(tag)}
-                  onPress={() => toggleTag(tag)}
-                />
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Media upload */}
-          <View style={styles.section}>
-            <View style={styles.sectionTitleRow}>
-              <Ionicons name="images-outline" size={20} color="#f2ca50" />
-              <Text style={styles.sectionTitle}>Фото</Text>
-            </View>
-            <View style={styles.mediaRow}>
-              {MEDIA_SLOTS.map((slot) => (
-                <TouchableOpacity key={slot} activeOpacity={0.8} style={styles.mediaSlot}>
-                  <Ionicons name="camera-outline" size={30} color="#f2ca50" />
-                  <Text style={styles.mediaSlotText}>{slot}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
           </View>
 
           {/* Riddle switch */}
@@ -232,21 +225,6 @@ export default function CreateCaseScreen() {
 
           {/* Publish button */}
           <TouchableOpacity activeOpacity={0.85} style={styles.publishButton} onPress={handlePublish}>
-            <Svg width={CONTENT_WIDTH} height={68} viewBox={`0 0 ${CONTENT_WIDTH} 68`} style={StyleSheet.absoluteFill}>
-              <Defs>
-                <SvgLinearGradient id="publishBody" x1="0" y1="0" x2="1" y2="1">
-                  <Stop offset="0%" stopColor="#ffe680" />
-                  <Stop offset="50%" stopColor="#f2ca50" />
-                  <Stop offset="100%" stopColor="#c79a2e" />
-                </SvgLinearGradient>
-              </Defs>
-              <Polygon
-                points={`24,6 ${CONTENT_WIDTH - 24},6 ${CONTENT_WIDTH - 48},62 48,62`}
-                fill="url(#publishBody)"
-                stroke="#fff3c4"
-                strokeWidth={1.5}
-              />
-            </Svg>
             <View style={styles.publishContent}>
               <Ionicons name="cloud-upload-outline" size={22} color="#1a1206" />
               <Text style={styles.publishText}>Опубликовать кейс</Text>
@@ -256,6 +234,19 @@ export default function CreateCaseScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       </View>
+
+      {/* Dark overlay for alerts */}
+      {overlay && (
+        <Modal visible={!!overlay} transparent animationType="fade" onRequestClose={() => setOverlay(null)}>
+          <TouchableOpacity style={styles.overlayBackdrop} activeOpacity={1} onPress={() => setOverlay(null)}>
+            <View style={styles.overlayCard}>
+              {overlay.icon && <Ionicons name={overlay.icon as any} size={40} color="#f2ca50" />}
+              <Text style={styles.overlayTitle}>{overlay.title}</Text>
+              <Text style={styles.overlayMessage}>{overlay.message}</Text>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
     </ImageBackground>
   );
 }
@@ -278,7 +269,7 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   headerTitle: { flex: 1, fontSize: 26, fontWeight: '700', color: '#ffffff', letterSpacing: 0.5 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 80 },
 
   section: {
     backgroundColor: 'rgba(20, 26, 40, 0.78)',
@@ -304,16 +295,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 
-  tagsScroll: { paddingVertical: 4, alignItems: 'center' },
-  hexTagContent: {
-    ...StyleSheet.absoluteFillObject,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  hexTagText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.3 },
-
   mediaRow: { flexDirection: 'row', gap: 12 },
   mediaSlot: {
     flex: 1,
@@ -326,6 +307,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    overflow: 'hidden',
+  },
+  mediaSlotImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
   },
   mediaSlotText: { fontSize: 12, fontWeight: '600', color: '#f2ca50', textTransform: 'uppercase' },
 
@@ -376,8 +363,10 @@ const styles = StyleSheet.create({
 
   publishButton: {
     width: CONTENT_WIDTH,
-    height: 68,
+    height: 56,
     marginTop: 8,
+    borderRadius: 28,
+    backgroundColor: '#f2ca50',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#f2ca50',
@@ -388,4 +377,32 @@ const styles = StyleSheet.create({
   },
   publishContent: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   publishText: { fontSize: 17, fontWeight: '900', color: '#1a1206', letterSpacing: 0.5, textTransform: 'uppercase' },
+
+  overlayBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  overlayCard: {
+    backgroundColor: 'rgba(20, 26, 40, 0.95)',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    marginHorizontal: 40,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.3)',
+  },
+  overlayTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  overlayMessage: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'center',
+  },
 });

@@ -1,8 +1,9 @@
 import { DemoOverlay, DemoOverlayData, PostActionsSheet } from '@/components/case-post-actions';
-import { CASES, CaseComment, CaseMedia, ClinicalCase, getAiTeaser, getWorkOfTheWeek, isOwnCase, roleLabel } from '@/data/cases';
+import { CASES, CaseComment, CaseMedia, ClinicalCase, deleteCaseById, getWorkOfTheWeek, isOwnCase, roleLabel } from '@/data/cases';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Dimensions,
     FlatList,
@@ -15,6 +16,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MEDIA_WIDTH = SCREEN_WIDTH - 40 - 24; // screen padding (20*2) + card padding (12*2)
@@ -139,8 +141,37 @@ const CaseCard = ({
   const [showTeaser, setShowTeaser] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
   const [overlay, setOverlay] = useState<DemoOverlayData>(null);
+  const [liked, setLiked] = useState(false);
+  const [disliked, setDisliked] = useState(false);
+  const [likeCount, setLikeCount] = useState(item.activity);
 
   const goDetails = () => router.push({ pathname: '/case-details', params: { id: item.id } } as any);
+
+  const handleLike = () => {
+    if (disliked) {
+      setDisliked(false);
+      setLikeCount(likeCount + 2);
+    } else if (liked) {
+      setLiked(false);
+      setLikeCount(likeCount - 1);
+    } else {
+      setLiked(true);
+      setLikeCount(likeCount + 1);
+    }
+  };
+
+  const handleDislike = () => {
+    if (liked) {
+      setLiked(false);
+      setLikeCount(likeCount - 2);
+    } else if (disliked) {
+      setDisliked(false);
+      setLikeCount(likeCount + 1);
+    } else {
+      setDisliked(true);
+      setLikeCount(likeCount - 1);
+    }
+  };
 
   const handleEditText = () => {
     setMenuVisible(false);
@@ -157,8 +188,11 @@ const CaseCard = ({
       message: 'Это действие нельзя отменить.',
       icon: 'trash-outline',
       danger: true,
-      confirmText: 'Удалить',
-      onConfirm: () => setOverlay(null),
+      confirmText: 'УДАЛИТЬ',
+      onConfirm: () => {
+        deleteCaseById(item.id);
+        setOverlay(null);
+      },
     });
   };
 
@@ -168,12 +202,12 @@ const CaseCard = ({
       <View style={styles.cardHeader}>
         <AuthorAvatar source={avatarSource} />
         <View style={styles.authorInfo}>
-          <Text style={styles.authorName} numberOfLines={1}>{displayName}</Text>
           <View style={[styles.roleBadge, isTech && styles.roleBadgeTech]}>
             <Text style={[styles.roleBadgeText, isTech && styles.roleBadgeTextTech]}>
               {roleLabel(item.role)}
             </Text>
           </View>
+          <Text style={styles.authorName} numberOfLines={1}>{displayName}</Text>
         </View>
         {isOwn && (
           <TouchableOpacity style={styles.menuButton} activeOpacity={0.7} onPress={() => setMenuVisible(true)}>
@@ -199,25 +233,27 @@ const CaseCard = ({
         </Text>
       </TouchableOpacity>
 
-      {/* AI-критик: тизер прямо на карточке */}
-      <TouchableOpacity style={styles.aiTeaserBtn} activeOpacity={0.85} onPress={() => setShowTeaser((v) => !v)}>
-        <Ionicons name="skull-outline" size={16} color="#ff6b6b" />
-        <Text style={styles.aiTeaserBtnText}>
-          {showTeaser ? 'AI-критик высказался' : 'Что скажет AI-критик?'}
-        </Text>
-        <Ionicons name={showTeaser ? 'chevron-up' : 'chevron-down'} size={16} color="rgba(255,255,255,0.5)" />
-      </TouchableOpacity>
-      {showTeaser && (
-        <View style={styles.aiTeaserBubble}>
-          <Text style={styles.aiTeaserText}>«{getAiTeaser(item.aiReview)}»</Text>
-          <TouchableOpacity onPress={goDetails} activeOpacity={0.7}>
-            <Text style={styles.aiTeaserMore}>Полный разбор внутри кейса →</Text>
+      {/* Social panel */}
+      <View style={styles.socialPanel}>
+        <View style={styles.socialActions}>
+          <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleLike}>
+            <Ionicons name="thumbs-up" size={20} color={liked ? '#f2ca50' : 'rgba(255,255,255,0.5)'} />
+            <Text style={[styles.socialCount, liked && styles.socialCountActive]}>{likeCount}</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleDislike}>
+            <Ionicons name="thumbs-down" size={20} color={disliked ? '#ff6b6b' : 'rgba(255,255,255,0.5)'} />
+            <Text style={[styles.socialCount, disliked && styles.socialCountActive]}>{likeCount}</Text>
+          </TouchableOpacity>
+          <View style={styles.activityBadge}>
+            <Ionicons name="flame" size={16} color="#f2ca50" />
+            <Text style={styles.activityText}>{likeCount + item.commentsList.length}</Text>
+          </View>
         </View>
-      )}
-
-      {/* Comments at the very bottom */}
-      <CommentsBlock comments={item.commentsList} />
+        <View style={styles.socialComments}>
+          <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.5)" />
+          <Text style={styles.socialCount}>{item.commentsList.length}</Text>
+        </View>
+      </View>
 
       <PostActionsSheet
         visible={menuVisible}
@@ -235,6 +271,36 @@ const CaseCard = ({
 const WorkOfWeekCard = ({ item, identity }: { item: ClinicalCase; identity: Identity }) => {
   const isAnon = !!item.anonymous;
   const displayName = isAnon ? 'Анонимный коллега' : isOwnCase(item) && identity?.name ? identity.name : item.author;
+  const [liked, setLiked] = useState(false);
+  const [disliked, setDisliked] = useState(false);
+  const [likeCount, setLikeCount] = useState(item.activity);
+
+  const handleLike = () => {
+    if (disliked) {
+      setDisliked(false);
+      setLikeCount(likeCount + 2);
+    } else if (liked) {
+      setLiked(false);
+      setLikeCount(likeCount - 1);
+    } else {
+      setLiked(true);
+      setLikeCount(likeCount + 1);
+    }
+  };
+
+  const handleDislike = () => {
+    if (liked) {
+      setLiked(false);
+      setLikeCount(likeCount - 2);
+    } else if (disliked) {
+      setDisliked(false);
+      setLikeCount(likeCount + 1);
+    } else {
+      setDisliked(true);
+      setLikeCount(likeCount - 1);
+    }
+  };
+
   return (
     <TouchableOpacity
       activeOpacity={0.92}
@@ -252,6 +318,28 @@ const WorkOfWeekCard = ({ item, identity }: { item: ClinicalCase; identity: Iden
         <View style={styles.wowStats}>
           <Ionicons name="flame" size={14} color="#f2ca50" />
           <Text style={styles.wowStatsText}>{item.activity + item.commentsList.length} баллов активности</Text>
+        </View>
+      </View>
+
+      {/* Social panel */}
+      <View style={styles.socialPanel}>
+        <View style={styles.socialActions}>
+          <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleLike}>
+            <Ionicons name="thumbs-up" size={20} color={liked ? '#f2ca50' : 'rgba(255,255,255,0.5)'} />
+            <Text style={[styles.socialCount, liked && styles.socialCountActive]}>{likeCount}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleDislike}>
+            <Ionicons name="thumbs-down" size={20} color={disliked ? '#ff6b6b' : 'rgba(255,255,255,0.5)'} />
+            <Text style={[styles.socialCount, disliked && styles.socialCountActive]}>{likeCount}</Text>
+          </TouchableOpacity>
+          <View style={styles.activityBadge}>
+            <Ionicons name="flame" size={16} color="#f2ca50" />
+            <Text style={styles.activityText}>{likeCount + item.commentsList.length}</Text>
+          </View>
+        </View>
+        <View style={styles.socialComments}>
+          <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.5)" />
+          <Text style={styles.socialCount}>{item.commentsList.length}</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -312,15 +400,27 @@ const FullscreenViewer = ({
 
 /* ---------------- Screen ---------------- */
 export default function CaseClubScreen() {
+  const insets = useSafeAreaInsets();
   const [identity, setIdentity] = useState<Identity>(() => (globalThis as any).getCaseClubIdentity?.());
   const [viewer, setViewer] = useState<{ media: CaseMedia[]; index: number } | null>(null);
+  const [feed, setFeed] = useState<ClinicalCase[]>([]);
+  const [workOfWeek, setWorkOfWeek] = useState<ClinicalCase | null>(null);
+
+  const refreshData = () => {
+    const wow = getWorkOfTheWeek();
+    setWorkOfWeek(wow);
+    setFeed(CASES.filter((c) => wow ? c.id !== wow.id : true));
+  };
 
   useEffect(() => {
     setIdentity((globalThis as any).getCaseClubIdentity?.());
   }, []);
 
-  const workOfWeek = getWorkOfTheWeek();
-  const feed = CASES.filter((c) => c.id !== workOfWeek.id);
+  useFocusEffect(
+    useCallback(() => {
+      refreshData();
+    }, [])
+  );
 
   const openViewer = (media: CaseMedia[], index: number) => setViewer({ media, index });
 
@@ -337,6 +437,13 @@ export default function CaseClubScreen() {
         ListHeaderComponent={
           <View>
             <View style={styles.titleBar}>
+              <TouchableOpacity
+                style={styles.backButton}
+                activeOpacity={0.7}
+                onPress={() => router.back()}
+              >
+                <Ionicons name="arrow-back" size={24} color="#ffffff" />
+              </TouchableOpacity>
               <Text style={styles.screenTitle}>Кейс-клуб</Text>
               <TouchableOpacity
                 style={styles.addButton}
@@ -346,7 +453,7 @@ export default function CaseClubScreen() {
                 <Ionicons name="add" size={26} color="#0b0e14" />
               </TouchableOpacity>
             </View>
-            <WorkOfWeekCard item={workOfWeek} identity={identity} />
+            {workOfWeek && <WorkOfWeekCard item={workOfWeek} identity={identity} />}
           </View>
         }
       />
@@ -368,9 +475,10 @@ const styles = StyleSheet.create({
   titleBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingTop: 14,
     paddingBottom: 12,
+    position: 'relative',
   },
   screenTitle: {
     fontSize: 24,
@@ -378,7 +486,17 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     letterSpacing: 0.5,
   },
+  backButton: {
+    position: 'absolute',
+    left: 16,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   addButton: {
+    position: 'absolute',
+    right: 16,
     width: 42,
     height: 42,
     borderRadius: 14,
@@ -619,6 +737,54 @@ const styles = StyleSheet.create({
   aiTeaserText: { fontSize: 13.5, lineHeight: 20, color: 'rgba(255,255,255,0.9)', fontStyle: 'italic', marginBottom: 8 },
   aiTeaserMore: { fontSize: 12, fontWeight: '700', color: '#f2ca50' },
 
+  /* Social panel */
+  socialPanel: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    paddingTop: 12,
+    paddingHorizontal: 4,
+    marginTop: 8,
+  },
+  socialActions: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  socialButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  socialCount: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.5)',
+  },
+  socialCountActive: {
+    color: '#ffffff',
+  },
+  activityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(242, 202, 80, 0.1)',
+  },
+  activityText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#f2ca50',
+  },
+  socialComments: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+
   /* Comments */
   commentsBlock: {
     borderTopWidth: 1,
@@ -672,6 +838,37 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: 'rgba(242, 202, 80, 0.8)',
     fontWeight: '500',
+  },
+
+  /* Bottom Tab Bar */
+  bottomTabBar: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    borderRadius: 25,
+    backgroundColor: 'rgba(15, 20, 35, 0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.3)',
+    height: 60,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    shadowColor: '#f2ca50',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 12,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 60,
+  },
+  tabLabel: {
+    fontSize: 10,
+    marginTop: 2,
+    color: 'rgba(255, 255, 255, 0.6)',
   },
 
   /* Fullscreen viewer */

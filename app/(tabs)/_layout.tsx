@@ -2,19 +2,21 @@ import { Ionicons } from '@expo/vector-icons';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { Redirect, Tabs, router } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 
 import { onValue, ref } from 'firebase/database';
 
 import React, { useEffect, useRef, useState } from 'react';
 
-import { Dimensions, Image, ImageBackground, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, ImageBackground, StatusBar, StyleSheet, View } from 'react-native';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 
 
 import { HapticTab } from '@/components/haptic-tab';
+
+import GlobalHeader from '@/components/global-header';
 
 import { database } from '@/constants/firebase';
 
@@ -297,73 +299,11 @@ export default function TabLayout() {
 
           <View style={{ flex: 1, backgroundColor: 'transparent' }}>
 
-            <View 
-
-              style={[styles.headerContainer, { paddingTop: insets.top }]}
-
+            <GlobalHeader
+              diamonds={diamondBalance}
+              newOrdersCount={newOrdersCount}
               onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
-
-            >
-
-              <View style={styles.leftContainer}>
-
-                <TouchableOpacity style={styles.burgerButton}>
-
-                  <Ionicons name="menu-outline" size={28} color="#f2ca50" />
-
-                </TouchableOpacity>
-
-              </View>
-
-              <View style={styles.absoluteCenter}>
-
-                <Image
-
-                  source={require('@/assets/images/header-logo.png')}
-
-                  style={styles.headerLogo}
-
-                  resizeMode="contain"
-
-                />
-
-              </View>
-
-              <View style={styles.rightContainer}>
-                <View style={styles.headerRightContent}>
-                  <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{
-                      color: '#4fc3f7',
-                      fontSize: 6,
-                      fontWeight: '700',
-                      marginBottom: 1,
-                    }}>
-                      {diamondBalance}
-                    </Text>
-                    <Text style={{ fontSize: 16, marginTop: -2 }}>💎</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.bellButton}
-                    onPress={() => {
-                      router.push('/(tabs)/search');
-                      setTimeout(() => {
-                        (window as any).showNewOrders?.();
-                      }, 100);
-                    }}
-                  >
-                    <Text style={{ fontSize: 15, marginTop: 11 }}>🔔</Text>
-                    {newOrdersCount > 0 && (
-                      <View style={styles.notificationBadge}>
-                        <Text style={styles.notificationBadgeText}>
-                          {newOrdersCount > 99 ? '99+' : newOrdersCount.toString()}
-                        </Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-            </View>
+            />
 
         <Tabs
 
@@ -543,11 +483,9 @@ export default function TabLayout() {
 
             options={{
 
-              headerShown: false,
+              title: 'Кейс-клуб',
 
-              tabBarButton: () => null,
-
-              tabBarItemStyle: { display: 'none' },
+              tabBarIcon: ({ color }) => <Ionicons size={22} name="chatbubble-outline" color={color} />,
 
             }}
 
@@ -572,127 +510,23 @@ export default function TabLayout() {
 
 
 const styles = StyleSheet.create({
-
-  headerContainer: {
-
-    flexDirection: 'row',
-
-    alignItems: 'center',
-
-    paddingHorizontal: 16,
-
-    paddingBottom: 8,
-
-    borderBottomWidth: 1,
-
-    borderBottomColor: '#f2ca50',
-
-  },
-
-  leftContainer: {
-
-    width: 100,
-
-    alignItems: 'flex-start',
-
-    justifyContent: 'center',
-
-  },
-
-  rightContainer: {
-
-    flexDirection: 'row',
-
-    alignItems: 'flex-end',
-
-    justifyContent: 'flex-end',
-
-    gap: 8,
-
-    width: 100,
-
-  },
-
-  headerRightContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-
-  absoluteCenter: {
-
-    flex: 1,
-
-    alignItems: 'center',
-
-    justifyContent: 'center',
-
-  },
-
-  burgerButton: {
-
-    padding: 4,
-
-  },
-
-  headerLogo: {
-
-    width: 180,
-
-    height: 56,
-
-  },
-
-  bellButton: {
-
-    padding: 2,
-
-    position: 'relative',
-
-  },
-
   notificationBadge: {
-
-    position: 'absolute',
-
-    top: 5,
-
-    right: -4,
-
     backgroundColor: '#f2ca50',
-
     borderRadius: 20,
-
     minWidth: 18,
-
     height: 18,
-
     justifyContent: 'center',
-
     alignItems: 'center',
-
     borderWidth: 1.5,
-
     borderColor: '#031427',
-
     paddingHorizontal: 4,
-
     zIndex: 10,
-
   },
-
   notificationBadgeText: {
-
     color: '#1a1a1a',
-
     fontSize: 10,
-
     fontWeight: '700',
-
     lineHeight: 12,
-
   },
-
 });
 
