@@ -10,17 +10,17 @@ import { router } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Animated,
-    Dimensions,
-    Easing,
-    Image,
-    ImageBackground,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Animated,
+  Dimensions,
+  Easing,
+  Image,
+  ImageBackground,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import Svg, { Defs, Polygon, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 
@@ -71,24 +71,32 @@ export default function HomeScreen() {
   const tickerScrollAnim = useRef(new Animated.Value(0)).current;
 
   const TECHNICIAN_ITEMS = [
-    { id: 'chat', label: 'КЕЙС КЛУБ', icon: 'chatbubble-outline', active: true, route: null, col: 0, row: 0 },
+    { id: 'chat', label: 'КЕЙС КЛУБ', icon: 'chatbubble-outline', active: true, route: '/case-club', col: 0, row: 0 },
     { id: 'color', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'color-palette-outline', active: true, route: '/work-analysis', col: 1, row: 0 },
     { id: 'work', label: 'АНАЛИЗ\nЦВЕТА', icon: 'analytics-outline', active: true, route: '/(tabs)/color-analyzer', center: true },
     { id: 'morphology', label: 'МОРФОЛОГИЯ', icon: 'body-outline', active: false, col: 0, row: 1 },
     { id: 'recipes', label: 'РЕЦЕПТЫ', icon: 'flask-outline', active: false, col: 1, row: 1 },
-    { id: 'premium', label: 'ПРЕМИУМ', icon: 'diamond-outline', active: false, col: 0, row: 2, route: '/(tabs)/balance' },
-    { id: 'techmap', label: 'ТЕХ-КАРТА', icon: 'layers-outline', active: false, col: 1, row: 2 },
+    { id: 'premium', label: 'Анатомия зубов', icon: 'diamond-outline', active: false, col: 0, row: 2, route: '/(tabs)/balance' },
+    { id: 'techmap', label: 'Оптическая\nдиагностика', icon: 'layers-outline', active: false, col: 1, row: 2 },
+    { id: 'etalon', label: 'Эталонный замер', icon: 'ruler-outline', active: false },
+    { id: 'detail', label: 'Детализация', icon: 'list-outline', active: false },
+    { id: 'golden', label: 'Золотое сечение', icon: 'resize-outline', active: false },
+    { id: 'ceramics', label: 'Визуализатор масс', icon: 'book-outline', active: false },
   ];
 
   const DOCTOR_ITEMS = [
-    { id: 'chat', label: 'КЕЙС КЛУБ', icon: 'chatbubble-outline', active: true, route: null, col: 0, row: 0 },
+    { id: 'chat', label: 'КЕЙС КЛУБ', icon: 'chatbubble-outline', active: true, route: '/case-club', col: 0, row: 0 },
     { id: 'color', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'color-palette-outline', active: true, route: '/work-analysis', col: 1, row: 0 },
     { id: 'new-order', label: 'АНАЛИЗ\nЦВЕТА', icon: 'add-circle-outline', active: true, route: '/new-order', center: true },
     { id: 'work', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'analytics-outline', active: true, route: '/(tabs)/color-analyzer', col: 0, row: 1 },
     { id: 'morphology', label: 'МОРФОЛОГИЯ', icon: 'body-outline', active: false, col: 1, row: 1 },
     { id: 'recipes', label: 'РЕЦЕПТЫ', icon: 'flask-outline', active: false, col: 0, row: 2 },
-    { id: 'techmap', label: 'ТЕХ-КАРТА', icon: 'layers-outline', active: false, col: 1, row: 2 },
-    { id: 'premium', label: 'ПРЕМИУМ', icon: 'diamond-outline', active: false, col: 0, row: 3, route: '/(tabs)/balance' },
+    { id: 'techmap', label: 'Оптическая\nдиагностика', icon: 'layers-outline', active: false, col: 1, row: 2 },
+    { id: 'premium', label: 'Анатомия зубов', icon: 'diamond-outline', active: false, col: 0, row: 3, route: '/(tabs)/balance' },
+    { id: 'etalon', label: 'Эталонный замер', icon: 'ruler-outline', active: false },
+    { id: 'detail', label: 'Детализация', icon: 'list-outline', active: false },
+    { id: 'golden', label: 'Золотое сечение', icon: 'resize-outline', active: false },
+    { id: 'ceramics', label: 'Гид по керамике', icon: 'book-outline', active: false },
   ];
 
   const HexCell = ({ item, variant = 'side', onPress }: any) => {
@@ -174,7 +182,7 @@ export default function HomeScreen() {
       </Svg>
       <View style={styles.techMapContent}>
         <Ionicons name={item.icon as any} size={34} color="#f2ca50" />
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={styles.techMapLabel}>ТЕХ-КАРТА</Text>
+        <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6} style={styles.techMapLabel}>{item.label}</Text>
         <View style={styles.techMapSoonBadge}>
           <Text style={styles.techMapSoonText}>СКОРО</Text>
         </View>
@@ -867,7 +875,7 @@ const styles = StyleSheet.create({
   },
   techMapLabel: {
     color: '#f2ca50',
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: '800',
     textTransform: 'uppercase',
     letterSpacing: 0,

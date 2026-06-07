@@ -3,14 +3,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  ImageBackground,
-  ScrollView,
-  Share,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Alert,
+    ImageBackground,
+    ScrollView,
+    Share,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -52,22 +52,11 @@ const PACKAGES = [
     isSubscription: true,
   },
   {
-    id: 'trial',
-    name: 'Пробный',
-    diamonds: 10,
-    bonusDiamonds: 0,
-    price: 29,
-    color: '#ffffff60',
-    isHit: false,
-    isBasic: false,
-    isSubscription: false,
-  },
-  {
     id: 'start',
     name: 'Старт',
     diamonds: 50,
     bonusDiamonds: 5,
-    price: 99,
+    price: 250,
     color: '#f2ca50',
     isHit: false,
     isBasic: false,
@@ -78,7 +67,7 @@ const PACKAGES = [
     name: 'Оптима',
     diamonds: 150,
     bonusDiamonds: 15,
-    price: 249,
+    price: 600,
     color: '#4fc3f7',
     isHit: false,
     isBasic: false,
@@ -89,7 +78,7 @@ const PACKAGES = [
     name: 'Запас',
     diamonds: 300,
     bonusDiamonds: 30,
-    price: 449,
+    price: 1000,
     color: '#e91e63',
     isHit: false,
     isBasic: false,
@@ -100,7 +89,7 @@ const PACKAGES = [
     name: 'Про-запас',
     diamonds: 600,
     bonusDiamonds: 80,
-    price: 799,
+    price: 1800,
     color: '#f2ca50',
     isHit: false,
     isBasic: false,
@@ -111,7 +100,7 @@ const PACKAGES = [
     name: 'Максимум',
     diamonds: 1000,
     bonusDiamonds: 150,
-    price: 1199,
+    price: 2600,
     color: '#4fc3f7',
     isHit: true,
     isBasic: false,

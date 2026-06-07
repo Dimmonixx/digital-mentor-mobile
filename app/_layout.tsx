@@ -43,6 +43,9 @@ export default function RootLayout() {
                   <Stack.Screen name="order-details" options={{ headerShown: false }} />
                   <Stack.Screen name="morphology" options={{ headerShown: false }} />
                   <Stack.Screen name="work-analysis" options={{ headerShown: false }} />
+                  <Stack.Screen name="case-club" options={{ headerShown: false }} />
+                  <Stack.Screen name="case-details" options={{ headerShown: false }} />
+                  <Stack.Screen name="create-case" options={{ headerShown: false }} />
                 </Stack>
                 <StatusBar style="auto" />
               </View>
