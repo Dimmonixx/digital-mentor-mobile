@@ -1,28 +1,29 @@
-import { CASES } from '@/data/cases';
+import { addCase } from '@/data/cases';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    Dimensions,
-    Image,
-    ImageBackground,
-    Modal,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Dimensions,
+  Image,
+  ImageBackground,
+  Modal,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CONTENT_WIDTH = SCREEN_WIDTH - 40;
 
-const MEDIA_SLOTS = ['До', 'В процессе', 'После'];
+const MEDIA_SLOTS = ['Фото 1', 'Фото 2', 'Фото 3'];
 
 const VITA_SHADES = ['A1', 'A2', 'A3', 'A3.5', 'B1', 'B2', 'C2', 'D3'];
 
@@ -51,11 +52,35 @@ export default function CreateCaseScreen() {
     }
   };
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
+    console.log('[CreateCase] publish pressed', {
+      descriptionLength: description.trim().length,
+      mediaLength: media.length,
+      media,
+      isRiddle,
+      riddleAnswer,
+      isAnonymous,
+    });
+
     if (!description.trim()) {
+      console.log('[CreateCase] validation failed: empty description');
       setOverlay({ title: 'Ошибка', message: 'Пожалуйста, добавьте описание кейса', icon: 'alert-circle-outline' });
       return;
     }
+
+    if (!media.some(m => m.uri)) {
+      console.log('[CreateCase] validation failed: no media selected');
+      setOverlay({ title: 'Ошибка публикации', message: 'Пожалуйста, загрузите хотя бы одну фотографию клинического случая!', icon: 'alert-circle-outline' });
+      return;
+    }
+
+    const safeDescription = description.trim();
+    const safeMedia = media
+      .filter(m => !!m?.uri)
+      .map(m => ({
+        uri: m.uri ?? '',
+        stage: m.stage ?? '',
+      }));
 
     const newCase = {
       id: Date.now().toString(),
@@ -63,35 +88,46 @@ export default function CreateCaseScreen() {
       role: 'Врач' as const,
       avatar: isAnonymous ? '' : 'https://i.pravatar.cc/150?img=12',
       tags: [],
-      description: description.slice(0, 100),
-      fullDescription: description,
-      media: media.filter(m => m.uri),
+      description: safeDescription.slice(0, 100),
+      fullDescription: safeDescription,
+      media: safeMedia,
       commentsList: [],
       aiReview: 'Кейс опубликован. Ожидайте AI-анализ.',
       activity: 0,
       anonymous: isAnonymous,
-      riddle: isRiddle && riddleAnswer ? {
-        question: 'Угадайте оттенок VITA',
-        options: [
-          { label: 'A1', percent: 20 },
-          { label: 'A2', percent: 30 },
-          { label: 'A3', percent: 30 },
-          { label: 'B1', percent: 20 },
-        ],
-        correct: riddleAnswer,
-      } : undefined,
     };
 
-    CASES.unshift(newCase);
-    setOverlay({
-      title: 'Кейс опубликован',
-      message: 'Кейс успешно добавлен в ленту!',
-      icon: 'checkmark-circle-outline'
-    });
-    setTimeout(() => {
-      setOverlay(null);
-      router.back();
-    }, 1500);
+    if (isRiddle && riddleAnswer) {
+      Object.assign(newCase, {
+        riddle: {
+          question: 'Угадайте оттенок VITA',
+          options: [
+            { label: 'A1', percent: 20 },
+            { label: 'A2', percent: 30 },
+            { label: 'A3', percent: 30 },
+            { label: 'B1', percent: 20 },
+          ],
+          correct: riddleAnswer ?? '',
+        },
+      });
+    }
+
+    console.log('[CreateCase] newCase prepared', newCase);
+
+    console.log('[CreateCase] Сохранение в AsyncStorage...');
+    try {
+      const existing = await AsyncStorage.getItem('@case_club_posts');
+      const posts = existing ? JSON.parse(existing) : [];
+      const updatedPosts = [newCase, ...posts];
+      await AsyncStorage.setItem('@case_club_posts', JSON.stringify(updatedPosts));
+      console.log('[CreateCase] Сохранено в AsyncStorage, постов всего:', updatedPosts.length);
+    } catch (err) {
+      console.error('[CreateCase] Ошибка записи в AsyncStorage:', err);
+    }
+
+    addCase(newCase);
+    console.log('[CreateCase] Мгновенный возврат в ленту');
+    router.replace('/(tabs)/case-club' as any);
   };
 
   return (
@@ -231,7 +267,7 @@ export default function CreateCaseScreen() {
             </View>
           </TouchableOpacity>
 
-          <View style={{ height: 40 }} />
+          <View style={{ height: 16 }} />
         </ScrollView>
       </View>
 
@@ -314,7 +350,7 @@ const styles = StyleSheet.create({
     height: '100%',
     resizeMode: 'cover',
   },
-  mediaSlotText: { fontSize: 12, fontWeight: '600', color: '#f2ca50', textTransform: 'uppercase' },
+  mediaSlotText: { fontSize: 10, fontWeight: '600', color: '#f2ca50', textTransform: 'uppercase' },
 
   switchRow: { flexDirection: 'row', alignItems: 'center' },
   switchTitle: { fontSize: 15, fontWeight: '700', color: '#ffffff', marginBottom: 4 },

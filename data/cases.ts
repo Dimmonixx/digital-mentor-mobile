@@ -44,6 +44,10 @@ export const CASES = CASES_DATA;
 
 export const getCases = () => CASES;
 
+export const addCase = (clinicalCase: ClinicalCase) => {
+  CASES.unshift(clinicalCase);
+};
+
 export const getCaseById = (id: string | undefined) =>
   CASES.find((c) => c.id === id);
 

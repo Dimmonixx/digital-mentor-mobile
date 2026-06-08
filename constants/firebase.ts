@@ -1,5 +1,6 @@
-import { getApps, initializeApp } from 'firebase/app';
+import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getDatabase } from 'firebase/database';
+import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -12,11 +13,10 @@ const firebaseConfig = {
   appId: "1:937962102520:web:3ea7d6529804c4fef5a50d"
 };
 
-const app = getApps().length === 0 
-  ? initializeApp(firebaseConfig) 
-  : getApps()[0];
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 export const database = getDatabase(app);
 export const storage = getStorage(app);
+export const firestore = getFirestore(app);
 export { app };
 

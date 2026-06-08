@@ -483,9 +483,11 @@ export default function TabLayout() {
 
             options={{
 
-              title: 'Кейс-клуб',
+              headerShown: false,
 
-              tabBarIcon: ({ color }) => <Ionicons size={22} name="chatbubble-outline" color={color} />,
+              tabBarButton: () => null,
+
+              tabBarItemStyle: { display: 'none' },
 
             }}
 
