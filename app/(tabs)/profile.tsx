@@ -306,7 +306,9 @@ export default function ProfileScreen() {
             : user?.role === 'technician'
               ? 'Зубной техник'
               : data.position;
-        setProfile({ ...(data as ProfileData), position: rolePosition });
+        const mergedProfile = { ...(data as ProfileData), position: rolePosition };
+        setProfile(mergedProfile);
+        await AsyncStorage.setItem('userProfile', JSON.stringify(mergedProfile));
 
         // If profile exists but firstName/lastName are empty, fallback to user.name
         if (!data.firstName && !data.lastName && user?.name) {
@@ -719,10 +721,22 @@ export default function ProfileScreen() {
 
   // Экспорт личности для Кейс-клуба (динамический аватар в кейсах)
   useEffect(() => {
+    const role = user?.role === 'technician' ? 'Зубной техник' : 'Врач';
     (globalThis as any).getCaseClubIdentity = () => ({
       name: getDisplayName(),
       avatarSource: getAvatarSource(),
+      role,
     });
+    // Синхронизируем кеш профиля в AsyncStorage
+    const cached = {
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      position: role,
+      avatarType: profile.avatarType,
+      avatarUrl: profile.avatarUrl,
+      avatarPresetId: profile.avatarPresetId,
+    };
+    AsyncStorage.setItem('userProfile', JSON.stringify(cached)).catch(() => {});
   }, [profile, user]);
 
   // Индекс мастерства

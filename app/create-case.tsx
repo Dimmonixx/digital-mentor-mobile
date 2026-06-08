@@ -41,7 +41,6 @@ export default function CreateCaseScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
-      aspect: [4, 3],
       quality: 1,
     });
 
@@ -111,6 +110,21 @@ export default function CreateCaseScreen() {
         },
       });
     }
+
+    let authorName = 'Кривоносов Д.И.';
+    let authorRole: 'doctor' | 'technician' = 'doctor';
+    try {
+      const rawUser = await AsyncStorage.getItem('user');
+      if (rawUser) {
+        const u = JSON.parse(rawUser);
+        if (u.name) authorName = u.name;
+        if (u.role) authorRole = u.role;
+      }
+    } catch {}
+
+    const roleValue = authorRole === 'technician' ? 'Техник' : 'Врач';
+    newCase.author = isAnonymous ? 'Анонимный коллега' : authorName;
+    (newCase as any).role = roleValue;
 
     console.log('[CreateCase] newCase prepared', newCase);
 

@@ -1,3 +1,4 @@
+import BottomTabBar from '@/components/BottomTabBar';
 import { PostActionsSheet } from '@/components/case-post-actions';
 import GlobalHeader from '@/components/global-header';
 import {
@@ -6,15 +7,15 @@ import {
   CaseMedia,
   ClinicalCase,
   deleteCaseById,
-  getCaseById,
   isOwnCase,
   registerAiLike,
-  registerCorrectRiddle,
-  roleLabel
+  registerCorrectRiddle
 } from '@/data/cases';
+import { getUserIdentity } from '@/utils/getUserIdentity';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -38,7 +39,20 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CONTENT_WIDTH = SCREEN_WIDTH - 40;
 const MEDIA_WIDTH = CONTENT_WIDTH;
 
-const AI_REVIEW_COST = 3;
+const AI_REVIEW_COST = 1;
+
+const PRESET_AVATARS = [
+  require('@/assets/avatars/avatar_1.jpg'),
+  require('@/assets/avatars/avatar_2.jpg'),
+  require('@/assets/avatars/avatar_3.jpg'),
+  require('@/assets/avatars/avatar_4.jpg'),
+  require('@/assets/avatars/avatar_5.jpg'),
+  require('@/assets/avatars/avatar_6.jpg'),
+  require('@/assets/avatars/avatar_7.jpg'),
+  require('@/assets/avatars/avatar_8.jpg'),
+  require('@/assets/avatars/avatar_9.jpg'),
+  require('@/assets/avatars/avatar_10.jpg'),
+];
 
 // Компактная сетка гексагонов (4 в ряд)
 const HEX_GAP = 8;
@@ -46,7 +60,7 @@ const HEX_COLS = 4;
 const HEX_W = Math.floor((CONTENT_WIDTH - 32 - HEX_GAP * (HEX_COLS - 1)) / HEX_COLS * 0.8);
 const HEX_H = 48;
 
-type Identity = { name: string; avatarSource: ImageSourcePropType | null } | undefined;
+type Identity = { name: string; avatarSource: ImageSourcePropType | null; role?: string } | undefined;
 
 /* ---------------- Avatar ---------------- */
 const AuthorAvatar = ({ source, size = 48 }: { source: ImageSourcePropType | null; size?: number }) => {
@@ -145,7 +159,7 @@ const RiddleBlock = ({
   riddle,
   onReward,
 }: {
-  riddle: NonNullable<ReturnType<typeof getCaseById>>['riddle'];
+  riddle: ClinicalCase['riddle'];
   onReward: () => void;
 }) => {
   const [picked, setPicked] = useState<string | null>(null);
@@ -230,20 +244,10 @@ const AiReviewBlock = ({ review, onSpent }: { review: string; onSpent: () => voi
         <Ionicons name="skull-outline" size={28} color="#ff6b6b" />
         <Text style={styles.sectionTitle}>AI-разбор работы</Text>
       </View>
-      <View style={styles.aiBadgeRow}>
-        <View style={styles.aiTag}>
-          <Text style={styles.aiTagText}>ИНКВИЗИТОР</Text>
-        </View>
-      </View>
-
       {!revealed ? (
         <>
-          <Text style={styles.aiHint}>
-            Беспощадный цифровой Инквизитор найдет нависающие края, оценит уступ и устроит тотальную профессиональную прожарку керамики без цензуры.
-          </Text>
-          <TouchableOpacity activeOpacity={0.85} style={styles.aiRunButton} onPress={runReview}>
-            <Ionicons name="flash" size={18} color="#0b0e14" />
-            <Text style={styles.aiRunText}>Включить прожарку ИИ · {AI_REVIEW_COST} 💎</Text>
+          <TouchableOpacity activeOpacity={0.85} style={styles.eshafotnikButton} onPress={runReview}>
+            <Text style={styles.eshafotnikText}>Эшафотник за 2 💎</Text>
           </TouchableOpacity>
         </>
       ) : (
@@ -340,25 +344,42 @@ const FullscreenViewer = ({
 export default function CaseDetailsScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const item = useMemo(() => getCaseById(id), [id]);
-  const [identity, setIdentity] = useState<Identity>(() => (globalThis as any).getCaseClubIdentity?.());
+  const [item, setItem] = useState<ClinicalCase | null>(null);
+  const [identity, setIdentity] = useState<Identity>(undefined);
   const [viewer, setViewer] = useState<{ media: CaseMedia[]; index: number } | null>(null);
   const [diamonds, setDiamonds] = useState<number>(() => (globalThis as any).getDiamondBalance?.() ?? 0);
   const [menuVisible, setMenuVisible] = useState(false);
   const [localCase, setLocalCase] = useState<ClinicalCase | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editedDescription, setEditedDescription] = useState('');
+  const [commentText, setCommentText] = useState('');
+  const [comments, setComments] = useState<CaseComment[]>([]);
 
   const refreshDiamonds = () => setDiamonds((globalThis as any).getDiamondBalance?.() ?? 0);
 
   useEffect(() => {
-    setIdentity((globalThis as any).getCaseClubIdentity?.());
+    getUserIdentity().then((id) => {
+      if (id) setIdentity({ name: id.shortName, avatarSource: id.avatarSource, role: id.role });
+      else setIdentity((globalThis as any).getCaseClubIdentity?.());
+    });
     refreshDiamonds();
-    if (item) {
-      setLocalCase({ ...item });
-      setEditedDescription(item.fullDescription);
-    }
-  }, [item]);
+    const loadCase = async () => {
+      try {
+        const raw = await AsyncStorage.getItem('@case_club_posts');
+        const posts: ClinicalCase[] = raw ? JSON.parse(raw) : [];
+        const found = posts.find((p) => p.id === id) ?? null;
+        setItem(found);
+        if (found) {
+          setLocalCase({ ...found });
+          setEditedDescription(found.fullDescription);
+          setComments(found.commentsList ?? []);
+        }
+      } catch (e) {
+        console.error('[CaseDetails] Ошибка чтения AsyncStorage:', e);
+      }
+    };
+    loadCase();
+  }, [id]);
 
   if (!item) {
     return (
@@ -374,8 +395,22 @@ export default function CaseDetailsScreen() {
 
   const isOwn = isOwnCase(item);
   const isAnon = !!item.anonymous;
-  const isTech = item.role === 'Техник';
-  const displayName = isAnon ? 'Анонимный коллега' : isOwn && identity?.name ? identity.name : item.author;
+
+  const formatShortName = (fullName: string) => {
+    const parts = fullName.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0];
+    const [last, first, middle] = parts;
+    const firstI = first ? first[0].toUpperCase() + '.' : '';
+    const middleI = middle ? middle[0].toUpperCase() + '.' : '';
+    return `${last} ${firstI}${middleI}`;
+  };
+
+  const resolvedRole = isOwn && identity?.role ? identity.role : ((item as any).role ?? '');
+  const isTech = resolvedRole === 'Техник' || resolvedRole === 'Зубной техник' || resolvedRole === 'technician';
+  const roleDisplay = isTech ? 'Зубной техник' : 'Врач';
+
+  const rawName = isAnon ? 'Анонимный коллега' : isOwn && identity?.name ? identity.name : item.author;
+  const displayName = isAnon ? rawName : formatShortName(rawName);
   const avatarSource: ImageSourcePropType | null = isAnon
     ? null
     : isOwn && identity?.avatarSource
@@ -403,6 +438,32 @@ export default function CaseDetailsScreen() {
   const handleCancelEdit = () => {
     setIsEditing(false);
     setEditedDescription(localCase?.fullDescription || '');
+  };
+
+  const handleAddComment = async () => {
+    const text = commentText.trim();
+    if (!text) return;
+    const authorName = identity?.name ?? 'Анонимный';
+    const newComment: CaseComment = {
+      id: Date.now().toString(),
+      author: authorName,
+      avatar: '',
+      text,
+    };
+    const updated = [newComment, ...comments];
+    setComments(updated);
+    setCommentText('');
+    try {
+      const raw = await AsyncStorage.getItem('@case_club_posts');
+      const posts: ClinicalCase[] = raw ? JSON.parse(raw) : [];
+      const idx = posts.findIndex((p) => p.id === item.id);
+      if (idx !== -1) {
+        posts[idx].commentsList = updated;
+        await AsyncStorage.setItem('@case_club_posts', JSON.stringify(posts));
+      }
+    } catch (e) {
+      console.error('[CaseDetails] Ошибка сохранения комментария:', e);
+    }
   };
 
   const handleDeletePhoto = () => {
@@ -446,7 +507,7 @@ export default function CaseDetailsScreen() {
           <AuthorAvatar source={avatarSource} size={62} />
           <View style={styles.authorInfo}>
             <View style={[styles.roleBadge, isTech && styles.roleBadgeTech]}>
-              <Text style={[styles.roleBadgeText, isTech && styles.roleBadgeTextTech]}>{roleLabel(item.role)}</Text>
+              <Text style={[styles.roleBadgeText, isTech && styles.roleBadgeTextTech]}>{roleDisplay}</Text>
             </View>
             <Text style={styles.authorName}>{displayName}</Text>
           </View>
@@ -505,8 +566,51 @@ export default function CaseDetailsScreen() {
         {/* Riddle */}
         {item.riddle && <RiddleBlock riddle={item.riddle} onReward={refreshDiamonds} />}
 
-        <View style={{ height: 40 }} />
+        {/* Comment input — inside scroll */}
+        <View style={styles.commentInputRow}>
+          <TextInput
+            style={styles.commentInput}
+            value={commentText}
+            onChangeText={setCommentText}
+            placeholder="Написать комментарий..."
+            placeholderTextColor="rgba(255,255,255,0.4)"
+            multiline={false}
+            returnKeyType="send"
+            onSubmitEditing={handleAddComment}
+          />
+          <TouchableOpacity
+            style={styles.commentSendBtn}
+            activeOpacity={0.75}
+            onPress={handleAddComment}
+          >
+            <Ionicons name="send" size={18} color="#0b0e14" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Comments list */}
+        {comments.length > 0 && (
+          <View style={styles.commentsList}>
+            {comments.map((c) => (
+              <View key={c.id} style={styles.commentItem}>
+                <View style={styles.commentAvatar}>
+                  {identity?.avatarSource && c.author === identity?.name ? (
+                    <Image source={identity.avatarSource} style={styles.commentAvatarImg} />
+                  ) : (
+                    <Ionicons name="person" size={16} color="rgba(242,202,80,0.7)" />
+                  )}
+                </View>
+                <View style={styles.commentBody}>
+                  <Text style={styles.commentAuthorText}>{c.author}</Text>
+                  <Text style={styles.commentContentText}>{c.text}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
       </ScrollView>
+
+      <BottomTabBar />
 
       <FullscreenViewer
         media={viewer?.media ?? null}
@@ -547,7 +651,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 60, paddingTop: 12 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 120, paddingTop: 12 },
 
   authorBlock: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   authorInfo: { flex: 1, marginLeft: 14 },
@@ -680,6 +784,25 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   aiRunText: { fontSize: 15, fontWeight: '800', color: '#0b0e14', letterSpacing: 0.3 },
+  eshafotnikButton: {
+    marginTop: 4,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 107, 107, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.3)',
+  },
+  eshafotnikText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ff8a8a',
+    letterSpacing: 0.3,
+    textAlign: 'center',
+  },
   aiReviewBubble: {
     backgroundColor: 'rgba(255, 107, 107, 0.08)',
     borderWidth: 1,
@@ -727,37 +850,74 @@ const styles = StyleSheet.create({
   commentText: { fontSize: 13, lineHeight: 18, color: 'rgba(255,255,255,0.7)' },
   addCommentRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 },
   addCommentText: { fontSize: 13, color: 'rgba(242, 202, 80, 0.8)', fontWeight: '500' },
-
-  /* Bottom Tab Bar */
-  bottomTabBar: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    borderRadius: 25,
-    backgroundColor: 'rgba(15, 20, 35, 0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(242, 202, 80, 0.3)',
-    height: 60,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    shadowColor: '#f2ca50',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 12,
+  commentsList: {
+    marginTop: 8,
+    gap: 6,
   },
-  tabItem: {
-    flex: 1,
+  commentItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 8,
+    padding: 8,
+  },
+  commentAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(242,202,80,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 60,
+    overflow: 'hidden',
   },
-  tabLabel: {
-    fontSize: 10,
-    marginTop: 2,
-    color: 'rgba(255, 255, 255, 0.6)',
+  commentAvatarImg: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
   },
+  commentBody: {
+    flex: 1,
+  },
+  commentAuthorText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#f2ca50',
+    marginBottom: 3,
+  },
+  commentContentText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: 'rgba(255,255,255,0.85)',
+  },
+
+  commentInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 20, 35, 0.9)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 12,
+  },
+  commentInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#ffffff',
+    paddingVertical: 8,
+    paddingRight: 8,
+  },
+  commentSendBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#f2ca50',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
 
   /* Fullscreen viewer */
   viewerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center' },

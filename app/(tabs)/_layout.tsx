@@ -355,7 +355,7 @@ export default function TabLayout() {
 
               marginTop: 2,
 
-              fontSize: 10,
+              fontSize: 8,
 
             },
 

@@ -1,5 +1,6 @@
 ﻿import { DemoOverlay, DemoOverlayData, PostActionsSheet } from '@/components/case-post-actions';
-import { CaseComment, CaseMedia, ClinicalCase, isOwnCase, roleLabel } from '@/data/cases';
+import { CaseComment, CaseMedia, ClinicalCase, isOwnCase } from '@/data/cases';
+import { getUserIdentity } from '@/utils/getUserIdentity';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
@@ -21,7 +22,7 @@ import {
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MEDIA_WIDTH = SCREEN_WIDTH - 40 - 24; // screen padding (20*2) + card padding (12*2)
 
-type Identity = { name: string; avatarSource: ImageSourcePropType | null } | undefined;
+type Identity = { name: string; avatarSource: ImageSourcePropType | null; role?: string } | undefined;
 
 /* ---------------- Avatar (uri / preset / silhouette) ---------------- */
 const AuthorAvatar = ({
@@ -128,12 +129,26 @@ const CaseCard = ({
 }) => {
   const isOwn = isOwnCase(item);
   const isAnon = !!item.anonymous;
-  const isTech = item.role === 'Техник';
-  const displayName = isAnon
+
+  const formatShortName = (fullName: string) => {
+    const parts = fullName.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0];
+    const [last, first, middle] = parts;
+    const firstI = first ? first[0][0].toUpperCase() + '.' : '';
+    const middleI = middle ? middle[0].toUpperCase() + '.' : '';
+    return `${last} ${firstI}${middleI}`;
+  };
+
+  const resolvedRole = isOwn && identity?.role ? identity.role : ((item as any).role ?? '');
+  const isTech = resolvedRole === 'Техник' || resolvedRole === 'Зубной техник' || resolvedRole === 'technician';
+  const roleDisplay = isTech ? 'Зубной техник' : 'Врач';
+
+  const rawName = isAnon
     ? 'Анонимный коллега'
     : isOwn && identity?.name
       ? identity.name
       : item.author;
+  const displayName = isAnon ? rawName : formatShortName(rawName);
   const avatarSource: ImageSourcePropType | null = isAnon
     ? null
     : isOwn && identity?.avatarSource
@@ -216,7 +231,7 @@ const CaseCard = ({
         <View style={styles.authorInfo}>
           <View style={[styles.roleBadge, isTech && styles.roleBadgeTech]}>
             <Text style={[styles.roleBadgeText, isTech && styles.roleBadgeTextTech]}>
-              {roleLabel(item.role)}
+              {roleDisplay}
             </Text>
           </View>
           <Text style={styles.authorName} numberOfLines={1}>{displayName}</Text>
@@ -248,26 +263,28 @@ const CaseCard = ({
       {/* Social panel */}
       <View style={styles.socialPanel}>
         <View style={styles.socialActions}>
-          <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleLike}>
-            <Ionicons name="thumbs-up" size={20} color={liked ? '#f2ca50' : 'rgba(255,255,255,0.5)'} />
-            <Text style={[styles.socialCount, liked && styles.socialCountActive]}>{likeCount}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleDislike}>
-            <Ionicons name="thumbs-down" size={20} color={disliked ? '#ff6b6b' : 'rgba(255,255,255,0.5)'} />
-            <Text style={[styles.socialCount, disliked && styles.socialCountActive]}>{dislikeCount}</Text>
-          </TouchableOpacity>
-          <View style={styles.activityBadge}>
-            <Ionicons name="flame" size={16} color="#f2ca50" />
-            <Text style={styles.activityText}>{item.activity + item.commentsList.length}</Text>
+          <View style={styles.socialLeft}>
+            <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleLike}>
+              <Ionicons name="thumbs-up" size={20} color={liked ? '#f2ca50' : 'rgba(255,255,255,0.5)'} />
+              <Text style={[styles.socialCount, liked && styles.socialCountActive]}>{likeCount}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleDislike}>
+              <Ionicons name="thumbs-down" size={20} color={disliked ? '#ff6b6b' : 'rgba(255,255,255,0.5)'} />
+              <Text style={[styles.socialCount, disliked && styles.socialCountActive]}>{dislikeCount}</Text>
+            </TouchableOpacity>
+            <View style={styles.activityBadge}>
+              <Ionicons name="flame" size={16} color="#f2ca50" />
+              <Text style={styles.activityText}>{item.activity + item.commentsList.length}</Text>
+            </View>
           </View>
-          <TouchableOpacity style={styles.eshafotnikButton} activeOpacity={0.7} onPress={handleEshafotnik}>
-            <Text style={styles.eshafotnikText}>Эшафотник</Text>
-          </TouchableOpacity>
+          <View style={styles.socialComments}>
+            <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.5)" />
+            <Text style={styles.socialCount}>{item.commentsList.length}</Text>
+          </View>
         </View>
-        <View style={styles.socialComments}>
-          <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.5)" />
-          <Text style={styles.socialCount}>{item.commentsList.length}</Text>
-        </View>
+        <TouchableOpacity style={styles.eshafotnikButton} activeOpacity={0.7} onPress={handleEshafotnik}>
+          <Text style={styles.eshafotnikText}>Эшафотник за 2 💎</Text>
+        </TouchableOpacity>
       </View>
 
       <PostActionsSheet
@@ -285,7 +302,23 @@ const CaseCard = ({
 /* ---------------- Work of the week ---------------- */
 const WorkOfWeekCard = ({ item, identity }: { item: ClinicalCase; identity: Identity }) => {
   const isAnon = !!item.anonymous;
-  const displayName = isAnon ? 'Анонимный коллега' : isOwnCase(item) && identity?.name ? identity.name : item.author;
+  const isOwn = isOwnCase(item);
+
+  const formatShortName = (fullName: string) => {
+    const parts = fullName.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0];
+    const [last, first, middle] = parts;
+    const firstI = first ? first[0].toUpperCase() + '.' : '';
+    const middleI = middle ? middle[0].toUpperCase() + '.' : '';
+    return `${last} ${firstI}${middleI}`;
+  };
+
+  const rawName = isAnon ? 'Анонимный коллега' : isOwn && identity?.name ? identity.name : item.author;
+  const displayName = isAnon ? rawName : formatShortName(rawName);
+
+  const resolvedRole = isOwn && identity?.role ? identity.role : ((item as any).role ?? '');
+  const isTech = resolvedRole === 'Техник' || resolvedRole === 'Зубной техник' || resolvedRole === 'technician';
+  const roleDisplay = isTech ? 'Зубной техник' : 'Врач';
   const [liked, setLiked] = useState(false);
   const [disliked, setDisliked] = useState(false);
   const [likeCount, setLikeCount] = useState(item.activity);
@@ -348,26 +381,28 @@ const WorkOfWeekCard = ({ item, identity }: { item: ClinicalCase; identity: Iden
       {/* Social panel */}
       <View style={styles.socialPanel}>
         <View style={styles.socialActions}>
-          <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleLike}>
-            <Ionicons name="thumbs-up" size={20} color={liked ? '#f2ca50' : 'rgba(255,255,255,0.5)'} />
-            <Text style={[styles.socialCount, liked && styles.socialCountActive]}>{likeCount}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleDislike}>
-            <Ionicons name="thumbs-down" size={20} color={disliked ? '#ff6b6b' : 'rgba(255,255,255,0.5)'} />
-            <Text style={[styles.socialCount, disliked && styles.socialCountActive]}>{dislikeCount}</Text>
-          </TouchableOpacity>
-          <View style={styles.activityBadge}>
-            <Ionicons name="flame" size={16} color="#f2ca50" />
-            <Text style={styles.activityText}>{item.activity + item.commentsList.length}</Text>
+          <View style={styles.socialLeft}>
+            <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleLike}>
+              <Ionicons name="thumbs-up" size={20} color={liked ? '#f2ca50' : 'rgba(255,255,255,0.5)'} />
+              <Text style={[styles.socialCount, liked && styles.socialCountActive]}>{likeCount}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleDislike}>
+              <Ionicons name="thumbs-down" size={20} color={disliked ? '#ff6b6b' : 'rgba(255,255,255,0.5)'} />
+              <Text style={[styles.socialCount, disliked && styles.socialCountActive]}>{dislikeCount}</Text>
+            </TouchableOpacity>
+            <View style={styles.activityBadge}>
+              <Ionicons name="flame" size={16} color="#f2ca50" />
+              <Text style={styles.activityText}>{item.activity + item.commentsList.length}</Text>
+            </View>
           </View>
-          <TouchableOpacity style={styles.eshafotnikButton} activeOpacity={0.7} onPress={handleEshafotnik}>
-            <Text style={styles.eshafotnikText}>Эшафотник</Text>
-          </TouchableOpacity>
+          <View style={styles.socialComments}>
+            <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.5)" />
+            <Text style={styles.socialCount}>{item.commentsList.length}</Text>
+          </View>
         </View>
-        <View style={styles.socialComments}>
-          <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.5)" />
-          <Text style={styles.socialCount}>{item.commentsList.length}</Text>
-        </View>
+        <TouchableOpacity style={styles.eshafotnikButton} activeOpacity={0.7} onPress={handleEshafotnik}>
+          <Text style={styles.eshafotnikText}>Эшафотник за 2 💎</Text>
+        </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
@@ -427,13 +462,16 @@ const FullscreenViewer = ({
 
 /* ---------------- Screen ---------------- */
 export default function CaseClubScreen() {
-  const [identity, setIdentity] = useState<Identity>(() => (globalThis as any).getCaseClubIdentity?.());
+  const [identity, setIdentity] = useState<Identity>(undefined);
   const [viewer, setViewer] = useState<{ media: CaseMedia[]; index: number } | null>(null);
   const [feed, setFeed] = useState<ClinicalCase[]>([]);
   const [workOfWeek, setWorkOfWeek] = useState<ClinicalCase | null>(null);
 
   useEffect(() => {
-    setIdentity((globalThis as any).getCaseClubIdentity?.());
+    getUserIdentity().then((id) => {
+      if (id) setIdentity({ name: id.shortName, avatarSource: id.avatarSource, role: id.role });
+      else setIdentity((globalThis as any).getCaseClubIdentity?.());
+    });
   }, []);
 
   useFocusEffect(
@@ -512,13 +550,6 @@ export default function CaseClubScreen() {
                 <Ionicons name="arrow-back" size={24} color="#ffffff" />
               </TouchableOpacity>
               <Text style={styles.screenTitle}>Кейс-клуб</Text>
-              <TouchableOpacity
-                style={styles.addButton}
-                activeOpacity={0.8}
-                onPress={() => router.push('/create-case' as any)}
-              >
-                <Ionicons name="add" size={26} color="#0b0e14" />
-              </TouchableOpacity>
             </View>
             {workOfWeek && <WorkOfWeekCard item={workOfWeek} identity={identity} />}
           </View>
@@ -530,6 +561,14 @@ export default function CaseClubScreen() {
         initialIndex={viewer?.index ?? 0}
         onClose={() => setViewer(null)}
       />
+
+      <TouchableOpacity
+        style={styles.fab}
+        activeOpacity={0.85}
+        onPress={() => router.push('/create-case' as any)}
+      >
+        <Ionicons name="add" size={16} color="#0b0e14" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -561,20 +600,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  addButton: {
+  fab: {
     position: 'absolute',
     right: 16,
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+    top: 12,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: '#f2ca50',
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 9999,
     shadowColor: '#f2ca50',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 10,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.7,
+    shadowRadius: 12,
+    elevation: 14,
   },
   listContent: {
     paddingHorizontal: 20,
@@ -819,9 +860,7 @@ const styles = StyleSheet.create({
 
   /* Social panel */
   socialPanel: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.1)',
     paddingTop: 12,
@@ -830,7 +869,14 @@ const styles = StyleSheet.create({
   },
   socialActions: {
     flexDirection: 'row',
-    gap: 16,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  socialLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   socialButton: {
     flexDirection: 'row',
@@ -860,6 +906,10 @@ const styles = StyleSheet.create({
     color: '#f2ca50',
   },
   eshafotnikButton: {
+    marginTop: 8,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
