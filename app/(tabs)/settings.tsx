@@ -1,17 +1,40 @@
 import { LangType, useLanguage } from '@/context/LanguageContext';
 import { useTheme } from '@/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Linking,
-  ScrollView, StatusBar, StyleSheet,
-  Switch, Text, TouchableOpacity, View,
+    Linking,
+    ScrollView, StatusBar, StyleSheet,
+    Switch, Text, TouchableOpacity, View,
 } from 'react-native';
+
+const SUPPORT_TG = 'https://t.me/your_labs_support_username';
+const SUPPORT_EMAIL = 'mailto:support@dilabs.com?subject=DiLabs%20Support';
 
 export default function SettingsScreen() {
   const { theme } = useTheme();
   const { t, lang, setLang } = useLanguage();
+  const [pushEnabled, setPushEnabled] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem('@user_push_enabled').then(v => setPushEnabled(v === 'true'));
+  }, []);
+
+  const handleSupportPress = async () => {
+    const canOpenTG = await Linking.canOpenURL(SUPPORT_TG);
+    if (canOpenTG) {
+      await Linking.openURL(SUPPORT_TG);
+    } else {
+      await Linking.openURL(SUPPORT_EMAIL);
+    }
+  };
+
+  const handlePushToggle = async (value: boolean) => {
+    setPushEnabled(value);
+    await AsyncStorage.setItem('@user_push_enabled', String(value));
+  };
 
   const LANGUAGES: { code: LangType; label: string; flag: string }[] = [
     { code: 'uk', label: 'Українська', flag: '🇺🇦' },
@@ -73,7 +96,8 @@ export default function SettingsScreen() {
             label={t('pushNotifications')}
             right={
               <Switch
-                value={false}
+                value={pushEnabled}
+                onValueChange={handlePushToggle}
                 trackColor={{ false: '#767577', true: theme.accentDim }}
                 thumbColor={theme.accent}
               />
@@ -110,11 +134,13 @@ export default function SettingsScreen() {
     right={<Ionicons name="chevron-forward" size={20} color={theme.textDim} />}
   />
 </TouchableOpacity>
-          <SettingRow
-            icon="mail-outline"
-            label={t('support')}
-            right={<Ionicons name="chevron-forward" size={20} color={theme.textDim} />}
-          />
+          <TouchableOpacity onPress={handleSupportPress}>
+            <SettingRow
+              icon="mail-outline"
+              label={t('support')}
+              right={<Ionicons name="chevron-forward" size={20} color={theme.textDim} />}
+            />
+          </TouchableOpacity>
         </View>
 
       </ScrollView>

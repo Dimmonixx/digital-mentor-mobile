@@ -4,7 +4,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Redirect, Tabs } from 'expo-router';
 
-import { onValue, ref } from 'firebase/database';
+import { firestore } from '@/constants/firebase';
+import { onValue, ref, set } from 'firebase/database';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -17,6 +19,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HapticTab } from '@/components/haptic-tab';
 
 import GlobalHeader from '@/components/global-header';
+
+import DrawerMenu from '@/components/DrawerMenu';
 
 import { database } from '@/constants/firebase';
 
@@ -94,29 +98,113 @@ export default function TabLayout() {
 
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
+  const [incomingArchiveCount, setIncomingArchiveCount] = useState(0);
+
   const [, setPreviousNewOrdersCount] = useState(0);
 
   const previousNewOrdersCountRef = useRef(0);
 
   const isInitialLoad = useRef(true);
 
-  const [diamondBalance, setDiamondBalance] = useState<number>(150);
+  const [diamondBalance, setDiamondBalance] = useState<number>(20);
   const diamondBalanceRef = useRef(diamondBalance);
+
+  const [drawerVisible, setDrawerVisible] = useState(false);
 
   useEffect(() => {
     diamondBalanceRef.current = diamondBalance;
   }, [diamondBalance]);
 
+  // Подписка для бейджа гамбургера (звук в IncomingArchiveWatcher в корневом _layout)
+  useEffect(() => {
+    if (!user) return;
+    const rawUid: string = (user as any).id || (user as any).uid || (user as any).email || '';
+    const uid = rawUid.replace(/\./g, '_');
+    if (!uid) return;
+    const q = query(
+      collection(firestore, 'archives'),
+      where('sharedWith', 'array-contains', uid),
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      const unread = snap.docs.filter((d) => {
+        const data = d.data();
+        if (data.userId === uid) return false; // свои документы не считаем
+        const readBy: Record<string, boolean> = data.readBy || {};
+        return !readBy[uid];
+      });
+      setIncomingArchiveCount(unread.length);
+    }, () => {});
+    return () => unsub();
+  }, [user]);
+
+  // Инициализация user из AsyncStorage (без баланса — он теперь из RTDB)
+  useEffect(() => {
+    AsyncStorage.getItem('user').then((data) => {
+      if (data) {
+        const parsed = JSON.parse(data);
+        setUser(parsed);
+        // Временно берём кэш пока RTDB не ответил
+        if (parsed.diamondBalance !== undefined) {
+          setDiamondBalance(parsed.diamondBalance);
+          diamondBalanceRef.current = parsed.diamondBalance;
+        }
+      }
+      setLoading(false);
+    });
+  }, []);
+
+  // Подписка баланса алмазов из RTDB — единственный источник истины
+  useEffect(() => {
+    if (!user) return;
+    const uid: string = ((user as any).id || (user as any).uid || (user as any).email || '').replace(/\./g, '_');
+    if (!uid) return;
+    const diamondRef = ref(database, `users/${uid}/diamondBalance`);
+    const unsub = onValue(diamondRef, (snap) => {
+      const val = snap.val();
+      if (val !== null && val !== undefined) {
+        setDiamondBalance(val);
+        diamondBalanceRef.current = val;
+        console.log('💎 RTDB_BALANCE: Баланс из RTDB =', val, '| путь: users/' + uid + '/diamondBalance');
+      } else {
+        // Поля нет — инициализируем значением из кэша или 20
+        const initial = diamondBalanceRef.current || 20;
+        set(diamondRef, initial);
+        console.log('💎 RTDB_BALANCE: Поле не найдено, записываем начальный баланс =', initial, '| путь: users/' + uid + '/diamondBalance');
+      }
+      console.log('💎 СИНХРОНИЗАЦИЯ: Алмазы переведены на Firebase RTDB для', uid);
+    });
+    return () => unsub();
+  }, [user]);
+
+  // Сохраняем баланс в AsyncStorage при каждом изменении
+  useEffect(() => {
+    if (!user) return;
+    const updated = { ...user, diamondBalance };
+    AsyncStorage.setItem('user', JSON.stringify(updated));
+  }, [diamondBalance, user]);
+
   useEffect(() => {
     (globalThis as any).getDiamondBalance = () => diamondBalanceRef.current;
     (globalThis as any).spendDiamonds = (amount: number) => {
-      let didSpend = false;
-      setDiamondBalance(prev => {
-        if (prev < amount) return prev;
-        didSpend = true;
-        return prev - amount;
+      if (diamondBalanceRef.current < amount) return false;
+
+      const newBalance = diamondBalanceRef.current - amount;
+
+      // 1. Обновляем стейт и реф
+      setDiamondBalance(newBalance);
+      diamondBalanceRef.current = newBalance;
+
+      // 2. Пишем в RTDB фоново
+      AsyncStorage.getItem('user').then((raw) => {
+        if (!raw) return;
+        const u = JSON.parse(raw);
+        const uid: string = (u.id || u.uid || u.email || '').replace(/\./g, '_');
+        if (!uid) return;
+        set(ref(database, `users/${uid}/diamondBalance`), newBalance)
+          .catch((e) => console.log('💎 RTDB_SPEND_ERROR:', e));
       });
-      return didSpend;
+
+      return true;
     };
     (globalThis as any).forceDiamondUpdate = () => {
       setDiamondBalance(prev => prev);
@@ -125,19 +213,6 @@ export default function TabLayout() {
 
 
 
-  useEffect(() => {
-
-    AsyncStorage.getItem('user').then((data) => {
-
-      console.log('Stored user:', data);
-
-      if (data) setUser(JSON.parse(data));
-
-      setLoading(false);
-
-    });
-
-  }, []);
 
 
 
@@ -303,6 +378,19 @@ export default function TabLayout() {
               diamonds={diamondBalance}
               newOrdersCount={newOrdersCount}
               onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+              onBurgerPress={() => setDrawerVisible(true)}
+              unreadAnalysesCount={incomingArchiveCount}
+            />
+
+            <DrawerMenu
+              visible={drawerVisible}
+              onClose={() => setDrawerVisible(false)}
+              unreadAnalysesCount={incomingArchiveCount}
+              onRoleSwitch={() => {
+                AsyncStorage.getItem('user').then(data => {
+                  if (data) setUser(JSON.parse(data));
+                });
+              }}
             />
 
         <Tabs

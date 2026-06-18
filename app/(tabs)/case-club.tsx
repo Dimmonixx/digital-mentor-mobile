@@ -1,1066 +1,472 @@
-﻿import { DemoOverlay, DemoOverlayData, PostActionsSheet } from '@/components/case-post-actions';
-import { CaseComment, CaseMedia, ClinicalCase, isOwnCase } from '@/data/cases';
-import { getUserIdentity } from '@/utils/getUserIdentity';
+﻿import { database } from '@/constants/firebase';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
+import { onValue, ref, remove, set } from 'firebase/database';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    Dimensions,
-    FlatList,
-    Image,
-    ImageSourcePropType,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Dimensions,
+  FlatList,
+  Image,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const MEDIA_WIDTH = SCREEN_WIDTH - 40 - 24; // screen padding (20*2) + card padding (12*2)
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const STORAGE_KEY = '@global_case_club_posts';
 
-type Identity = { name: string; avatarSource: ImageSourcePropType | null; role?: string } | undefined;
+const PRESET_AVATARS: any[] = [
+  require('@/assets/avatars/avatar_1.jpg'),
+  require('@/assets/avatars/avatar_2.jpg'),
+  require('@/assets/avatars/avatar_3.jpg'),
+  require('@/assets/avatars/avatar_4.jpg'),
+  require('@/assets/avatars/avatar_5.jpg'),
+  require('@/assets/avatars/avatar_6.jpg'),
+  require('@/assets/avatars/avatar_7.jpg'),
+  require('@/assets/avatars/avatar_8.jpg'),
+  require('@/assets/avatars/avatar_9.jpg'),
+  require('@/assets/avatars/avatar_10.jpg'),
+];
 
-/* ---------------- Avatar (uri / preset / silhouette) ---------------- */
-const AuthorAvatar = ({
-  source,
-  size = 38,
-}: {
-  source: ImageSourcePropType | null;
-  size?: number;
-}) => {
-  if (!source) {
+/* ─── helpers ─── */
+function toArray<T>(val: any): T[] {
+  if (!val) return [];
+  if (Array.isArray(val)) return val as T[];
+  if (typeof val === 'object') return Object.values(val) as T[];
+  return [];
+}
+
+function validUri(uri?: string): string | undefined {
+  if (!uri) return undefined;
+  if (uri.startsWith('https://') || uri.startsWith('data:')) return uri;
+  return undefined;
+}
+
+function formatName(fullName: string): string {
+  const parts = (fullName || '').trim().split(/\s+/);
+  if (parts.length === 1) return parts[0];
+  const [last, first, middle] = parts;
+  const fi = first?.[0] ? first[0].toUpperCase() + '.' : '';
+  const mi = middle?.[0] ? middle[0].toUpperCase() + '.' : '';
+  return `${last} ${fi}${mi}`.trim();
+}
+
+/* ─── Avatar ─── */
+const Avatar = ({ post }: { post: any }) => {
+  const uri = post.avatarUrl && post.avatarUrl.startsWith('http') ? post.avatarUrl : undefined;
+  if (uri) return <Image source={{ uri }} style={styles.avatar} />;
+  if (post.avatarPresetId) {
     return (
-      <View style={[styles.avatar, styles.avatarSilhouette, { width: size, height: size, borderRadius: size / 2 }]}>
-        <Ionicons name="person" size={size * 0.55} color="rgba(242,202,80,0.7)" />
-      </View>
+      <Image
+        source={PRESET_AVATARS[(post.avatarPresetId - 1) % PRESET_AVATARS.length]}
+        style={styles.avatar}
+      />
     );
   }
-  return <Image source={source} style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]} />;
-};
-
-/* ---------------- Media carousel ---------------- */
-const MediaCarousel = ({
-  media,
-  onPressPhoto,
-}: {
-  media: CaseMedia[];
-  onPressPhoto: (index: number) => void;
-}) => {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 60 }).current;
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) {
-      setActiveIndex(viewableItems[0].index ?? 0);
-    }
-  }).current;
-
+  const isTech = post.role === 'Техник' || post.role === 'technician' || post.role === 'Зубной техник';
   return (
-    <View style={styles.mediaWrap}>
-      <FlatList
-        data={media}
-        keyExtractor={(_, i) => String(i)}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        viewabilityConfig={viewabilityConfig}
-        onViewableItemsChanged={onViewableItemsChanged}
-        renderItem={({ item, index }) => (
-          <TouchableOpacity activeOpacity={0.95} onPress={() => onPressPhoto(index)} style={{ width: MEDIA_WIDTH }}>
-            <Image source={{ uri: item.uri }} style={styles.mediaImage} />
-            <View style={styles.stageBadge}>
-              <Text style={styles.stageBadgeText}>{item.stage}</Text>
-            </View>
-            <View style={styles.counterBadge}>
-              <Ionicons name="images-outline" size={12} color="#fff" />
-              <Text style={styles.counterText}>
-                {index + 1} из {media.length}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        )}
-      />
-      <View style={styles.dotsRow}>
-        {media.map((_, i) => (
-          <View key={i} style={[styles.dot, i === activeIndex && styles.dotActive]} />
-        ))}
-      </View>
+    <View style={[styles.avatar, styles.avatarFallback]}>
+      <Ionicons name={isTech ? 'construct-outline' : 'medical-outline'} size={20} color="#f2ca50" />
     </View>
   );
 };
 
-/* ---------------- Comments inside card ---------------- */
-const CommentsBlock = ({ comments }: { comments: CaseComment[] }) => (
-  <View style={styles.commentsBlock}>
-    <View style={styles.commentsHeader}>
-      <Ionicons name="chatbubble-ellipses-outline" size={16} color="#4fc3f7" />
-      <Text style={styles.commentsTitle}>Обсуждение · {comments.length}</Text>
-    </View>
-    {comments.map((c) => (
-      <View key={c.id} style={styles.commentRow}>
-        <AuthorAvatar source={c.avatar ? { uri: c.avatar } : null} size={26} />
-        <View style={styles.commentBubble}>
-          <Text style={styles.commentAuthor}>{c.author}</Text>
-          <Text style={styles.commentText}>{c.text}</Text>
-        </View>
-      </View>
-    ))}
-    <TouchableOpacity style={styles.addCommentRow} activeOpacity={0.7}>
-      <Ionicons name="add-circle-outline" size={18} color="#f2ca50" />
-      <Text style={styles.addCommentText}>Написать комментарий…</Text>
-    </TouchableOpacity>
-  </View>
-);
-
-/* ---------------- Case card ---------------- */
-const CaseCard = ({
-  item,
-  identity,
-  onPressPhoto,
-  onDeleted,
+/* ─── PostCard ─── */
+const PostCard = ({
+  post,
+  currentEmail,
+  currentUserId,
+  menuPostId,
+  setMenuPostId,
+  onDelete,
+  onDeletePhoto,
+  onLike,
+  onDislike,
 }: {
-  item: ClinicalCase;
-  identity: Identity;
-  onPressPhoto: (media: CaseMedia[], index: number) => void;
-  onDeleted: (id: string) => void;
+  post: any;
+  currentEmail: string;
+  currentUserId: string;
+  menuPostId: string | null;
+  setMenuPostId: (id: string | null) => void;
+  onDelete: (id: string) => void;
+  onDeletePhoto: (id: string) => void;
+  onLike: (id: string) => void;
+  onDislike: (id: string) => void;
 }) => {
-  const isOwn = isOwnCase(item);
-  const isAnon = !!item.anonymous;
+  const isOwn = !!currentEmail && post.authorEmail === currentEmail;
+  const isTech = post.role === 'Техник' || post.role === 'technician' || post.role === 'Зубной техник';
+  const roleLabel = isTech ? 'Зубной техник' : 'Врач';
 
-  const formatShortName = (fullName: string) => {
-    const parts = fullName.trim().split(/\s+/);
-    if (parts.length === 1) return parts[0];
-    const [last, first, middle] = parts;
-    const firstI = first ? first[0][0].toUpperCase() + '.' : '';
-    const middleI = middle ? middle[0].toUpperCase() + '.' : '';
-    return `${last} ${firstI}${middleI}`;
-  };
-
-  const resolvedRole = isOwn && identity?.role ? identity.role : ((item as any).role ?? '');
-  const isTech = resolvedRole === 'Техник' || resolvedRole === 'Зубной техник' || resolvedRole === 'technician';
-  const roleDisplay = isTech ? 'Зубной техник' : 'Врач';
-
-  const rawName = isAnon
-    ? 'Анонимный коллега'
-    : isOwn && identity?.name
-      ? identity.name
-      : item.author;
-  const displayName = isAnon ? rawName : formatShortName(rawName);
-  const avatarSource: ImageSourcePropType | null = isAnon
-    ? null
-    : isOwn && identity?.avatarSource
-      ? identity.avatarSource
-      : { uri: item.avatar };
-
-  const [showTeaser, setShowTeaser] = useState(false);
-  const [menuVisible, setMenuVisible] = useState(false);
-  const [overlay, setOverlay] = useState<DemoOverlayData>(null);
-  const [liked, setLiked] = useState(false);
-  const [disliked, setDisliked] = useState(false);
-  const [likeCount, setLikeCount] = useState(item.activity);
-  const [dislikeCount, setDislikeCount] = useState(0);
-
-  const goDetails = () => router.push({ pathname: '/case-details', params: { id: item.id } } as any);
-
-  const handleLike = () => {
-    if (disliked) {
-      setDisliked(false);
-      setDislikeCount(dislikeCount - 1);
-      setLiked(true);
-      setLikeCount(likeCount + 1);
-    } else if (liked) {
-      setLiked(false);
-      setLikeCount(likeCount - 1);
-    } else {
-      setLiked(true);
-      setLikeCount(likeCount + 1);
-    }
-  };
-
-  const handleDislike = () => {
-    if (liked) {
-      setLiked(false);
-      setLikeCount(likeCount - 1);
-      setDisliked(true);
-      setDislikeCount(dislikeCount + 1);
-    } else if (disliked) {
-      setDisliked(false);
-      setDislikeCount(dislikeCount - 1);
-    } else {
-      setDisliked(true);
-      setDislikeCount(dislikeCount + 1);
-    }
-  };
-
-  const handleEshafotnik = () => {
-    console.log('Эшафотник нажат для кейса:', item.id);
-    setOverlay({ title: 'Эшафотник', message: 'Кейс отправлен на AI-разбор (демо).', icon: 'flame-outline' });
-  };
-
-  const handleEditText = () => {
-    setMenuVisible(false);
-    setOverlay({ title: 'Редактирование текста', message: 'Открыт редактор описания (демо).', icon: 'create-outline' });
-  };
-  const handleDeletePhoto = () => {
-    setMenuVisible(false);
-    setOverlay({ title: 'Удаление фото', message: 'Выберите фото для удаления (демо).', icon: 'image-outline' });
-  };
-  const handleDeletePost = () => {
-    setMenuVisible(false);
-    setOverlay({
-      title: 'Удалить пост?',
-      message: 'Это действие нельзя отменить.',
-      icon: 'trash-outline',
-      danger: true,
-      confirmText: 'УДАЛИТЬ',
-      onConfirm: () => {
-        setOverlay(null);
-        onDeleted(item.id);
-      },
-    });
-  };
-
-  return (
-    <View style={styles.card}>
-      {/* Card header */}
-      <View style={styles.cardHeader}>
-        <AuthorAvatar source={avatarSource} />
-        <View style={styles.authorInfo}>
-          <View style={[styles.roleBadge, isTech && styles.roleBadgeTech]}>
-            <Text style={[styles.roleBadgeText, isTech && styles.roleBadgeTextTech]}>
-              {roleDisplay}
-            </Text>
-          </View>
-          <Text style={styles.authorName} numberOfLines={1}>{displayName}</Text>
-        </View>
-        {isOwn && (
-          <TouchableOpacity style={styles.menuButton} activeOpacity={0.7} onPress={() => setMenuVisible(true)}>
-            <Ionicons name="ellipsis-vertical" size={20} color="rgba(255,255,255,0.7)" />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Tappable content opens details */}
-      <TouchableOpacity activeOpacity={0.95} onPress={goDetails}>
-        <MediaCarousel media={item.media} onPressPhoto={(i) => onPressPhoto(item.media, i)} />
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsRow}>
-          {item.tags.map((tag) => (
-            <View key={tag} style={styles.tagChip}>
-              <Text style={styles.tagText}>{tag}</Text>
-            </View>
-          ))}
-        </ScrollView>
-
-        <Text style={styles.description} numberOfLines={3}>
-          {item.description}
-        </Text>
-      </TouchableOpacity>
-
-      {/* Social panel */}
-      <View style={styles.socialPanel}>
-        <View style={styles.socialActions}>
-          <View style={styles.socialLeft}>
-            <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleLike}>
-              <Ionicons name="thumbs-up" size={20} color={liked ? '#f2ca50' : 'rgba(255,255,255,0.5)'} />
-              <Text style={[styles.socialCount, liked && styles.socialCountActive]}>{likeCount}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleDislike}>
-              <Ionicons name="thumbs-down" size={20} color={disliked ? '#ff6b6b' : 'rgba(255,255,255,0.5)'} />
-              <Text style={[styles.socialCount, disliked && styles.socialCountActive]}>{dislikeCount}</Text>
-            </TouchableOpacity>
-            <View style={styles.activityBadge}>
-              <Ionicons name="flame" size={16} color="#f2ca50" />
-              <Text style={styles.activityText}>{item.activity + item.commentsList.length}</Text>
-            </View>
-          </View>
-          <View style={styles.socialComments}>
-            <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.5)" />
-            <Text style={styles.socialCount}>{item.commentsList.length}</Text>
-          </View>
-        </View>
-        <TouchableOpacity style={styles.eshafotnikButton} activeOpacity={0.7} onPress={handleEshafotnik}>
-          <Text style={styles.eshafotnikText}>Эшафотник за 2 💎</Text>
-        </TouchableOpacity>
-      </View>
-
-      <PostActionsSheet
-        visible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-        onEditText={handleEditText}
-        onDeletePhoto={handleDeletePhoto}
-        onDeletePost={handleDeletePost}
-      />
-      <DemoOverlay data={overlay} onClose={() => setOverlay(null)} />
-    </View>
+  const mediaArr = toArray<any>(post.media);
+  const coverIdx = post.coverIndex ?? 0;
+  const coverItem = mediaArr[coverIdx] ?? mediaArr[0];
+  const photoUri = validUri(
+    coverItem?.uri ?? (typeof coverItem === 'string' ? coverItem : undefined)
   );
-};
 
-/* ---------------- Work of the week ---------------- */
-const WorkOfWeekCard = ({ item, identity }: { item: ClinicalCase; identity: Identity }) => {
-  const isAnon = !!item.anonymous;
-  const isOwn = isOwnCase(item);
+  const likedBy: Record<string, boolean> = post.likedBy && typeof post.likedBy === 'object' ? post.likedBy : {};
+  const dislikedBy: Record<string, boolean> = post.dislikedBy && typeof post.dislikedBy === 'object' ? post.dislikedBy : {};
+  const likeCount = Object.keys(likedBy).length;
+  const dislikeCount = Object.keys(dislikedBy).length;
+  const isLiked = !!currentUserId && !!likedBy[currentUserId];
+  const isDisliked = !!currentUserId && !!dislikedBy[currentUserId];
 
-  const formatShortName = (fullName: string) => {
-    const parts = fullName.trim().split(/\s+/);
-    if (parts.length === 1) return parts[0];
-    const [last, first, middle] = parts;
-    const firstI = first ? first[0].toUpperCase() + '.' : '';
-    const middleI = middle ? middle[0].toUpperCase() + '.' : '';
-    return `${last} ${firstI}${middleI}`;
-  };
-
-  const rawName = isAnon ? 'Анонимный коллега' : isOwn && identity?.name ? identity.name : item.author;
-  const displayName = isAnon ? rawName : formatShortName(rawName);
-
-  const resolvedRole = isOwn && identity?.role ? identity.role : ((item as any).role ?? '');
-  const isTech = resolvedRole === 'Техник' || resolvedRole === 'Зубной техник' || resolvedRole === 'technician';
-  const roleDisplay = isTech ? 'Зубной техник' : 'Врач';
-  const [liked, setLiked] = useState(false);
-  const [disliked, setDisliked] = useState(false);
-  const [likeCount, setLikeCount] = useState(item.activity);
-  const [dislikeCount, setDislikeCount] = useState(0);
-
-  const handleLike = () => {
-    if (disliked) {
-      setDisliked(false);
-      setDislikeCount(dislikeCount - 1);
-      setLiked(true);
-      setLikeCount(likeCount + 1);
-    } else if (liked) {
-      setLiked(false);
-      setLikeCount(likeCount - 1);
-    } else {
-      setLiked(true);
-      setLikeCount(likeCount + 1);
-    }
-  };
-
-  const handleDislike = () => {
-    if (liked) {
-      setLiked(false);
-      setLikeCount(likeCount - 1);
-      setDisliked(true);
-      setDislikeCount(dislikeCount + 1);
-    } else if (disliked) {
-      setDisliked(false);
-      setDislikeCount(dislikeCount - 1);
-    } else {
-      setDisliked(true);
-      setDislikeCount(dislikeCount + 1);
-    }
-  };
-
-  const handleEshafotnik = () => {
-    console.log('Эшафотник нажат для кейса:', item.id);
-  };
+  const menuOpen = menuPostId === post.id;
 
   return (
     <TouchableOpacity
-      activeOpacity={0.92}
-      style={styles.wowCard}
-      onPress={() => router.push({ pathname: '/case-details', params: { id: item.id } } as any)}
+      activeOpacity={0.93}
+      style={styles.card}
+      onPress={() => {
+        setMenuPostId(null);
+        router.push({ pathname: '/case-details', params: { id: post.id } } as any);
+      }}
     >
-      <View style={styles.wowHeader}>
-        <Text style={styles.wowCrown}>👑</Text>
-        <Text style={styles.wowTitle}>Работа недели</Text>
-      </View>
-      <Image source={{ uri: item.media[0]?.uri }} style={styles.wowImage} />
-      <View style={styles.wowFooter}>
-        <Text style={styles.wowAuthor} numberOfLines={1}>{displayName}</Text>
-        <Text style={styles.wowDesc} numberOfLines={2}>{item.description}</Text>
-        <View style={styles.wowStats}>
-          <Ionicons name="flame" size={14} color="#f2ca50" />
-          <Text style={styles.wowStatsText}>{item.activity + item.commentsList.length} баллов активности</Text>
+      {/* Header */}
+      <View style={styles.cardHeader}>
+        <Avatar post={post} />
+        <View style={styles.authorBlock}>
+          <View style={[styles.badge, isTech && styles.badgeTech]}>
+            <Text style={[styles.badgeText, isTech && styles.badgeTextTech]}>{roleLabel}</Text>
+          </View>
+          <Text style={styles.authorName} numberOfLines={1}>{formatName(post.author || 'Автор')}</Text>
         </View>
+        {isOwn && (
+          <TouchableOpacity
+            style={styles.menuBtn}
+            onPress={() => setMenuPostId(menuOpen ? null : post.id)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="ellipsis-vertical" size={20} color="#f2ca50" />
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Social panel */}
-      <View style={styles.socialPanel}>
-        <View style={styles.socialActions}>
-          <View style={styles.socialLeft}>
-            <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleLike}>
-              <Ionicons name="thumbs-up" size={20} color={liked ? '#f2ca50' : 'rgba(255,255,255,0.5)'} />
-              <Text style={[styles.socialCount, liked && styles.socialCountActive]}>{likeCount}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialButton} activeOpacity={0.7} onPress={handleDislike}>
-              <Ionicons name="thumbs-down" size={20} color={disliked ? '#ff6b6b' : 'rgba(255,255,255,0.5)'} />
-              <Text style={[styles.socialCount, disliked && styles.socialCountActive]}>{dislikeCount}</Text>
-            </TouchableOpacity>
-            <View style={styles.activityBadge}>
-              <Ionicons name="flame" size={16} color="#f2ca50" />
-              <Text style={styles.activityText}>{item.activity + item.commentsList.length}</Text>
-            </View>
-          </View>
-          <View style={styles.socialComments}>
-            <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.5)" />
-            <Text style={styles.socialCount}>{item.commentsList.length}</Text>
-          </View>
+      {/* 3-dot dropdown */}
+      {menuOpen && (
+        <View style={styles.dropdown}>
+          <TouchableOpacity
+            style={styles.dropdownItem}
+            onPress={() => { router.push(`/edit-case?id=${post.id}` as any); setMenuPostId(null); }}
+          >
+            <Ionicons name="create-outline" size={16} color="#f2ca50" />
+            <Text style={styles.dropdownText}>Редактировать пост</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.dropdownItem}
+            onPress={() => { onDeletePhoto(post.id); setMenuPostId(null); }}
+          >
+            <Ionicons name="image-outline" size={16} color="#f2ca50" />
+            <Text style={styles.dropdownText}>Удалить фото</Text>
+          </TouchableOpacity>
+          <View style={styles.dropdownDivider} />
+          <TouchableOpacity
+            style={styles.dropdownItem}
+            onPress={() => { onDelete(post.id); setMenuPostId(null); }}
+          >
+            <Ionicons name="trash-outline" size={16} color="#e74c3c" />
+            <Text style={[styles.dropdownText, { color: '#e74c3c' }]}>Удалить пост</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.eshafotnikButton} activeOpacity={0.7} onPress={handleEshafotnik}>
-          <Text style={styles.eshafotnikText}>Эшафотник за 2 💎</Text>
+      )}
+
+      {/* Photo */}
+      {!!photoUri && (
+        <Image source={{ uri: photoUri }} style={styles.photo} onError={() => {}} />
+      )}
+
+      {/* Description */}
+      {!!post.description && (
+        <Text style={styles.description} numberOfLines={5}>{post.description}</Text>
+      )}
+
+      {/* Actions row */}
+      <View style={styles.actionsRow}>
+        <View style={styles.actionsLeft}>
+          <TouchableOpacity
+            onPress={() => onLike(post.id)}
+            style={styles.actionBtn}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={isLiked ? 'thumbs-up' : 'thumbs-up-outline'}
+              size={20}
+              color={isLiked ? '#f2ca50' : 'rgba(255,255,255,0.45)'}
+            />
+            <Text style={[styles.actionCount, isLiked && { color: '#f2ca50' }]}>{likeCount}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => onDislike(post.id)}
+            style={styles.actionBtn}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={isDisliked ? 'thumbs-down' : 'thumbs-down-outline'}
+              size={20}
+              color={isDisliked ? '#e74c3c' : 'rgba(255,255,255,0.45)'}
+            />
+            <Text style={[styles.actionCount, isDisliked && { color: '#e74c3c' }]}>{dislikeCount}</Text>
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}
+          onPress={() => router.push({ pathname: '/case-details', params: { id: post.id } } as any)}
+        >
+          <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.45)" />
+          <Text style={styles.actionCount}>{post.commentsCount || 0}</Text>
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
 };
 
-/* ---------------- Fullscreen photo viewer ---------------- */
-const FullscreenViewer = ({
-  media,
-  initialIndex,
-  onClose,
-}: {
-  media: CaseMedia[] | null;
-  initialIndex: number;
-  onClose: () => void;
-}) => {
-  const [index, setIndex] = useState(initialIndex);
-  useEffect(() => setIndex(initialIndex), [initialIndex, media]);
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) setIndex(viewableItems[0].index ?? 0);
-  }).current;
-
-  return (
-    <Modal visible={!!media} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.viewerBackdrop}>
-        <TouchableOpacity style={styles.viewerClose} onPress={onClose} activeOpacity={0.8}>
-          <Ionicons name="close" size={30} color="#fff" />
-        </TouchableOpacity>
-        {media && (
-          <>
-            <View style={styles.viewerCounter}>
-              <Text style={styles.viewerCounterText}>{index + 1} из {media.length}</Text>
-            </View>
-            <FlatList
-              data={media}
-              keyExtractor={(_, i) => String(i)}
-              horizontal
-              pagingEnabled
-              initialScrollIndex={initialIndex}
-              getItemLayout={(_, i) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * i, index: i })}
-              showsHorizontalScrollIndicator={false}
-              onViewableItemsChanged={onViewableItemsChanged}
-              renderItem={({ item }) => (
-                <View style={styles.viewerSlide}>
-                  <Image source={{ uri: item.uri }} style={styles.viewerImage} resizeMode="contain" />
-                  <View style={styles.viewerStage}>
-                    <Text style={styles.stageBadgeText}>{item.stage}</Text>
-                  </View>
-                </View>
-              )}
-            />
-          </>
-        )}
-      </View>
-    </Modal>
-  );
-};
-
-/* ---------------- Screen ---------------- */
+/* ─── Screen ─── */
 export default function CaseClubScreen() {
-  const [identity, setIdentity] = useState<Identity>(undefined);
-  const [viewer, setViewer] = useState<{ media: CaseMedia[]; index: number } | null>(null);
-  const [feed, setFeed] = useState<ClinicalCase[]>([]);
-  const [workOfWeek, setWorkOfWeek] = useState<ClinicalCase | null>(null);
-
-  useEffect(() => {
-    getUserIdentity().then((id) => {
-      if (id) setIdentity({ name: id.shortName, avatarSource: id.avatarSource, role: id.role });
-      else setIdentity((globalThis as any).getCaseClubIdentity?.());
-    });
-  }, []);
+  const [posts, setPosts] = useState<any[]>([]);
+  const [currentEmail, setCurrentEmail] = useState('');
+  const [currentUserId, setCurrentUserId] = useState('');
+  const [menuPostId, setMenuPostId] = useState<string | null>(null);
+  const unsubRef = useRef<(() => void) | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      const loadPosts = async () => {
-        try {
-          const data = await AsyncStorage.getItem('@case_club_posts');
-          if (data) {
-            const parsed: ClinicalCase[] = JSON.parse(data);
-            console.log('УСПЕШНО ИЗВЛЕЧЕНО ИЗ ASYNCSTORAGE ПОСТОВ:', parsed.length);
-            const wow = parsed.filter(c => c.activity > 0).reduce<ClinicalCase | null>((best, c) => {
-              if (!best) return c;
-              return c.activity + c.commentsList.length > best.activity + best.commentsList.length ? c : best;
-            }, null);
-            setWorkOfWeek(wow);
-            setFeed(parsed.filter((c) => wow ? c.id !== wow.id : true));
-          } else {
-            console.log('АсынцСторедж: постов нет, лента пуста');
-            setWorkOfWeek(null);
-            setFeed([]);
-          }
-        } catch (error) {
-          console.error('Ошибка чтения AsyncStorage:', error);
-          setWorkOfWeek(null);
-          setFeed([]);
+      AsyncStorage.getItem('user').then((raw) => {
+        if (raw) {
+          const u = JSON.parse(raw);
+          if (u.email) setCurrentEmail(u.email);
+          if (u.id) setCurrentUserId(u.id);
         }
-      };
-      loadPosts();
+      }).catch(() => {});
     }, [])
   );
 
-  const handleDeletePostById = async (id: string) => {
-    try {
-      const data = await AsyncStorage.getItem('@case_club_posts');
-      const posts: ClinicalCase[] = data ? JSON.parse(data) : [];
-      const updatedPosts = posts.filter((p) => p.id !== id);
-      await AsyncStorage.setItem('@case_club_posts', JSON.stringify(updatedPosts));
-      console.log('[CaseClub] удалён пост', id, 'осталось постов:', updatedPosts.length);
-      const wow = updatedPosts.filter(c => c.activity > 0).reduce<ClinicalCase | null>((best, c) => {
-        if (!best) return c;
-        return c.activity + c.commentsList.length > best.activity + best.commentsList.length ? c : best;
-      }, null);
-      setWorkOfWeek(wow);
-      setFeed(updatedPosts.filter((c) => wow ? c.id !== wow.id : true));
-    } catch (error) {
-      console.error('[CaseClub] ошибка удаления поста:', error);
-    }
-  };
+  useEffect(() => {
+    const postsRef = ref(database, 'case_club_posts');
+    const unsub = onValue(postsRef, (snapshot) => {
+      const raw = snapshot.exists() ? snapshot.val() : null;
+      const arr: any[] = toArray(raw).filter((p: any) => p?.id && p?.description);
+      const sorted = arr.sort((a, b) => Number(b.id) - Number(a.id));
+      setPosts(sorted);
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(sorted)).catch(() => {});
+    });
+    unsubRef.current = unsub;
+    return () => unsub();
+  }, []);
 
-  const openViewer = (media: CaseMedia[], index: number) => setViewer({ media, index });
+  const deletePost = useCallback(async (id: string) => {
+    Alert.alert('Удалить пост?', 'Это действие нельзя отменить.', [
+      { text: 'Отмена', style: 'cancel' },
+      {
+        text: 'Удалить', style: 'destructive', onPress: async () => {
+          try {
+            await remove(ref(database, `case_club_posts/${id}`));
+          } catch (e) {
+            console.warn('[CaseClub] Ошибка удаления:', e);
+            setPosts(prev => prev.filter(p => p.id !== id));
+          }
+        }
+      },
+    ]);
+  }, []);
+
+  const deletePhoto = useCallback(async (postId: string) => {
+    try {
+      await set(ref(database, `case_club_posts/${postId}/media`), []);
+    } catch (e) {
+      console.warn('[CaseClub] Ошибка удаления фото:', e);
+    }
+  }, []);
+
+  const handleLike = useCallback(async (postId: string) => {
+    if (!currentUserId) return;
+    const likeRef = ref(database, `case_club_posts/${postId}/likedBy/${currentUserId}`);
+    const post = posts.find(p => p.id === postId);
+    const alreadyLiked = post?.likedBy?.[currentUserId];
+    try {
+      if (alreadyLiked) {
+        await remove(likeRef);
+      } else {
+        await set(likeRef, true);
+        await remove(ref(database, `case_club_posts/${postId}/dislikedBy/${currentUserId}`));
+      }
+    } catch (e) {
+      console.warn('[CaseClub] Ошибка лайка:', e);
+    }
+  }, [currentUserId, posts]);
+
+  const handleDislike = useCallback(async (postId: string) => {
+    if (!currentUserId) return;
+    const dislikeRef = ref(database, `case_club_posts/${postId}/dislikedBy/${currentUserId}`);
+    const post = posts.find(p => p.id === postId);
+    const alreadyDisliked = post?.dislikedBy?.[currentUserId];
+    try {
+      if (alreadyDisliked) {
+        await remove(dislikeRef);
+      } else {
+        await set(dislikeRef, true);
+        await remove(ref(database, `case_club_posts/${postId}/likedBy/${currentUserId}`));
+      }
+    } catch (e) {
+      console.warn('[CaseClub] Ошибка дизлайка:', e);
+    }
+  }, [currentUserId, posts]);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+          <Ionicons name="arrow-back" size={24} color="#f2ca50" />
+        </TouchableOpacity>
+        <Text style={styles.title}>Кейс-Клуб</Text>
+        <TouchableOpacity onPress={() => router.push('/create-case' as any)} style={styles.headerBtn}>
+          <Ionicons name="add" size={28} color="#f2ca50" />
+        </TouchableOpacity>
+      </View>
+
       <FlatList
-        data={feed}
+        data={posts}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <CaseCard item={item} identity={identity} onPressPhoto={openViewer} onDeleted={handleDeletePostById} />
-        )}
+        contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
+        onScrollBeginDrag={() => setMenuPostId(null)}
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="folder-open-outline" size={42} color="rgba(242,202,80,0.65)" />
-            <Text style={styles.emptyStateTitle}>В Кейс-клубе пока нет публикаций</Text>
+          <View style={styles.empty}>
+            <Ionicons name="folder-open-outline" size={44} color="rgba(242,202,80,0.4)" />
+            <Text style={styles.emptyText}>Нет публикаций</Text>
+            <Text style={styles.emptyHint}>Нажмите «+» чтобы поделиться кейсом</Text>
           </View>
         }
-        ListHeaderComponent={
-          <View>
-            <View style={styles.titleBar}>
-              <TouchableOpacity
-                style={styles.backButton}
-                activeOpacity={0.7}
-                onPress={() => router.replace('/(tabs)/index' as any)}
-              >
-                <Ionicons name="arrow-back" size={24} color="#ffffff" />
-              </TouchableOpacity>
-              <Text style={styles.screenTitle}>Кейс-клуб</Text>
-            </View>
-            {workOfWeek && <WorkOfWeekCard item={workOfWeek} identity={identity} />}
-          </View>
-        }
+        renderItem={({ item }) => (
+          <PostCard
+            post={item}
+            currentEmail={currentEmail}
+            currentUserId={currentUserId}
+            menuPostId={menuPostId}
+            setMenuPostId={setMenuPostId}
+            onDelete={deletePost}
+            onDeletePhoto={deletePhoto}
+            onLike={handleLike}
+            onDislike={handleDislike}
+          />
+        )}
       />
-
-      <FullscreenViewer
-        media={viewer?.media ?? null}
-        initialIndex={viewer?.index ?? 0}
-        onClose={() => setViewer(null)}
-      />
-
-      <TouchableOpacity
-        style={styles.fab}
-        activeOpacity={0.85}
-        onPress={() => router.push('/create-case' as any)}
-      >
-        <Ionicons name="add" size={16} color="#0b0e14" />
-      </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
+/* ─── Styles ─── */
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  titleBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 14,
-    paddingBottom: 12,
-    position: 'relative',
-  },
-  screenTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#ffffff',
-    letterSpacing: 0.5,
-  },
-  backButton: {
-    position: 'absolute',
-    left: 16,
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fab: {
-    position: 'absolute',
-    right: 16,
-    top: 12,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#f2ca50',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 9999,
-    shadowColor: '#f2ca50',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.7,
-    shadowRadius: 12,
-    elevation: 14,
-  },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 130,
-    paddingTop: 4,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 44,
-    paddingHorizontal: 20,
-  },
-  emptyStateTitle: {
-    marginTop: 12,
-    fontSize: 15,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.72)',
-    textAlign: 'center',
-  },
+  container: { flex: 1, backgroundColor: 'transparent' },
 
-  /* Work of week */
-  wowCard: {
-    backgroundColor: 'rgba(30, 24, 8, 0.85)',
-    borderRadius: 20,
-    marginBottom: 24,
-    borderWidth: 1.5,
-    borderColor: 'rgba(242, 202, 80, 0.55)',
-    overflow: 'hidden',
-    shadowColor: '#f2ca50',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  wowHeader: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  wowCrown: { fontSize: 18 },
-  wowTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#f2ca50',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  wowImage: { width: '100%', height: 180, backgroundColor: '#10141f' },
-  wowFooter: { padding: 14 },
-  wowAuthor: { fontSize: 15, fontWeight: '700', color: '#ffffff', marginBottom: 4 },
-  wowDesc: { fontSize: 13, lineHeight: 19, color: 'rgba(255,255,255,0.8)', marginBottom: 10 },
-  wowStats: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  wowStatsText: { fontSize: 12, fontWeight: '600', color: '#f2ca50' },
+  headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  title: { flex: 1, fontSize: 22, fontWeight: '700', color: '#ffffff', textAlign: 'center', letterSpacing: 0.5 },
+
+  list: { paddingHorizontal: 16, paddingBottom: 130 },
+
+  empty: { alignItems: 'center', paddingTop: 80, gap: 10 },
+  emptyText: { color: 'rgba(255,255,255,0.55)', fontSize: 16, fontWeight: '600' },
+  emptyHint: { color: 'rgba(255,255,255,0.3)', fontSize: 13 },
 
   /* Card */
   card: {
-    backgroundColor: 'rgba(20, 26, 40, 0.78)',
+    backgroundColor: 'rgba(18,24,38,0.88)',
     borderRadius: 20,
-    padding: 12,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
-    borderTopColor: 'rgba(255, 255, 255, 0.35)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 18,
-    elevation: 10,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingHorizontal: 2,
-  },
-  authorInfo: {
-    flex: 1,
-    marginLeft: 10,
-  },
-  avatar: {
-    borderWidth: 1.5,
-    borderColor: 'rgba(242, 202, 80, 0.6)',
-    backgroundColor: '#1a2030',
-  },
-  avatarSilhouette: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  authorName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 5,
-  },
-  roleBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(242, 202, 80, 0.5)',
-    backgroundColor: 'rgba(242, 202, 80, 0.1)',
-  },
-  roleBadgeTech: {
-    borderColor: 'rgba(79, 195, 247, 0.5)',
-    backgroundColor: 'rgba(79, 195, 247, 0.1)',
-  },
-  roleBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#f2ca50',
-    letterSpacing: 0.5,
-  },
-  roleBadgeTextTech: {
-    color: '#4fc3f7',
-  },
-  menuButton: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mediaWrap: {
-    borderRadius: 14,
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
-  mediaImage: {
-    width: MEDIA_WIDTH,
-    height: 220,
-    borderRadius: 14,
-    backgroundColor: '#10141f',
-  },
-  stageBadge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: 'rgba(11, 14, 20, 0.5)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
-  },
-  stageBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#ffffff',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  counterBadge: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: 'rgba(11, 14, 20, 0.5)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
-  },
-  counterText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#ffffff',
-    letterSpacing: 0.3,
-  },
-  dotsRow: {
-    position: 'absolute',
-    bottom: 10,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-  },
-  dotActive: {
-    backgroundColor: '#f2ca50',
-    width: 18,
-  },
-  tagsRow: {
-    gap: 8,
-    paddingVertical: 2,
-    marginBottom: 12,
-  },
-  tagChip: {
+    paddingTop: 14,
     paddingHorizontal: 14,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(242, 202, 80, 0.12)',
+    paddingBottom: 4,
+    marginBottom: 18,
     borderWidth: 1,
-    borderColor: 'rgba(242, 202, 80, 0.35)',
-    borderRadius: 4,
+    borderColor: 'rgba(255,255,255,0.10)',
+    overflow: 'visible',
   },
-  tagText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#f2ca50',
-    letterSpacing: 0.3,
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+
+  avatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1.5,
+    borderColor: 'rgba(242,202,80,0.5)',
+    backgroundColor: '#131b2e',
+  },
+  avatarFallback: { alignItems: 'center', justifyContent: 'center' },
+
+  authorBlock: { flex: 1, marginLeft: 10 },
+  authorName: { fontSize: 14, fontWeight: '600', color: '#ffffff', marginTop: 3 },
+
+  badge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.45)',
+    backgroundColor: 'rgba(242,202,80,0.08)',
+  },
+  badgeTech: { borderColor: 'rgba(79,195,247,0.45)', backgroundColor: 'rgba(79,195,247,0.08)' },
+  badgeText: { fontSize: 10, fontWeight: '700', color: '#f2ca50', letterSpacing: 0.4 },
+  badgeTextTech: { color: '#4fc3f7' },
+
+  menuBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+
+  /* Dropdown */
+  dropdown: {
+    position: 'absolute',
+    right: 12,
+    top: 50,
+    backgroundColor: '#111827',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.35)',
+    zIndex: 200,
+    minWidth: 200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 20,
+  },
+  dropdownItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 },
+  dropdownText: { fontSize: 14, fontWeight: '600', color: '#f2ca50' },
+  dropdownDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginHorizontal: 12 },
+
+  photo: {
+    width: '100%',
+    height: SCREEN_WIDTH - 60,
+    borderRadius: 14,
+    backgroundColor: '#0d1120',
+    marginBottom: 12,
   },
   description: {
-    fontSize: 13.5,
-    lineHeight: 20,
-    color: 'rgba(255, 255, 255, 0.82)',
-    marginBottom: 12,
+    fontSize: 14,
+    lineHeight: 21,
+    color: 'rgba(255,255,255,0.80)',
     paddingHorizontal: 2,
+    marginBottom: 10,
   },
 
-  /* AI critique teaser */
-  aiTeaserBtn: {
+  /* Actions */
+  actionsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 107, 107, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 107, 107, 0.25)',
-    marginBottom: 12,
-  },
-  aiTeaserBtnText: { flex: 1, fontSize: 13, fontWeight: '700', color: '#ff8a8a' },
-  aiTeaserBubble: {
-    backgroundColor: 'rgba(255, 107, 107, 0.08)',
-    borderLeftWidth: 3,
-    borderLeftColor: '#ff6b6b',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  aiTeaserText: { fontSize: 13.5, lineHeight: 20, color: 'rgba(255,255,255,0.9)', fontStyle: 'italic', marginBottom: 8 },
-  aiTeaserMore: { fontSize: 12, fontWeight: '700', color: '#f2ca50' },
-
-  /* Social panel */
-  socialPanel: {
-    flexDirection: 'column',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
-    paddingTop: 12,
-    paddingHorizontal: 4,
-    marginTop: 8,
-  },
-  socialActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
-  },
-  socialLeft: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-  },
-  socialButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  socialCount: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.5)',
-  },
-  socialCountActive: {
-    color: '#ffffff',
-  },
-  activityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: 'rgba(242, 202, 80, 0.1)',
-  },
-  activityText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#f2ca50',
-  },
-  eshafotnikButton: {
-    marginTop: 8,
-    width: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 107, 107, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 107, 107, 0.3)',
-  },
-  eshafotnikText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#ff6b6b',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  socialComments: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-
-  /* Comments */
-  commentsBlock: {
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
-    paddingTop: 12,
-    paddingHorizontal: 2,
+    borderTopColor: 'rgba(255,255,255,0.07)',
+    paddingVertical: 10,
+    paddingHorizontal: 4,
   },
-  commentsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 10,
-  },
-  commentsTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#4fc3f7',
-    letterSpacing: 0.3,
-  },
-  commentRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    marginBottom: 10,
-  },
-  commentBubble: {
-    flex: 1,
-    backgroundColor: 'rgba(10, 15, 26, 0.6)',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  commentAuthor: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.9)',
-    marginBottom: 2,
-  },
-  commentText: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: 'rgba(255,255,255,0.7)',
-  },
-  addCommentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 6,
-  },
-  addCommentText: {
-    fontSize: 13,
-    color: 'rgba(242, 202, 80, 0.8)',
-    fontWeight: '500',
-  },
-
-  /* Bottom Tab Bar */
-  bottomTabBar: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    borderRadius: 25,
-    backgroundColor: 'rgba(15, 20, 35, 0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(242, 202, 80, 0.3)',
-    height: 60,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    shadowColor: '#f2ca50',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 12,
-  },
-  tabItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 60,
-  },
-  tabLabel: {
-    fontSize: 10,
-    marginTop: 2,
-    color: 'rgba(255, 255, 255, 0.6)',
-  },
-
-  /* Fullscreen viewer */
-  viewerBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.95)',
-    justifyContent: 'center',
-  },
-  viewerClose: {
-    position: 'absolute',
-    top: 50,
-    right: 20,
-    zIndex: 10,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  viewerCounter: {
-    position: 'absolute',
-    top: 58,
-    alignSelf: 'center',
-    zIndex: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-  },
-  viewerCounterText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  viewerSlide: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  viewerImage: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.7 },
-  viewerStage: {
-    position: 'absolute',
-    bottom: 90,
-    alignSelf: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: 'rgba(11, 14, 20, 0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
-  },
+  actionsLeft: { flexDirection: 'row', gap: 20 },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  actionCount: { fontSize: 13, color: 'rgba(255,255,255,0.45)', fontWeight: '600' },
 });

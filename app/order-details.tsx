@@ -2,18 +2,18 @@ import { database } from '@/constants/firebase';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
-import { onValue, ref, update } from 'firebase/database';
+import { onValue, ref, remove, update } from 'firebase/database';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Image,
-  ImageBackground,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Image,
+    ImageBackground,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -21,7 +21,6 @@ const STATUS_FLOW = [
   { key: 'new', label: 'Новый', color: '#29b6f6', icon: '🆕' },
   { key: 'in_progress', label: 'В работе', color: '#f2ca50', icon: '⚙️' },
   { key: 'ready', label: 'Готово', color: '#4caf50', icon: '✅' },
-  { key: 'delivered', label: 'Выдан', color: 'rgba(255,255,255,0.4)', icon: '📦' },
 ];
 
 const formatDateCustom = (dateVal: any) => {
@@ -58,6 +57,7 @@ export default function OrderDetailsScreen() {
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [isVitaExpanded, setIsVitaExpanded] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem('user').then(data => {
@@ -104,6 +104,11 @@ export default function OrderDetailsScreen() {
       updatedAt: Date.now(),
     });
     setShowStatusModal(false);
+  };
+
+  const deleteOrder = async () => {
+    await remove(ref(database, `orders/${orderId}`));
+    router.back();
   };
 
   const getStatusColor = (status: string) => {
@@ -327,6 +332,19 @@ export default function OrderDetailsScreen() {
             }}>
               {getStatusLabel(order.status)}
             </Text>
+          </TouchableOpacity>
+        ) : user?.role === 'doctor' ? (
+          <TouchableOpacity
+            onPress={() => setShowDeleteConfirm(true)}
+            style={{
+              padding: 8,
+              borderRadius: 20,
+              backgroundColor: 'rgba(231,76,60,0.2)',
+              borderWidth: 1,
+              borderColor: '#e74c3c',
+            }}
+          >
+            <Ionicons name="trash-outline" size={18} color="#e74c3c" />
           </TouchableOpacity>
         ) : (
           <View style={{
@@ -999,6 +1017,70 @@ export default function OrderDetailsScreen() {
               />
             );
           })()}
+        </View>
+      </Modal>
+
+      {/* Модал подтверждения удаления */}
+      <Modal
+        visible={showDeleteConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDeleteConfirm(false)}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 24,
+        }}>
+          <View style={{
+            backgroundColor: '#031427',
+            borderRadius: 20,
+            padding: 24,
+            borderWidth: 1,
+            borderColor: 'rgba(242,202,80,0.2)',
+            width: '100%',
+            maxWidth: 320,
+          }}>
+            <Text style={{
+              color: '#f2ca50',
+              fontSize: 20,
+              fontWeight: 'bold',
+              textAlign: 'center',
+              marginBottom: 12,
+            }}>Удалить наряд?</Text>
+            <Text style={{
+              color: 'rgba(255,255,255,0.6)',
+              fontSize: 14,
+              textAlign: 'center',
+              marginBottom: 24,
+            }}>Это действие нельзя отменить</Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => setShowDeleteConfirm(false)}
+                style={{
+                  flex: 1,
+                  padding: 14,
+                  borderRadius: 12,
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                }}
+              >
+                <Text style={{ color: '#fff', textAlign: 'center', fontSize: 15 }}>Отмена</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={deleteOrder}
+                style={{
+                  flex: 1,
+                  padding: 14,
+                  borderRadius: 12,
+                  backgroundColor: '#e74c3c',
+                }}
+              >
+                <Text style={{ color: '#fff', textAlign: 'center', fontSize: 15, fontWeight: '600' }}>Удалить</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
       </ImageBackground>

@@ -1,8 +1,10 @@
+import { database } from '@/constants/firebase';
 import { addCase } from '@/data/cases';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
+import { ref, set } from 'firebase/database';
 import React, { useState } from 'react';
 import {
   Dimensions,
@@ -23,39 +25,39 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CONTENT_WIDTH = SCREEN_WIDTH - 40;
 
-const MEDIA_SLOTS = ['Фото 1', 'Фото 2', 'Фото 3'];
-
 const VITA_SHADES = ['A1', 'A2', 'A3', 'A3.5', 'B1', 'B2', 'C2', 'D3'];
 
 
 export default function CreateCaseScreen() {
   const insets = useSafeAreaInsets();
   const [description, setDescription] = useState('');
-  const [media, setMedia] = useState<{ uri: string; stage: string }[]>([]);
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [coverIndex, setCoverIndex] = useState(0);
   const [isRiddle, setIsRiddle] = useState(false);
   const [riddleAnswer, setRiddleAnswer] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [overlay, setOverlay] = useState<{ title: string; message: string; icon?: string } | null>(null);
 
-  const pickImage = async (index: number) => {
+  const pickPhotos = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 1,
+      allowsMultipleSelection: true,
+      selectionLimit: 7,
+      quality: 0.3,
+      base64: true,
     });
-
-    if (!result.canceled && result.assets[0]) {
-      const newMedia = [...media];
-      newMedia[index] = { uri: result.assets[0].uri, stage: MEDIA_SLOTS[index] };
-      setMedia(newMedia);
+    if (!result.canceled) {
+      const newUris = result.assets.map(a =>
+        a.base64 ? `data:image/jpeg;base64,${a.base64}` : a.uri
+      );
+      setPhotos(prev => [...prev, ...newUris].slice(0, 7));
     }
   };
 
   const handlePublish = async () => {
     console.log('[CreateCase] publish pressed', {
       descriptionLength: description.trim().length,
-      mediaLength: media.length,
-      media,
+      photosLength: photos.length,
       isRiddle,
       riddleAnswer,
       isAnonymous,
@@ -67,29 +69,26 @@ export default function CreateCaseScreen() {
       return;
     }
 
-    if (!media.some(m => m.uri)) {
+    if (photos.length === 0) {
       console.log('[CreateCase] validation failed: no media selected');
       setOverlay({ title: 'Ошибка публикации', message: 'Пожалуйста, загрузите хотя бы одну фотографию клинического случая!', icon: 'alert-circle-outline' });
       return;
     }
 
     const safeDescription = description.trim();
-    const safeMedia = media
-      .filter(m => !!m?.uri)
-      .map(m => ({
-        uri: m.uri ?? '',
-        stage: m.stage ?? '',
-      }));
+    const safeMedia = photos.map((uri, i) => ({ uri, stage: `Фото ${i + 1}` }));
+    const safeCoverIndex = Math.min(coverIndex, photos.length - 1);
 
     const newCase = {
       id: Date.now().toString(),
-      author: isAnonymous ? 'Анонимный коллега' : 'Кривоносов Д.И.',
+      author: isAnonymous ? 'Анонимный коллега' : 'Пользователь',
       role: 'Врач' as const,
-      avatar: isAnonymous ? '' : 'https://i.pravatar.cc/150?img=12',
+      avatar: '',
       tags: [],
       description: safeDescription.slice(0, 100),
       fullDescription: safeDescription,
       media: safeMedia,
+      coverIndex: safeCoverIndex,
       commentsList: [],
       aiReview: 'Кейс опубликован. Ожидайте AI-анализ.',
       activity: 0,
@@ -111,32 +110,56 @@ export default function CreateCaseScreen() {
       });
     }
 
-    let authorName = 'Кривоносов Д.И.';
+    let authorName = '';
     let authorRole: 'doctor' | 'technician' = 'doctor';
+    let authorId = '';
+    let authorEmail = '';
+    let avatarPresetId: number | null = null;
+    let avatarUrl: string = '';
     try {
-      const rawUser = await AsyncStorage.getItem('user');
+      const [rawUser, rawProfile] = await Promise.all([
+        AsyncStorage.getItem('user'),
+        AsyncStorage.getItem('userProfile'),
+      ]);
       if (rawUser) {
         const u = JSON.parse(rawUser);
         if (u.name) authorName = u.name;
         if (u.role) authorRole = u.role;
+        if (u.id) authorId = u.id;
+        if (u.email) authorEmail = u.email;
+      }
+      if (rawProfile) {
+        const p = JSON.parse(rawProfile);
+        if (p.avatarPresetId) avatarPresetId = p.avatarPresetId;
+        if (p.avatarType === 'custom' && p.avatarUrl) avatarUrl = p.avatarUrl;
       }
     } catch {}
 
     const roleValue = authorRole === 'technician' ? 'Техник' : 'Врач';
-    newCase.author = isAnonymous ? 'Анонимный коллега' : authorName;
+    newCase.author = isAnonymous ? 'Анонимный коллега' : (authorName || 'Пользователь');
+    newCase.avatar = isAnonymous ? '' : (avatarUrl || '');
+    (newCase as any).avatarPresetId = isAnonymous ? null : avatarPresetId;
+    (newCase as any).isOwn = !isAnonymous;
     (newCase as any).role = roleValue;
+    (newCase as any).authorId = authorId;
+    (newCase as any).authorEmail = authorEmail;
 
     console.log('[CreateCase] newCase prepared', newCase);
 
-    console.log('[CreateCase] Сохранение в AsyncStorage...');
+    // Фото уже в base64 — загрузка в Storage не нужна
+
+    console.log('[CreateCase] Сохранение в Firebase + AsyncStorage...');
     try {
-      const existing = await AsyncStorage.getItem('@case_club_posts');
-      const posts = existing ? JSON.parse(existing) : [];
-      const updatedPosts = [newCase, ...posts];
-      await AsyncStorage.setItem('@case_club_posts', JSON.stringify(updatedPosts));
-      console.log('[CreateCase] Сохранено в AsyncStorage, постов всего:', updatedPosts.length);
+      // Записываем только этот пост в его узел — не трогаем остальные
+      await set(ref(database, `case_club_posts/${newCase.id}`), newCase);
+      // Обновляем локальный кэш: читаем существующее, заменяем/добавляем этот пост
+      const existing = await AsyncStorage.getItem('@global_case_club_posts');
+      const posts: any[] = existing ? JSON.parse(existing) : [];
+      const updated = [newCase, ...posts.filter((p: any) => p.id !== newCase.id)];
+      await AsyncStorage.setItem('@global_case_club_posts', JSON.stringify(updated));
+      console.log('[CreateCase] Сохранено. id:', newCase.id);
     } catch (err) {
-      console.error('[CreateCase] Ошибка записи в AsyncStorage:', err);
+      console.error('[CreateCase] Ошибка записи:', err);
     }
 
     addCase(newCase);
@@ -165,30 +188,46 @@ export default function CreateCaseScreen() {
           <View style={styles.section}>
             <View style={styles.sectionTitleRow}>
               <Ionicons name="images-outline" size={20} color="#f2ca50" />
-              <Text style={styles.sectionTitle}>Фото</Text>
+              <Text style={styles.sectionTitle}>Фото ({photos.length}/7)</Text>
             </View>
-            <View style={styles.mediaRow}>
-              {MEDIA_SLOTS.map((slot, index) => {
-                const mediaItem = media[index];
-                return (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+              <View style={{ flexDirection: 'row', gap: 10, paddingBottom: 4 }}>
+                {photos.map((photo, index) => (
                   <TouchableOpacity
-                    key={slot}
-                    activeOpacity={0.8}
-                    style={styles.mediaSlot}
-                    onPress={() => pickImage(index)}
+                    key={index}
+                    onPress={() => setCoverIndex(index)}
+                    style={[
+                      styles.thumb,
+                      coverIndex === index && styles.thumbCover,
+                    ]}
+                    activeOpacity={0.85}
                   >
-                    {mediaItem?.uri ? (
-                      <Image source={{ uri: mediaItem.uri }} style={styles.mediaSlotImage} />
-                    ) : (
-                      <>
-                        <Ionicons name="camera-outline" size={30} color="#f2ca50" />
-                        <Text style={styles.mediaSlotText}>{slot}</Text>
-                      </>
+                    <Image source={{ uri: photo }} style={styles.thumbImage} />
+                    {coverIndex === index && (
+                      <View style={styles.coverLabel}>
+                        <Text style={styles.coverLabelText}>ОБЛОЖКА</Text>
+                      </View>
                     )}
+                    <TouchableOpacity
+                      onPress={() => {
+                        const next = photos.filter((_, i) => i !== index);
+                        setPhotos(next);
+                        if (coverIndex >= next.length) setCoverIndex(Math.max(0, next.length - 1));
+                      }}
+                      style={styles.thumbRemove}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="close" size={12} color="#fff" />
+                    </TouchableOpacity>
                   </TouchableOpacity>
-                );
-              })}
-            </View>
+                ))}
+                {photos.length < 7 && (
+                  <TouchableOpacity onPress={pickPhotos} style={styles.addPhotoBtn} activeOpacity={0.8}>
+                    <Ionicons name="add" size={28} color="#f2ca50" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </ScrollView>
           </View>
 
           {/* Description */}
@@ -345,26 +384,48 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 
-  mediaRow: { flexDirection: 'row', gap: 12 },
-  mediaSlot: {
-    flex: 1,
-    height: 100,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: 'rgba(242, 202, 80, 0.5)',
-    backgroundColor: 'rgba(242, 202, 80, 0.06)',
+  thumb: {
+    width: 84,
+    height: 84,
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  thumbCover: { borderColor: '#f2ca50' },
+  thumbImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  coverLabel: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(242,202,80,0.82)',
+    alignItems: 'center',
+    paddingVertical: 3,
+  },
+  coverLabelText: { fontSize: 8, fontWeight: '800', color: '#1a1206', letterSpacing: 0.5 },
+  thumbRemove: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#e74c3c',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    overflow: 'hidden',
   },
-  mediaSlotImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
+  addPhotoBtn: {
+    width: 84,
+    height: 84,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(242,202,80,0.5)',
+    backgroundColor: 'rgba(242,202,80,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  mediaSlotText: { fontSize: 10, fontWeight: '600', color: '#f2ca50', textTransform: 'uppercase' },
 
   switchRow: { flexDirection: 'row', alignItems: 'center' },
   switchTitle: { fontSize: 15, fontWeight: '700', color: '#ffffff', marginBottom: 4 },

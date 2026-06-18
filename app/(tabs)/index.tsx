@@ -10,17 +10,17 @@ import { router } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated,
-  Dimensions,
-  Easing,
-  Image,
-  ImageBackground,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Animated,
+    Dimensions,
+    Easing,
+    Image,
+    ImageBackground,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import Svg, { Defs, Polygon, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 
@@ -72,30 +72,28 @@ export default function HomeScreen() {
 
   const TECHNICIAN_ITEMS = [
     { id: 'chat', label: 'КЕЙС КЛУБ', icon: 'chatbubble-outline', active: true, route: '/(tabs)/case-club', col: 0, row: 0 },
-    { id: 'color', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'color-palette-outline', active: true, route: '/work-analysis', col: 1, row: 0 },
-    { id: 'work', label: 'АНАЛИЗ\nЦВЕТА', icon: 'analytics-outline', active: true, route: '/(tabs)/color-analyzer', center: true },
+    { id: 'color', label: 'АНАЛИЗ\nЦВЕТА', icon: 'color-palette-outline', active: true, route: '/(tabs)/color-analyzer', col: 1, row: 0 },
+    { id: 'work', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'analytics-outline', active: true, route: '/work-analysis', center: true },
     { id: 'morphology', label: 'МОРФОЛОГИЯ', icon: 'body-outline', active: false, col: 0, row: 1 },
     { id: 'recipes', label: 'РЕЦЕПТЫ', icon: 'flask-outline', active: false, col: 1, row: 1 },
     { id: 'premium', label: 'Анатомия зубов', icon: 'diamond-outline', active: false, col: 0, row: 2, route: '/(tabs)/balance' },
-    { id: 'techmap', label: 'Оптическая\nдиагностика', icon: 'layers-outline', active: false, col: 1, row: 2 },
+    { id: 'techmap', label: 'Оптическая\nдиагностика', icon: 'layers-outline', active: true, route: '/detalization', col: 1, row: 2 },
     { id: 'etalon', label: 'Эталонный замер', icon: 'options-outline', active: false },
     { id: 'detail', label: 'Детализация', icon: 'list-outline', active: false },
-    { id: 'golden', label: 'Золотое сечение', icon: 'resize-outline', active: false },
+    { id: 'golden', label: 'ЗОЛОТОЕ\nСЕЧЕНИЕ', icon: 'git-network-outline', active: true, route: '/golden-proportion' },
     { id: 'ceramics', label: 'Визуализатор масс', icon: 'book-outline', active: false },
   ];
 
   const DOCTOR_ITEMS = [
     { id: 'chat', label: 'КЕЙС КЛУБ', icon: 'chatbubble-outline', active: true, route: '/(tabs)/case-club', col: 0, row: 0 },
-    { id: 'color', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'color-palette-outline', active: true, route: '/work-analysis', col: 1, row: 0 },
-    { id: 'new-order', label: 'АНАЛИЗ\nЦВЕТА', icon: 'add-circle-outline', active: true, route: '/new-order', center: true },
-    { id: 'work', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'analytics-outline', active: true, route: '/(tabs)/color-analyzer', col: 0, row: 1 },
-    { id: 'morphology', label: 'МОРФОЛОГИЯ', icon: 'body-outline', active: false, col: 1, row: 1 },
-    { id: 'recipes', label: 'РЕЦЕПТЫ', icon: 'flask-outline', active: false, col: 0, row: 2 },
-    { id: 'techmap', label: 'Оптическая\nдиагностика', icon: 'layers-outline', active: false, col: 1, row: 2 },
+    { id: 'new-order', label: 'НОВЫЙ\nНАРЯД', icon: 'add-circle-outline', active: true, route: '/new-order', center: true },
+    { id: 'color', label: 'АНАЛИЗ\nЦВЕТА', icon: 'color-palette-outline', active: true, route: '/(tabs)/color-analyzer', col: 1, row: 0 },
+    { id: 'work', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'analytics-outline', active: true, route: '/work-analysis', col: 0, row: 1 },
+    { id: 'techmap', label: 'Оптическая\nдиагностика', icon: 'layers-outline', active: true, route: '/detalization', col: 1, row: 2 },
     { id: 'premium', label: 'Анатомия зубов', icon: 'diamond-outline', active: false, col: 0, row: 3, route: '/(tabs)/balance' },
     { id: 'etalon', label: 'Эталонный замер', icon: 'options-outline', active: false },
     { id: 'detail', label: 'Детализация', icon: 'list-outline', active: false },
-    { id: 'golden', label: 'Золотое сечение', icon: 'resize-outline', active: false },
+    { id: 'golden', label: 'ЗОЛОТОЕ\nСЕЧЕНИЕ', icon: 'git-network-outline', active: true, route: '/golden-proportion' },
     { id: 'ceramics', label: 'Гид по керамике', icon: 'book-outline', active: false },
   ];
 
@@ -160,8 +158,8 @@ export default function HomeScreen() {
     );
   };
 
-  const TechMapPanel = ({ item, onPress }: any) => (
-    <TouchableOpacity activeOpacity={item.active ? 0.78 : 1} onPress={onPress} style={styles.techMapPanel}>
+  const TechMapPanel = ({ item, onPress, style }: any) => (
+    <TouchableOpacity activeOpacity={item.active ? 0.78 : 1} onPress={onPress} style={[styles.techMapPanel, !item.active && { opacity: 0.4 }, style]}>
       <Svg width={360} height={92} viewBox="0 0 360 92" style={StyleSheet.absoluteFill}>
         <Defs>
           <SvgLinearGradient id="techMapBody" x1="0" y1="0" x2="1" y2="1">
@@ -183,9 +181,11 @@ export default function HomeScreen() {
       <View style={styles.techMapContent}>
         <Ionicons name={item.icon as any} size={34} color="#f2ca50" />
         <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6} style={styles.techMapLabel}>{item.label}</Text>
-        <View style={styles.techMapSoonBadge}>
-          <Text style={styles.techMapSoonText}>СКОРО</Text>
-        </View>
+        {!item.active && (
+          <View style={styles.techMapSoonBadge}>
+            <Text style={styles.techMapSoonText}>СКОРО</Text>
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -238,28 +238,42 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    // Splash screen animation
-    Animated.timing(welcomeFade, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start(() => {
-      setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(welcomeFade, {
-            toValue: 0,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-        ]).start(() => {
-          setIsAppReady(true);
+    // Check if welcome screen was already shown
+    AsyncStorage.getItem('welcomeShown').then((shown) => {
+      if (shown === 'true') {
+        // Already shown, skip animation
+        setIsAppReady(true);
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 0,
+          useNativeDriver: true,
+        }).start();
+      } else {
+        // First time, show animation
+        Animated.timing(welcomeFade, {
+          toValue: 1,
+          duration: 500,
+          useNativeDriver: true,
+        }).start(() => {
+          setTimeout(() => {
+            Animated.parallel([
+              Animated.timing(welcomeFade, {
+                toValue: 0,
+                duration: 500,
+                useNativeDriver: true,
+              }),
+              Animated.timing(fadeAnim, {
+                toValue: 1,
+                duration: 500,
+                useNativeDriver: true,
+              }),
+            ]).start(() => {
+              setIsAppReady(true);
+              AsyncStorage.setItem('welcomeShown', 'true');
+            });
+          }, 2000);
         });
-      }, 2000);
+      }
     });
   }, []);
 
@@ -575,20 +589,28 @@ export default function HomeScreen() {
           <View style={styles.cardsContainer}>
             {(() => {
               const items = user?.role === 'doctor' ? DOCTOR_ITEMS : TECHNICIAN_ITEMS;
+              const isDoctor = user?.role === 'doctor';
               return (
                 <View style={styles.hexGridContainer}>
                   <InvertedTrapezoidButton />
                   <View style={styles.rowTop}>
                     <HexCell item={items[0]} onPress={() => items[0].active && items[0].route && router.push(items[0].route as any)} />
                     <View style={styles.topRightHex}>
-                      <HexCell item={items[2]} onPress={() => items[2].active && items[2].route && router.push(items[2].route as any)} />
+                      <HexCell item={isDoctor ? items[2] : items[1]} onPress={() => (isDoctor ? items[2] : items[1]).active && (isDoctor ? items[2] : items[1]).route && router.push((isDoctor ? items[2] : items[1]).route as any)} />
                     </View>
                   </View>
                   <View style={styles.rowCenter}>
-                    <HexCell item={items[1]} variant="center" onPress={() => items[1].active && items[1].route && router.push(items[1].route as any)} />
+                    <HexCell item={isDoctor ? items[1] : items[2]} variant="center" onPress={() => (isDoctor ? items[1] : items[2]).active && (isDoctor ? items[1] : items[2]).route && router.push((isDoctor ? items[1] : items[2]).route as any)} />
                   </View>
-                  <TechMapPanel item={items[6]} onPress={() => items[6].active && items[6].route && router.push(items[6].route as any)} />
-                  <View style={styles.soonFeaturesList}>
+                  {isDoctor && (
+                    <View style={styles.rowBottom}>
+                      <HexCell item={items[3]} onPress={() => items[3].active && items[3].route && router.push(items[3].route as any)} />
+                    </View>
+                  )}
+                  <TechMapPanel item={isDoctor ? items[4] : items[6]} onPress={() => (isDoctor ? items[4] : items[6]).active && (isDoctor ? items[4] : items[6]).route && router.push((isDoctor ? items[4] : items[6]).route as any)} style={{ marginBottom: 4 }} />
+                  <TechMapPanel item={isDoctor ? items[8] : items[9]} onPress={() => (isDoctor ? items[8] : items[9]).active && (isDoctor ? items[8] : items[9]).route && router.push((isDoctor ? items[8] : items[9]).route as any)} />
+                  {/* Временно скрыты неактивные кнопки: Морфология, Рецепты, Анатомия зубов, Эталонный замер, Золотое сечение, Визуализатор масс */}
+                  {/* <View style={styles.soonFeaturesList}>
                     {items.filter((item: any) => !item.active && item.id !== 'techmap').map((item: any) => (
                       <View key={item.id} style={styles.soonFeatureCard}>
                         <View style={styles.soonFeatureIcon}>
@@ -600,7 +622,7 @@ export default function HomeScreen() {
                         </View>
                       </View>
                     ))}
-                  </View>
+                  </View> */}
                 </View>
               );
             })()}
@@ -739,7 +761,6 @@ const styles = StyleSheet.create({
   },
   hexGridContainer: {
     width: '100%',
-    minHeight: 520,
     alignItems: 'center',
     justifyContent: 'flex-start',
     paddingTop: 0,
@@ -786,6 +807,11 @@ const styles = StyleSheet.create({
   rowCenter: {
     marginTop: -64,
     zIndex: 3,
+  },
+  rowBottom: {
+    marginTop: 0,
+    zIndex: 1,
+    alignItems: 'center',
   },
   hexCell: {
     position: 'relative',
@@ -856,13 +882,12 @@ const styles = StyleSheet.create({
   techMapPanel: {
     width: 360,
     height: 92,
-    marginTop: 4,
-    marginBottom: 4,
+    marginTop: 0,
+    marginBottom: 30,
     position: 'relative',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'visible',
-    opacity: 0.4,
   },
   techMapContent: {
     width: '84%',

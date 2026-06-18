@@ -1,6 +1,7 @@
 import BottomTabBar from '@/components/BottomTabBar';
 import { PostActionsSheet } from '@/components/case-post-actions';
 import GlobalHeader from '@/components/global-header';
+import { database } from '@/constants/firebase';
 import {
   CASES,
   CaseComment,
@@ -15,6 +16,7 @@ import { getUserIdentity } from '@/utils/getUserIdentity';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
+import { get, ref, set } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -75,7 +77,11 @@ const AuthorAvatar = ({ source, size = 48 }: { source: ImageSourcePropType | nul
 };
 
 /* ---------------- Media carousel ---------------- */
-const MediaCarousel = ({ media, onPressPhoto }: { media: CaseMedia[]; onPressPhoto: (i: number) => void }) => {
+const MediaCarousel = ({ media: rawMedia, onPressPhoto }: { media: CaseMedia[]; onPressPhoto: (i: number) => void }) => {
+  const media: CaseMedia[] = Array.isArray(rawMedia)
+    ? rawMedia
+    : (rawMedia && typeof rawMedia === 'object' ? Object.values(rawMedia as any) : []);
+  if (media.length === 0) return null;
   const [activeIndex, setActiveIndex] = useState(0);
   const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 60 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
@@ -187,7 +193,7 @@ const RiddleBlock = ({
       </View>
       <View style={styles.rewardLine}>
         <Ionicons name="diamond-outline" size={13} color="#4fc3f7" />
-        <Text style={styles.rewardLineText}>+1 💎 за верный ответ</Text>
+        <Text style={styles.rewardLineText}>+1 алмаз за верный ответ</Text>
       </View>
 
       <Text style={styles.riddleQuestion}>{riddle.question}</Text>
@@ -207,7 +213,7 @@ const RiddleBlock = ({
       {picked != null && (
         <Text style={[styles.riddleResult, picked !== riddle.correct && styles.riddleResultWrong]}>
           {picked === riddle.correct
-            ? `Верно! Вам начислен +1 💎. Большинство коллег выбрали ${riddle.correct}.`
+            ? `Верно! Вам начислен +1 алмаз. Большинство коллег выбрали ${riddle.correct}.`
             : `Правильный ответ — ${riddle.correct}. Вы выбрали ${picked}.`}
         </Text>
       )}
@@ -223,7 +229,7 @@ const AiReviewBlock = ({ review, onSpent }: { review: string; onSpent: () => voi
   const runReview = () => {
     const ok = (globalThis as any).spendDiamonds?.(AI_REVIEW_COST);
     if (!ok) {
-      Alert.alert('Недостаточно 💎', `Для AI-разбора нужно ${AI_REVIEW_COST} 💎. Пополните баланс в разделе «Премиум».`);
+      Alert.alert('Недостаточно алмазов', `Для AI-разбора нужно ${AI_REVIEW_COST} алмаза. Пополните баланс в разделе «Премиум».`);
       return;
     }
     (globalThis as any).forceDiamondUpdate?.();
@@ -247,7 +253,8 @@ const AiReviewBlock = ({ review, onSpent }: { review: string; onSpent: () => voi
       {!revealed ? (
         <>
           <TouchableOpacity activeOpacity={0.85} style={styles.eshafotnikButton} onPress={runReview}>
-            <Text style={styles.eshafotnikText}>Эшафотник за 2 💎</Text>
+            <Text style={styles.eshafotnikText}>Эшафотник за 2</Text>
+            <Ionicons name="diamond" size={14} color="#00e5ff" />
           </TouchableOpacity>
         </>
       ) : (
@@ -354,20 +361,45 @@ export default function CaseDetailsScreen() {
   const [editedDescription, setEditedDescription] = useState('');
   const [commentText, setCommentText] = useState('');
   const [comments, setComments] = useState<CaseComment[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [currentEmail, setCurrentEmail] = useState<string>('');
+  const [currentAuthorName, setCurrentAuthorName] = useState<string>('');
+  const [currentFullName, setCurrentFullName] = useState<string>('');
 
   const refreshDiamonds = () => setDiamonds((globalThis as any).getDiamondBalance?.() ?? 0);
 
   useEffect(() => {
     getUserIdentity().then((id) => {
-      if (id) setIdentity({ name: id.shortName, avatarSource: id.avatarSource, role: id.role });
-      else setIdentity((globalThis as any).getCaseClubIdentity?.());
+      if (id) {
+        setIdentity({ name: id.shortName, avatarSource: id.avatarSource, role: id.role });
+        setCurrentAuthorName(id.shortName);
+      } else {
+        setIdentity((globalThis as any).getCaseClubIdentity?.());
+      }
     });
+    AsyncStorage.getItem('user').then((raw) => {
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (u.id) setCurrentUserId(u.id);
+        if (u.email) setCurrentEmail(u.email);
+        if (u.name) {
+          setCurrentFullName(u.name);
+          setCurrentAuthorName((prev) => prev || u.name);
+        }
+      }
+    }).catch(() => {});
     refreshDiamonds();
     const loadCase = async () => {
       try {
-        const raw = await AsyncStorage.getItem('@case_club_posts');
-        const posts: ClinicalCase[] = raw ? JSON.parse(raw) : [];
-        const found = posts.find((p) => p.id === id) ?? null;
+        // Читаем из Firebase как основного источника
+        const fbSnap = await get(ref(database, `case_club_posts/${id}`));
+        let found: ClinicalCase | null = fbSnap.exists() ? fbSnap.val() : null;
+        // Fallback: локальный кэш
+        if (!found) {
+          const raw = await AsyncStorage.getItem('@global_case_club_posts');
+          const posts: ClinicalCase[] = raw ? JSON.parse(raw) : [];
+          found = posts.find((p) => p.id === id) ?? null;
+        }
         setItem(found);
         if (found) {
           setLocalCase({ ...found });
@@ -393,7 +425,7 @@ export default function CaseDetailsScreen() {
     );
   }
 
-  const isOwn = isOwnCase(item);
+  const isOwn = isOwnCase(item, currentUserId, currentEmail, currentAuthorName, currentFullName);
   const isAnon = !!item.anonymous;
 
   const formatShortName = (fullName: string) => {
@@ -411,11 +443,15 @@ export default function CaseDetailsScreen() {
 
   const rawName = isAnon ? 'Анонимный коллега' : isOwn && identity?.name ? identity.name : item.author;
   const displayName = isAnon ? rawName : formatShortName(rawName);
-  const avatarSource: ImageSourcePropType | null = isAnon
-    ? null
-    : isOwn && identity?.avatarSource
-      ? identity.avatarSource
-      : { uri: item.avatar };
+  const avatarSource: ImageSourcePropType | null = (() => {
+    if (isAnon) return null;
+    if (isOwn && identity?.avatarSource) return identity.avatarSource;
+    if (item.avatar && item.avatar.startsWith('http')) return { uri: item.avatar };
+    if ((item as any).avatarPresetId) {
+      return PRESET_AVATARS[((item as any).avatarPresetId - 1) % PRESET_AVATARS.length];
+    }
+    return null;
+  })();
 
   /* ---- Real menu actions ---- */
   const handleEditText = () => {
@@ -454,12 +490,15 @@ export default function CaseDetailsScreen() {
     setComments(updated);
     setCommentText('');
     try {
-      const raw = await AsyncStorage.getItem('@case_club_posts');
+      // Обновляем в Firebase
+      await set(ref(database, `case_club_posts/${item.id}/commentsList`), updated);
+      // Обновляем локальный кэш
+      const raw = await AsyncStorage.getItem('@global_case_club_posts');
       const posts: ClinicalCase[] = raw ? JSON.parse(raw) : [];
       const idx = posts.findIndex((p) => p.id === item.id);
       if (idx !== -1) {
         posts[idx].commentsList = updated;
-        await AsyncStorage.setItem('@case_club_posts', JSON.stringify(posts));
+        await AsyncStorage.setItem('@global_case_club_posts', JSON.stringify(posts));
       }
     } catch (e) {
       console.error('[CaseDetails] Ошибка сохранения комментария:', e);
@@ -519,11 +558,20 @@ export default function CaseDetailsScreen() {
         </View>
 
         {/* Media */}
-        <MediaCarousel media={localCase?.media || item.media} onPressPhoto={(i) => setViewer({ media: localCase?.media || item.media, index: i })} />
+        {(() => {
+          const rawMedia = localCase?.media ?? item.media;
+          const normMedia: CaseMedia[] = (Array.isArray(rawMedia)
+            ? rawMedia as any[]
+            : (rawMedia && typeof rawMedia === 'object' ? Object.values(rawMedia) as any[] : []))
+            .filter((m: any) => m?.uri?.startsWith('https://') || m?.uri?.startsWith('data:'));
+          return normMedia.length > 0
+            ? <MediaCarousel media={normMedia} onPressPhoto={(i) => setViewer({ media: normMedia, index: i })} />
+            : null;
+        })()}
 
         {/* Tags */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsRow}>
-          {(localCase || item).tags.map((tag) => (
+          {((): string[] => { const t = (localCase || item).tags; return Array.isArray(t) ? t : (t && typeof t === 'object' ? Object.values(t) : []); })().map((tag) => (
             <View key={tag} style={styles.tagChip}>
               <Text style={styles.tagText}>{tag}</Text>
             </View>
@@ -787,8 +835,10 @@ const styles = StyleSheet.create({
   eshafotnikButton: {
     marginTop: 4,
     width: '100%',
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 10,
     paddingVertical: 10,
     borderRadius: 10,

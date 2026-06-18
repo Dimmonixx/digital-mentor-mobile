@@ -7,6 +7,7 @@ import { Platform, View } from 'react-native';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import 'react-native-reanimated';
 
+import IncomingArchiveWatcher from '@/components/IncomingArchiveWatcher';
 import { LanguageProvider } from '@/context/LanguageContext';
 import { ThemeProvider as AppThemeProvider } from '@/context/ThemeContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -44,8 +45,11 @@ export default function RootLayout() {
                   <Stack.Screen name="morphology" options={{ headerShown: false }} />
                   <Stack.Screen name="work-analysis" options={{ headerShown: false }} />
                   <Stack.Screen name="case-details" options={{ headerShown: false }} />
+                  <Stack.Screen name="golden-proportion" options={{ headerShown: false }} />
+                  <Stack.Screen name="global-archive" options={{ headerShown: false }} />
                   <Stack.Screen name="create-case" options={{ headerShown: false }} />
                 </Stack>
+                <IncomingArchiveWatcher />
                 <StatusBar style="auto" />
               </View>
             </ThemeProvider>

@@ -1,6 +1,8 @@
 import {
     API_BASE_URL
 } from '@/constants/config';
+import { firestore } from '@/constants/firebase';
+import { saveToArchive } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
@@ -8,6 +10,8 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { ref as dbRef, get, getDatabase } from 'firebase/database';
+import { arrayUnion, doc, updateDoc } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -27,6 +31,40 @@ import DraggableZones, { Zone } from '../../components/DraggableZones';
 
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
 const COLOR_ANALYSIS_PRICE = 1;
+
+// Кэш для анализа VITA
+const CACHE_PREFIX = 'vita_analysis_cache_';
+
+// Генерация ключа кэша на основе URI изображения
+const getCacheKey = (imageUri: string): string => {
+  // Используем URI изображения как ключ (можно добавить хэш для большей надежности)
+  return `${CACHE_PREFIX}${imageUri}`;
+};
+
+// Получение кэшированного результата анализа
+const getCachedAnalysis = async (imageUri: string): Promise<VitaAnalysis | null> => {
+  try {
+    const cacheKey = getCacheKey(imageUri);
+    const cachedData = await AsyncStorage.getItem(cacheKey);
+    if (cachedData) {
+      return JSON.parse(cachedData) as VitaAnalysis;
+    }
+    return null;
+  } catch (e) {
+    console.error('Ошибка при чтении кэша:', e);
+    return null;
+  }
+};
+
+// Сохранение результата анализа в кэш
+const saveCachedAnalysis = async (imageUri: string, result: VitaAnalysis): Promise<void> => {
+  try {
+    const cacheKey = getCacheKey(imageUri);
+    await AsyncStorage.setItem(cacheKey, JSON.stringify(result));
+  } catch (e) {
+    console.error('Ошибка при сохранении в кэш:', e);
+  }
+};
 
 const VITA_ORDER: string[] = [
   'BL1', 'BL2', 'BL3', 'BL4',
@@ -275,7 +313,7 @@ A5 (виртуальный эталон) = экстремальный, «нек�
   formData.append('comment', vitaPrompt);
   formData.append('teeth', 'не указаны');
 
-  console.log('Отправка запроса на анализ цвета. Используемый ключ:', VALID_API_KEY_FROM_CONFIG);
+  console.log('Отправка запроса на анализ цвета. API-ключ настроен:', !!VALID_API_KEY_FROM_CONFIG);
 
   const res = await fetch(`${API_BASE_URL}/analyze-work`, {
     method: 'POST',
@@ -325,9 +363,22 @@ export default function ColorAnalyzerScreen() {
     const [result, setResult] = useState<VitaAnalysis | null>(null);
   const [tipsModalVisible, setTipsModalVisible] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
+  const [fromOrderContext, setFromOrderContext] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [shareSuccessVisible, setShareSuccessVisible] = useState(false);
+  const [partners, setPartners] = useState<{ id: string; name: string }[]>([]);
+  const [sharingId, setSharingId] = useState<string | null>(null);
+  const [shareArchiveId, setShareArchiveId] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
+      AsyncStorage.getItem('scrollToVitaOnReturn').then((val) => {
+        setFromOrderContext(val === 'true');
+      });
+      AsyncStorage.getItem('user').then((raw) => {
+        if (raw) setCurrentUser(JSON.parse(raw));
+      });
       return () => {
         setSelectedImage(null);
         setResult(null);
@@ -473,6 +524,7 @@ const reset = useCallback(() => {
     setError(null);
     setLoading(false);
     setTipsModalVisible(false);
+    setShareArchiveId(null);
   }, []);
 
   const runAnalysis = useCallback(async (base64: string, mime: 'image/jpeg' | 'image/png') => {
@@ -480,6 +532,18 @@ const reset = useCallback(() => {
     setError(null);
     setResult(null);
     try {
+      // Проверяем кэш перед анализом
+      if (selectedImage) {
+        const cachedResult = await getCachedAnalysis(selectedImage);
+        if (cachedResult) {
+          console.log('Результат найден в кэше, используем его');
+          setResult(cachedResult);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          setLoading(false);
+          return;
+        }
+      }
+
       // Сначала выполняем математический расчет оттенка
       const calculatedShade = await calculateToothShade(
   selectedImage!,
@@ -490,8 +554,33 @@ const reset = useCallback(() => {
 
       // Затем отправляем в Claude с математическим ориентиром
       const analysis = await analyzeWithClaude(selectedImage!, mime, calculatedShade);
+
+      // Сохраняем результат в кэш
+      if (selectedImage) {
+        await saveCachedAnalysis(selectedImage, analysis);
+      }
+
       setResult(analysis);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const savedId = await saveToArchive(
+        'color_analysis',
+        'Анализ цвета VITA',
+        {
+          imageUri: selectedImage ?? '',
+          vitaShade: analysis.primary_range ?? '',
+          confidence: typeof analysis.confidence === 'number' ? analysis.confidence : 0,
+          notes: analysis.body ?? '',
+          neck: analysis.neck ?? '',
+          edge: analysis.edge ?? '',
+          photo_quality: analysis.photo_quality ?? '',
+          zones: analysis.zones ?? {},
+          secondary_subtones: analysis.secondary_subtones ?? '',
+          effects: analysis.effects ?? '',
+          features: analysis.features ?? '',
+          layering_recipe: analysis.layering_recipe ?? {},
+        } as any,
+      );
+      if (savedId) setShareArchiveId(savedId);
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Ошибка запроса';
       setError(message);
@@ -501,13 +590,25 @@ const reset = useCallback(() => {
     }
   }, [selectedImage]);
 
-  const handleAnalyze = useCallback(() => {
+  const handleAnalyze = useCallback(async () => {
     if (!pendingPayload) return;
+
+    // Проверяем кэш перед списанием алмазов
+    if (selectedImage) {
+      const cachedResult = await getCachedAnalysis(selectedImage);
+      if (cachedResult) {
+        console.log('Результат найден в кэше, не списываем алмаз');
+        setResult(cachedResult);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        return;
+      }
+    }
+
     const diamondBalance = (globalThis as any).getDiamondBalance?.() ?? 0;
     if (diamondBalance < COLOR_ANALYSIS_PRICE) {
       Alert.alert(
         'Недостаточно алмазов',
-        'Для выполнения анализа цвета требуется 1 💎. Пожалуйста, пополните баланс.'
+        'Для выполнения анализа цвета требуется 1 алмаз. Пожалуйста, пополните баланс.'
       );
       return;
     }
@@ -515,13 +616,13 @@ const reset = useCallback(() => {
     if (!didSpend) {
       Alert.alert(
         'Недостаточно алмазов',
-        'Для выполнения анализа цвета требуется 1 💎. Пожалуйста, пополните баланс.'
+        'Для выполнения анализа цвета требуется 1 алмаз. Пожалуйста, пополните баланс.'
       );
       return;
     }
     (globalThis as any).forceDiamondUpdate?.();
     void runAnalysis(pendingPayload.base64, pendingPayload.mime);
-  }, [pendingPayload, runAnalysis]);
+  }, [pendingPayload, runAnalysis, selectedImage]);
 
   const pickAsset = useCallback(async (asset: ImagePicker.ImagePickerAsset | undefined) => {
     if (!asset?.uri) return;
@@ -571,6 +672,86 @@ const reset = useCallback(() => {
     if (res.canceled || !res.assets?.[0]) return;
     await pickAsset(res.assets[0]);
   }, [pickAsset]);
+
+  const loadPartners = async () => {
+    if (!currentUser) return;
+    const uid: string = currentUser.id || currentUser.uid || currentUser.email;
+    try {
+      const db = getDatabase();
+      const snap = await get(dbRef(db, 'partnerships'));
+      if (!snap.exists()) return;
+      const list: { id: string; name: string }[] = [];
+      const seen = new Set<string>();
+      Object.values(snap.val()).forEach((p: any) => {
+        if (!p) return;
+        if (currentUser.role === 'doctor' && p.doctorUid === uid && p.technicianUid && !seen.has(p.technicianUid)) {
+          seen.add(p.technicianUid);
+          list.push({ id: p.technicianUid, name: p.technicianName });
+        } else if (currentUser.role === 'technician' && p.technicianUid === uid && p.doctorUid && !seen.has(p.doctorUid)) {
+          seen.add(p.doctorUid);
+          list.push({ id: p.doctorUid, name: p.doctorName });
+        }
+      });
+      setPartners(list);
+    } catch (e) {
+      console.error('[loadPartners]', e);
+    }
+  };
+
+  const shareAnalysis = async (colleagueId: string) => {
+    if (!shareArchiveId) {
+      Alert.alert('Ошибка', 'Анализ ещё сохраняется, попробуйте через секунду');
+      return;
+    }
+    setSharingId(colleagueId);
+    try {
+      const docRef = doc(firestore, 'archives', shareArchiveId);
+
+      // Сжимаем imageUri в base64 для получателя
+      let finalImageUri = '';
+      const localUri: string = selectedImage ?? '';
+      if (localUri && (localUri.startsWith('file://') || localUri.startsWith('content://'))) {
+        try {
+          const compressed = await ImageManipulator.manipulateAsync(
+            localUri,
+            [{ resize: { width: 250 } }],
+            { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+          );
+          if (compressed.base64) {
+            finalImageUri = `data:image/jpeg;base64,${compressed.base64}`;
+          }
+        } catch (imgErr) {
+          console.log('[shareAnalysis] base64 error:', imgErr);
+        }
+      }
+
+      const patch: any = { sharedWith: arrayUnion(colleagueId) };
+      if (finalImageUri) patch.imageUri = finalImageUri;
+      // Дописываем полные данные анализа (zones и т.д.) если result есть
+      if (result) {
+        patch['data.vitaShade'] = result.primary_range ?? '';
+        patch['data.confidence'] = typeof result.confidence === 'number' ? result.confidence : 0;
+        patch['data.notes'] = result.body ?? '';
+        patch['data.neck'] = result.neck ?? '';
+        patch['data.edge'] = result.edge ?? '';
+        patch['data.photo_quality'] = result.photo_quality ?? '';
+        patch['data.zones'] = result.zones ?? {};
+        patch['data.secondary_subtones'] = result.secondary_subtones ?? '';
+        patch['data.effects'] = result.effects ?? '';
+        patch['data.features'] = result.features ?? '';
+        patch['data.layering_recipe'] = result.layering_recipe ?? {};
+      }
+
+      await updateDoc(docRef, patch);
+      setShareModalVisible(false);
+      setShareSuccessVisible(true);
+    } catch (err) {
+      console.error('[shareAnalysis]', err);
+      Alert.alert('Ошибка', 'Не удалось отправить. Проверьте соединение.');
+    } finally {
+      setSharingId(null);
+    }
+  };
 
   const takePhoto = async () => {
   const result = await ImagePicker.launchCameraAsync({
@@ -759,8 +940,9 @@ const reset = useCallback(() => {
                     onPress={handleAnalyze}
                     activeOpacity={0.88}
                   >
+                    <Ionicons name="diamond" size={16} color="#1a1a2e" />
                     <Text style={styles.analyzeBtnText} numberOfLines={1} adjustsFontSizeToFit>
-                      Запустить анализ цвета (1 💎)
+                      Запустить анализ цвета (1)
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -968,7 +1150,30 @@ const reset = useCallback(() => {
               ) : null}
 
               
-                            {result && (
+                            {result && !fromOrderContext && (
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={styles.homeBtn}
+                    onPress={() => router.replace('/(tabs)')}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="home-outline" size={18} color="#031427" />
+                    <Text style={styles.homeBtnText}>На главную</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.shareBtn}
+                    onPress={() => {
+                      loadPartners();
+                      setShareModalVisible(true);
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="share-social-outline" size={18} color="#f2ca50" />
+                    <Text style={styles.shareBtnText}>Поделиться</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {result && fromOrderContext && (
                 <TouchableOpacity
                   onPress={async () => {
                     // Use base64 string directly instead of Firebase Storage
@@ -1016,13 +1221,85 @@ const reset = useCallback(() => {
               )}
               {result ? (
                 <TouchableOpacity style={styles.againBtn} onPress={reset} activeOpacity={0.85}>
-                  <Text style={styles.againBtnText}>� Анализировать заново</Text>
+                  <Text style={styles.againBtnText}>🔄 Анализировать заново</Text>
                 </TouchableOpacity>
               ) : null}
 
                           </>
           )}
         </ScrollView>
+
+        {/* Модалка «Переслать коллеге» */}
+        <Modal
+          visible={shareModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShareModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.shareModal}>
+              <View style={styles.shareModalHeader}>
+                <Ionicons name="share-social-outline" size={22} color="#f2ca50" />
+                <Text style={styles.shareModalTitle}>Переслать коллеге</Text>
+                <TouchableOpacity onPress={() => setShareModalVisible(false)}>
+                  <Ionicons name="close" size={22} color="rgba(255,255,255,0.5)" />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.shareModalSub}>Анализ цвета VITA</Text>
+              {partners.length === 0 ? (
+                <View style={{ alignItems: 'center', paddingVertical: 20, gap: 6 }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>Нет связанных партнёров</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, textAlign: 'center' }}>Подключите коллег через раздел «Наряды»</Text>
+                </View>
+              ) : (
+                partners.map((p) => {
+                  const isSending = sharingId === p.id;
+                  return (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={styles.partnerRow}
+                      onPress={() => shareAnalysis(p.id)}
+                      disabled={isSending}
+                    >
+                      <View style={styles.partnerAvatar}>
+                        <Text style={styles.partnerAvatarText}>{p.name.charAt(0).toUpperCase()}</Text>
+                      </View>
+                      <Text style={styles.partnerName}>{p.name}</Text>
+                      {isSending
+                        ? <ActivityIndicator size="small" color="#f2ca50" />
+                        : <Ionicons name="send-outline" size={18} color="#f2ca50" />}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </View>
+          </View>
+        </Modal>
+
+        {/* ── Cosmic Success Modal ── */}
+        <Modal
+          visible={shareSuccessVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShareSuccessVisible(false)}
+        >
+          <View style={styles.successOverlay}>
+            <View style={styles.successBox}>
+              <View style={styles.successIconWrap}>
+                <Ionicons name="checkmark-circle" size={56} color="#22c55e" />
+              </View>
+              <Text style={styles.successTitle}>Успешно отправлено!</Text>
+              <Text style={styles.successSub}>Коллега уже получил уведомление</Text>
+              <TouchableOpacity
+                style={styles.successBtn}
+                onPress={() => setShareSuccessVisible(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.successBtnText}>Отлично!</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         <Modal
           visible={showImageModal}
@@ -1445,8 +1722,10 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 16,
     paddingHorizontal: 18,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
     marginBottom: 16,
     minHeight: 56,
     zIndex: 10,
@@ -1533,5 +1812,145 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     marginTop: 8,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  homeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#f2ca50',
+    borderRadius: 14,
+    paddingVertical: 15,
+  },
+  homeBtnText: {
+    color: '#031427',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  shareBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.6)',
+    borderRadius: 14,
+    paddingVertical: 15,
+    backgroundColor: 'rgba(242,202,80,0.08)',
+  },
+  shareBtnText: {
+    color: '#f2ca50',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  shareModal: {
+    backgroundColor: '#0d2137',
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.15)',
+  },
+  shareModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  shareModalTitle: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  shareModalSub: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
+    marginBottom: 14,
+  },
+  partnerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
+  partnerAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(242,202,80,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.3)',
+  },
+  partnerAvatarText: {
+    color: '#f2ca50',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  partnerName: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  successOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successBox: {
+    backgroundColor: '#0B0B1E',
+    borderWidth: 1,
+    borderColor: 'rgba(138,43,226,0.6)',
+    borderRadius: 20,
+    paddingHorizontal: 32,
+    paddingVertical: 36,
+    alignItems: 'center',
+    width: 300,
+    gap: 12,
+  },
+  successIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(34,197,94,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  successTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  successSub: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  successBtn: {
+    marginTop: 8,
+    backgroundColor: '#7c3aed',
+    borderRadius: 14,
+    paddingHorizontal: 40,
+    paddingVertical: 13,
+  },
+  successBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

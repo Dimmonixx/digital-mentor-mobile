@@ -42,6 +42,46 @@ let CASES_DATA: ClinicalCase[] = [];
 
 export const CASES = CASES_DATA;
 
+export const SEED_CASES: ClinicalCase[] = [
+  {
+    id: 'seed_1',
+    author: 'Кривоносов Д.И.',
+    role: 'Техник',
+    avatar: '1',
+    isOwn: true,
+    tags: ['Металлокерамика', 'Цельнолитые', 'Передний сегмент'],
+    description: 'Протезирование 11 и 21 зубов металлокерамическими коронками на имплантах. Сложный случай — подбор цвета.',
+    fullDescription: 'Пациент обратился с жалобой на отсутствие центральных резцов. После установки имплантов проведено изготовление металлокерамических коронок с тщательным подбором цвета по шкале VITA. Основная сложность — добиться максимальной прозрачности в области режущего края и выраженной мамелонной структуры.',
+    media: [],
+    commentsList: [],
+    aiReview: 'Работа демонстрирует хорошее владение техникой нанесения масс. Режущий край проработан с характеристиками, однако маргинальная посадка требует доработки — зазор в области пришеечной трети превышает допустимые 50 мкм. Цвет подобран корректно, но интенсивность дентинной массы на вестибулярной поверхности избыточна.',
+    activity: 0,
+    riddle: {
+      question: 'Какой цвет VITA Classic наиболее точно соответствует молочным зубам у детей 6-8 лет?',
+      options: [
+        { label: 'A1', percent: 45 },
+        { label: 'B1', percent: 35 },
+        { label: 'C1', percent: 10 },
+        { label: 'D2', percent: 10 },
+      ],
+      correct: 'B1',
+    },
+  },
+  {
+    id: 'seed_3',
+    author: 'Сидоренко М.П.',
+    role: 'Техник',
+    avatar: '3',
+    tags: ['Циркон', 'Безметалловая керамика', 'Эстетика'],
+    description: 'Изготовление виниров из диоксида циркония на 12–22 зубы. Минимальная инвазивность.',
+    fullDescription: 'Пациентка 28 лет обратилась с целью коррекции формы и цвета передних зубов. Выполнено препарирование под виниры с сохранением эмали. Изготовлены прессованные виниры из IPS e.max Press. Толщина конструкции 0.3–0.5 мм. Фиксация выполнена на двойной адгезив с использованием светоотверждаемого цемента.',
+    media: [],
+    commentsList: [],
+    aiReview: 'Виниры выполнены с соблюдением принципов минимальной инвазивности. Прозрачность материала и характеристики режущего края воссозданы на высоком уровне. Рекомендую обратить внимание на текстуру поверхности — горизонтальная перикиматийная структура слабо выражена на 13 и 23 зубах.',
+    activity: 0,
+  },
+];
+
 export const getCases = () => CASES;
 
 export const addCase = (clinicalCase: ClinicalCase) => {
@@ -74,9 +114,20 @@ export const getAiTeaser = (review: string): string => {
 // Имя текущего пользователя (mock). Кейсы с этим автором — его собственные.
 export const CURRENT_USER_NAME = 'Кривоносов Д.И.';
 
-// Кейс принадлежит текущему пользователю (по совпадению автора с CURRENT_USER_NAME)
-export const isOwnCase = (c: ClinicalCase): boolean =>
-  !c.anonymous && (c.isOwn === true || c.author === CURRENT_USER_NAME);
+// Кейс принадлежит текущему пользователю
+export const isOwnCase = (
+  c: ClinicalCase,
+  currentUserId?: string,
+  currentEmail?: string,
+  currentAuthorName?: string,
+  currentFullName?: string,
+): boolean => {
+  if (c.anonymous) return false;
+  // Строгая проверка по уникальным идентификаторам текущего пользователя
+  if (currentUserId && (c as any).authorId && (c as any).authorId === currentUserId) return true;
+  if (currentEmail && (c as any).authorEmail && (c as any).authorEmail.toLowerCase() === currentEmail.toLowerCase()) return true;
+  return false;
+};
 
 /* ---------------- Работа недели ---------------- */
 // Кейс с максимальной активностью (комментарии + реакции) за последние 7 дней
@@ -100,7 +151,7 @@ export type MasteryProgress = {
 
 // Мутабельный прогресс (mock-геймификация). Стартовые значения для демо.
 const masteryProgress: MasteryProgress = {
-  publishedWorks: CASES.filter(isOwnCase).length + 2,
+  publishedWorks: CASES.filter((c) => isOwnCase(c)).length + 2,
   correctRiddles: 3,
   aiLikes: 7,
 };

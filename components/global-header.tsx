@@ -7,15 +7,25 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 interface GlobalHeaderProps {
   diamonds: number;
   newOrdersCount?: number;
+  unreadAnalysesCount?: number;
   showBackButton?: boolean;
   onLayout?: (e: any) => void;
+  onBurgerPress?: () => void;
 }
+
+const formatDiamonds = (n: number): string => {
+  if (n < 1000) return String(n);
+  if (n < 10000) return (n / 1000).toFixed(1).replace('.0', '') + 'k';
+  return Math.floor(n / 1000) + 'k';
+};
 
 export default function GlobalHeader({
   diamonds,
   newOrdersCount = 0,
+  unreadAnalysesCount = 0,
   showBackButton = false,
   onLayout,
+  onBurgerPress,
 }: GlobalHeaderProps) {
   const insets = useSafeAreaInsets();
 
@@ -27,13 +37,16 @@ export default function GlobalHeader({
       <View style={styles.leftContainer}>
         <TouchableOpacity
           style={styles.burgerButton}
-          onPress={showBackButton ? () => router.back() : undefined}
+          onPress={showBackButton ? () => router.back() : onBurgerPress}
         >
           <Ionicons
             name={showBackButton ? 'arrow-back' : 'menu-outline'}
             size={28}
             color="#f2ca50"
           />
+          {!showBackButton && unreadAnalysesCount > 0 && (
+            <View style={styles.burgerDot} />
+          )}
         </TouchableOpacity>
       </View>
 
@@ -47,33 +60,26 @@ export default function GlobalHeader({
 
       <View style={styles.rightContainer}>
         <View style={styles.headerRightContent}>
-          <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-            <Text
-              style={{
-                color: '#4fc3f7',
-                fontSize: 6,
-                fontWeight: '700',
-                marginBottom: 1,
-              }}
-            >
-              {diamonds}
-            </Text>
-            <Text style={{ fontSize: 16, marginTop: -2 }}>💎</Text>
+          {/* Diamonds capsule */}
+          <View style={styles.diamondCapsule}>
+            <Ionicons name="diamond" size={12} color="#bda15d" />
+            <Text style={styles.diamondText}>{formatDiamonds(diamonds)}</Text>
           </View>
+
+          {/* Bell: только наряды */}
           <TouchableOpacity
-            style={styles.bellButton}
+            style={styles.bellCapsule}
+            activeOpacity={0.75}
             onPress={() => {
               router.push('/(tabs)/search');
-              setTimeout(() => {
-                (window as any).showNewOrders?.();
-              }, 100);
+              setTimeout(() => { (window as any).showNewOrders?.(); }, 100);
             }}
           >
-            <Text style={{ fontSize: 15, marginTop: 11 }}>🔔</Text>
+            <Ionicons name="notifications" size={16} color="#bda15d" />
             {newOrdersCount > 0 && (
               <View style={styles.notificationBadge}>
                 <Text style={styles.notificationBadgeText}>
-                  {newOrdersCount > 99 ? '99+' : newOrdersCount.toString()}
+                  {newOrdersCount > 99 ? '99+' : newOrdersCount}
                 </Text>
               </View>
             )}
@@ -104,7 +110,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'flex-end',
     gap: 8,
-    width: 100,
+    minWidth: 80,
+    maxWidth: 120,
   },
   headerRightContent: {
     flexDirection: 'row',
@@ -120,28 +127,65 @@ const styles = StyleSheet.create({
   burgerButton: {
     padding: 4,
   },
+  burgerDot: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#c0392b',
+    borderWidth: 1.5,
+    borderColor: '#031427',
+  },
   headerLogo: {
     width: 180,
     height: 56,
   },
-  bellButton: {
-    padding: 2,
+  diamondCapsule: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(13, 15, 20, 0.65)',
+    borderWidth: 1,
+    borderColor: '#bda15d',
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  diamondText: {
+    color: '#bda15d',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  bellCapsule: {
+    backgroundColor: 'rgba(13, 15, 20, 0.65)',
+    borderWidth: 1,
+    borderColor: '#bda15d',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   notificationBadge: {
     position: 'absolute',
-    top: 0,
-    right: 0,
-    backgroundColor: '#f2ca50',
-    borderRadius: 10,
-    minWidth: 18,
-    height: 18,
+    top: -4,
+    right: -4,
+    backgroundColor: '#c0392b',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(13,15,20,0.8)',
   },
   notificationBadgeText: {
-    color: '#0b0e14',
-    fontSize: 10,
+    color: '#ffffff',
+    fontSize: 9,
     fontWeight: '700',
   },
 });

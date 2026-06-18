@@ -9,25 +9,50 @@ import { get, off, onValue, push, ref, remove, set } from 'firebase/database';
 import { TrendingUpDown } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Alert,
-    Animated,
-    Clipboard,
-    FlatList,
-    Image,
-    ImageBackground,
-    Modal,
-    StatusBar,
-    StyleSheet,
-    Switch,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  Animated,
+  Clipboard,
+  FlatList,
+  Image,
+  ImageBackground,
+  Modal,
+  StatusBar,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const ADMIN_USERNAME = 'Dimmonix';
+
+// Функция для сравнения дат (один и тот же день)
+const isSameDay = (timestamp1: number, timestamp2: number): boolean => {
+  const date1 = new Date(timestamp1);
+  const date2 = new Date(timestamp2);
+  return date1.getDate() === date2.getDate() &&
+         date1.getMonth() === date2.getMonth() &&
+         date1.getFullYear() === date2.getFullYear();
+};
+
+// Форматирование даты для разделителя
+const formatDate = (timestamp: number): string => {
+  const date = new Date(timestamp);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (isSameDay(timestamp, today.getTime())) {
+    return 'Сегодня';
+  } else if (isSameDay(timestamp, yesterday.getTime())) {
+    return 'Вчера';
+  } else {
+    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+};
 
 interface Message {
   id: string;
@@ -75,7 +100,8 @@ export default function ChatScreen() {
   const [showMenu, setShowMenu] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
-  const [currentDiamonds, setCurrentDiamonds] = useState((globalThis as any).getDiamondBalance?.() || 150);
+  const [currentDiamonds, setCurrentDiamonds] = useState((globalThis as any).getDiamondBalance?.() || 20);
+  const [onlineUsersCount, setOnlineUsersCount] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const insets = useSafeAreaInsets();
   
@@ -107,6 +133,80 @@ export default function ChatScreen() {
     loadUsername();
     setupFirebaseListener();
   }, []);
+
+  // Подписка на онлайн-статус пользователей (вызывается после загрузки username)
+  useEffect(() => {
+    if (username) {
+      const cleanup = setupOnlineStatus();
+      return cleanup;
+    }
+  }, [username]);
+
+  // Подписка на онлайн-статус пользователей
+  const setupOnlineStatus = () => {
+    const activeUsersRef = ref(database, 'chat_active_users');
+
+    // Добавляем текущего пользователя в список активных
+    const addUserToOnline = async () => {
+      if (username) {
+        const userRef = ref(database, `chat_active_users/${username}`);
+        await set(userRef, {
+          username: username,
+          lastSeen: Date.now(),
+        });
+      }
+    };
+
+    // Удаляем текущего пользователя из списка активных при выходе
+    const removeUserFromOnline = async () => {
+      if (username) {
+        const userRef = ref(database, `chat_active_users/${username}`);
+        await remove(userRef);
+      }
+    };
+
+    // Очищаем старые записи (старше 5 минут)
+    const cleanupOldUsers = async () => {
+      const snapshot = await get(activeUsersRef);
+      if (snapshot.val()) {
+        const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+        const users = snapshot.val();
+        Object.keys(users).forEach(key => {
+          if (users[key].lastSeen < fiveMinutesAgo) {
+            remove(ref(database, `chat_active_users/${key}`));
+          }
+        });
+      }
+    };
+
+    addUserToOnline();
+    cleanupOldUsers();
+
+    // Подписываемся на изменения списка активных пользователей
+    const unsubscribe = onValue(activeUsersRef, (snapshot: any) => {
+      const data = snapshot.val();
+      if (data) {
+        const activeUsers = Object.keys(data).length;
+        setOnlineUsersCount(activeUsers);
+      } else {
+        setOnlineUsersCount(0);
+      }
+    });
+
+    // Обновляем lastSeen каждые 2 минуты
+    const heartbeatInterval = setInterval(() => {
+      addUserToOnline();
+    }, 2 * 60 * 1000);
+
+    // При размонтировании компонента удаляем пользователя
+    return () => {
+      removeUserFromOnline();
+      off(activeUsersRef);
+      clearInterval(heartbeatInterval);
+    };
+  };
+
+  // Подсчет активных пользователей (сообщения за последние 5 минут) - удалено, теперь используем реальный онлайн-статус
 
   useEffect(() => {
     scrollToBottom();
@@ -189,7 +289,7 @@ export default function ChatScreen() {
       if (aiAssistantEnabled) {
         const balance = (globalThis as any).getDiamondBalance?.() ?? 0;
         if (balance < 1) {
-          Alert.alert('Недостаточно алмазов', 'Для ИИ-Ассистента требуется 1 💎. Пожалуйста, пополните баланс.');
+          Alert.alert('Недостаточно алмазов', 'Для ИИ-Ассистента требуется 1 алмаз. Пожалуйста, пополните баланс.');
           return;
         }
         setAiThinking(true);
@@ -281,17 +381,26 @@ export default function ChatScreen() {
     }
   };
 
-  const renderMessage = ({ item }: { item: Message }) => {
+  const renderMessage = ({ item, index }: { item: Message; index: number }) => {
     const isMyMessage = item.username === username;
     const timeString = new Date(item.timestamp).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
 
+    // Проверяем, нужно ли показывать разделитель даты
+    const showDateSeparator = index === 0 || !isSameDay(item.timestamp, messages[index - 1].timestamp);
+
     return (
-      <AnimatedMessage>
-        <TouchableOpacity 
-          onLongPress={() => { 
+      <>
+        {showDateSeparator && (
+          <View style={styles.dateSeparator}>
+            <Text style={styles.dateSeparatorText}>{formatDate(item.timestamp)}</Text>
+          </View>
+        )}
+        <AnimatedMessage>
+          <TouchableOpacity
+          onLongPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            setSelectedMessage(item); 
-            setShowMenu(true); 
+            setSelectedMessage(item);
+            setShowMenu(true);
           }}
           delayLongPress={500}
           activeOpacity={isMyMessage ? 0.7 : 1}
@@ -313,9 +422,9 @@ export default function ChatScreen() {
                 <TouchableOpacity onPress={() => setSelectedPhoto(item.photoURL!)}>
                   <Image
                     source={{ uri: item.photoURL }}
-                    style={{ 
-                      width: 220, 
-                      height: 220, 
+                    style={{
+                      width: 220,
+                      height: 220,
                       borderRadius: 12
                     }}
                     resizeMode="cover"
@@ -376,8 +485,8 @@ export default function ChatScreen() {
                 flexWrap: 'wrap'
               }}>
                 {Object.entries(item.reactions).map(([emoji, count]) => (
-                  <TouchableOpacity 
-                    key={emoji} 
+                  <TouchableOpacity
+                    key={emoji}
                     onPress={() => addReaction(item.id, emoji)}
                     style={{
                       flexDirection: 'row',
@@ -398,6 +507,7 @@ export default function ChatScreen() {
           </View>
         </TouchableOpacity>
       </AnimatedMessage>
+      </>
     );
   };
 
@@ -446,13 +556,13 @@ export default function ChatScreen() {
 
           <View style={styles.onlineIndicator}>
             <View style={styles.onlineDot} />
-            <Text style={styles.onlineText}>12 онлайн</Text>
+            <Text style={styles.onlineText}>{onlineUsersCount} онлайн</Text>
           </View>
 
           <View style={styles.headerRight}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Text style={{ color: aiAssistantEnabled ? '#4fc3f7' : '#ffffff60', fontSize: 11, fontWeight: '600' }}>
-                ИИ {currentDiamonds} 💎
+                ИИ {currentDiamonds} алм.
               </Text>
               <Switch
                 value={aiAssistantEnabled}
@@ -547,7 +657,7 @@ export default function ChatScreen() {
           <TouchableOpacity
             style={{
               position: 'absolute',
-              bottom: 105,
+              bottom: 150,
               right: 20,
               backgroundColor: '#f2ca50',
               borderRadius: 25,
@@ -556,6 +666,7 @@ export default function ChatScreen() {
               justifyContent: 'center',
               alignItems: 'center',
               elevation: 5,
+              zIndex: 9999,
             }}
             onPress={() => flatListRef.current?.scrollToEnd({ animated: true })}
           >
@@ -802,5 +913,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 16,
+  },
+  dateSeparator: {
+    alignSelf: 'center',
+    backgroundColor: 'rgba(26, 26, 26, 0.8)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    marginVertical: 8,
+  },
+  dateSeparatorText: {
+    color: '#f2ca50',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

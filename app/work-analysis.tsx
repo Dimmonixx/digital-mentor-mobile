@@ -22,6 +22,7 @@ import {
     View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNewOrdersCount } from '../hooks/useNewOrdersCount';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -77,13 +78,13 @@ const ANALYSIS_TYPE_KEYS: Record<string, keyof typeof ANALYSIS_PROMPTS> = {
 };
 
 const ANALYSIS_PRICES: Record<keyof typeof ANALYSIS_PROMPTS, number> = {
-  general: 3,
+  general: 1,
   color_match: 1,
-  morphology: 2,
-  symmetry: 2,
+  morphology: 1,
+  symmetry: 1,
   fun: 1,
-  issues: 2,
-  final_check: 3,
+  issues: 1,
+  final_check: 1,
 };
 
 const ANALYSIS_BUTTON_TITLES: Record<keyof typeof ANALYSIS_PROMPTS, string> = {
@@ -236,6 +237,7 @@ export default function WorkAnalysisScreen() {
   const { t } = useLanguage();
   const backgroundColor = theme?.bg || '#0a0f1d';
   const scrollViewRef = useRef<ScrollView>(null);
+  const newOrdersCount = useNewOrdersCount();
   
   const [selectedTeeth, setSelectedTeeth] = useState<string[]>([]);
   const [selectedShade, setSelectedShade] = useState<string>("Не указан");
@@ -253,7 +255,7 @@ export default function WorkAnalysisScreen() {
   const [alertVisible, setAlertVisible] = useState<boolean>(false);
   const [alertTitle, setAlertTitle] = useState<string>('');
   const [alertMessage, setAlertMessage] = useState<string>('');
-  const [diamondBalance, setDiamondBalance] = useState<number>(150);
+  const [diamondBalance, setDiamondBalance] = useState<number>(20);
   const analysisTypeKey = ANALYSIS_TYPE_KEYS[analysisType] || 'general';
   const analysisPrice = ANALYSIS_PRICES[analysisTypeKey];
   const analysisButtonTitle = ANALYSIS_BUTTON_TITLES[analysisTypeKey];
@@ -369,12 +371,21 @@ export default function WorkAnalysisScreen() {
     if (diamondBalance < dynamicCost) {
       Alert.alert(
         'Недостаточно алмазов',
-        `Для этого анализа требуется ${dynamicCost} 💎. Пожалуйста, пополните баланс.`
+        `Для этого анализа требуется ${dynamicCost} алмаза. Пожалуйста, пополните баланс.`
       );
       return;
     }
 
-    setDiamondBalance(prev => prev - dynamicCost);
+    const didSpend = (globalThis as any).spendDiamonds?.(dynamicCost);
+    if (!didSpend) {
+      Alert.alert(
+        'Недостаточно алмазов',
+        `Для этого анализа требуется ${dynamicCost} алмаза. Пожалуйста, пополните баланс.`
+      );
+      return;
+    }
+    (globalThis as any).forceDiamondUpdate?.();
+    setDiamondBalance((globalThis as any).getDiamondBalance?.() ?? 0);
 
     setIsLoading(true);
     setAnalysisResult(null);
@@ -581,27 +592,22 @@ export default function WorkAnalysisScreen() {
               />
             </View>
             <View style={styles.rightContainer}>
-              <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{
-                  color: '#f2ca50',
-                  fontSize: 6,
-                  fontWeight: '500',
-                  marginBottom: 1,
-                }}>
-                  {diamondBalance}
-                </Text>
-                <Text style={{ fontSize: 16, marginTop: -2 }}>💎</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(13,15,20,0.65)', borderWidth: 1, borderColor: '#bda15d', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 5 }}>
+                <Ionicons name="diamond" size={12} color="#bda15d" />
+                <Text style={{ color: '#bda15d', fontSize: 12, fontWeight: '600' }}>{diamondBalance}</Text>
               </View>
               <TouchableOpacity
                 style={styles.bellButton}
-                onPress={() => {
-                  router.push('/(tabs)/search');
-                }}
+                onPress={() => { router.push('/(tabs)/search'); }}
               >
-                <Ionicons name="notifications-outline" size={24} color="#f2ca50" />
-                <View style={styles.notificationBadge}>
-                  <Text style={styles.notificationBadgeText}>3</Text>
-                </View>
+                <Ionicons name="notifications" size={16} color="#bda15d" />
+                {newOrdersCount > 0 && (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationBadgeText}>
+                      {newOrdersCount > 99 ? '99+' : newOrdersCount.toString()}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -616,97 +622,127 @@ export default function WorkAnalysisScreen() {
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} ref={scrollViewRef}>
-        {/* 1-й БЛОК: Фото работы */}
-        <View style={styles.cardBlock}>
-          <Text style={styles.blockHeader}>📷 Фото работы</Text>
-          <View style={styles.imageButtonsCompact}>
-            <TouchableOpacity style={styles.imageButtonCompact} onPress={takePhoto}>
-              <Ionicons name="camera" size={20} color="#f2ca50" />
-              <Text style={styles.imageButtonTextCompact}>Фото</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.imageButtonCompact} onPress={pickImage}>
-              <Ionicons name="image" size={20} color="#f2ca50" />
-              <Text style={styles.imageButtonTextCompact}>Галерея</Text>
-            </TouchableOpacity>
-          </View>
-
-          {image && (
-            <TouchableOpacity onPress={() => setIsImageModalVisible(true)}>
-              <Image source={{ uri: image }} style={styles.previewImageCompact} />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* 2-й БЛОК: Зубная формула */}
-        <View style={styles.cardBlock}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.blockHeader}>🦷 Зубная формула</Text>
-            {selectedTeeth.length > 0 && (
-              <TouchableOpacity onPress={() => setSelectedTeeth([])} style={styles.clearTeethButton}>
-                <Text style={styles.clearTeethText}>Очистить</Text>
+        {image === null ? (
+          <>
+            {/* Стартовое меню - если фото не выбрано */}
+            <View style={styles.actions}>
+              <TouchableOpacity style={styles.primaryBtn} onPress={takePhoto} activeOpacity={0.85}>
+                <Ionicons name="camera-outline" size={22} color="#031427" />
+                <Text style={styles.primaryBtnText}>Сфотографировать</Text>
               </TouchableOpacity>
-            )}
-          </View>
-          
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            contentContainerStyle={styles.teethScrollContent}
-            style={{ marginBottom: 4 }}
-          >
-            <View style={styles.teethRowCompact}>
-              {UPPER_TEETH.map(tooth => (
-                <TouchableOpacity
-                  key={tooth}
-                  style={[
-                    styles.toothButtonCompact,
-                    selectedTeeth.includes(tooth) && styles.toothButtonSelected
-                  ]}
-                  onPress={() => toggleTooth(tooth)}
-                >
-                  <Text style={[
-                    styles.toothTextCompact,
-                    selectedTeeth.includes(tooth) && styles.toothTextSelected
-                  ]}>{tooth}</Text>
-                </TouchableOpacity>
-              ))}
+              <TouchableOpacity style={styles.secondaryBtn} onPress={pickImage} activeOpacity={0.85}>
+                <Ionicons name="images-outline" size={22} color="#f2ca50" />
+                <Text style={styles.secondaryBtnText}>Из галереи</Text>
+              </TouchableOpacity>
             </View>
-          </ScrollView>
-
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            contentContainerStyle={styles.teethScrollContent}
-          >
-            <View style={styles.teethRowCompact}>
-              {LOWER_TEETH.map(tooth => (
-                <TouchableOpacity
-                  key={tooth}
-                  style={[
-                    styles.toothButtonCompact,
-                    selectedTeeth.includes(tooth) && styles.toothButtonSelected
-                  ]}
-                  onPress={() => toggleTooth(tooth)}
-                >
-                  <Text style={[
-                    styles.toothTextCompact,
-                    selectedTeeth.includes(tooth) && styles.toothTextSelected
-                  ]}>{tooth}</Text>
+            <TouchableOpacity
+              style={styles.recommendationsBtn}
+              onPress={() => {
+                setAlertTitle('Рекомендации для точного результата');
+                setAlertMessage('Фотографируйте работу при естественном освещении. Избегайте бликов и теней. Располагайте камеру перпендикулярно поверхности работы.');
+                setAlertVisible(true);
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.recommendationsBtnText}>
+                💡 Рекомендации для точного результата
+              </Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            {/* Форма с параметрами - если фото выбрано */}
+            {/* 1-й БЛОК: Фото работы */}
+            <View style={styles.cardBlock}>
+              <Text style={styles.blockHeader}>📷 Фото работы</Text>
+              <View style={styles.imageButtonsCompact}>
+                <TouchableOpacity style={styles.imageButtonCompact} onPress={takePhoto}>
+                  <Ionicons name="camera" size={20} color="#f2ca50" />
+                  <Text style={styles.imageButtonTextCompact}>Фото</Text>
                 </TouchableOpacity>
-              ))}
+                <TouchableOpacity style={styles.imageButtonCompact} onPress={pickImage}>
+                  <Ionicons name="image" size={20} color="#f2ca50" />
+                  <Text style={styles.imageButtonTextCompact}>Галерея</Text>
+                </TouchableOpacity>
+              </View>
+
+              {image && (
+                <TouchableOpacity onPress={() => setIsImageModalVisible(true)}>
+                  <Image source={{ uri: image }} style={styles.previewImageCompact} />
+                </TouchableOpacity>
+              )}
             </View>
-          </ScrollView>
 
-          {selectedTeeth.length > 0 && (
-            <Text style={styles.selectedTeethText}>
-              Выбрано: {selectedTeeth.join(', ')}
-            </Text>
-          )}
-        </View>
+            {/* 2-й БЛОК: Зубная формула */}
+            <View style={styles.cardBlock}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.blockHeader}>🦷 Зубная формула</Text>
+                {selectedTeeth.length > 0 && (
+                  <TouchableOpacity onPress={() => setSelectedTeeth([])} style={styles.clearTeethButton}>
+                    <Text style={styles.clearTeethText}>Очистить</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
 
-        {/* 3-й БЛОК: Параметры анализа */}
-        <View style={styles.cardBlock}>
-          <Text style={styles.blockHeader}>⚙️ Параметры анализа</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.teethScrollContent}
+                style={{ marginBottom: 4 }}
+              >
+                <View style={styles.teethRowCompact}>
+                  {UPPER_TEETH.map(tooth => (
+                    <TouchableOpacity
+                      key={tooth}
+                      style={[
+                        styles.toothButtonCompact,
+                        selectedTeeth.includes(tooth) && styles.toothButtonSelected
+                      ]}
+                      onPress={() => toggleTooth(tooth)}
+                    >
+                      <Text style={[
+                        styles.toothTextCompact,
+                        selectedTeeth.includes(tooth) && styles.toothTextSelected
+                      ]}>{tooth}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.teethScrollContent}
+              >
+                <View style={styles.teethRowCompact}>
+                  {LOWER_TEETH.map(tooth => (
+                    <TouchableOpacity
+                      key={tooth}
+                      style={[
+                        styles.toothButtonCompact,
+                        selectedTeeth.includes(tooth) && styles.toothButtonSelected
+                      ]}
+                      onPress={() => toggleTooth(tooth)}
+                    >
+                      <Text style={[
+                        styles.toothTextCompact,
+                        selectedTeeth.includes(tooth) && styles.toothTextSelected
+                      ]}>{tooth}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+
+              {selectedTeeth.length > 0 && (
+                <Text style={styles.selectedTeethText}>
+                  Выбрано: {selectedTeeth.join(', ')}
+                </Text>
+              )}
+            </View>
+
+            {/* 3-й БЛОК: Параметры анализа */}
+            <View style={styles.cardBlock}>
+              <Text style={styles.blockHeader}>⚙️ Параметры анализа</Text>
           
           {/* Блок: Заказанный цвет */}
           <View style={styles.parameterBlock}>
@@ -773,37 +809,40 @@ export default function WorkAnalysisScreen() {
               ))}
             </View>
           </View>
-        </View>
-
-        {/* Кнопка запуска */}
-        <TouchableOpacity
-          style={[styles.analyzeButton, isLoading && styles.analyzeButtonDisabled]}
-          onPress={analyzeWork}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <View style={styles.fullScreenLoader}>
-              <LottieView
-                source={require('@/assets/images/cyber_head.json')}
-                autoPlay
-                loop
-                style={styles.loaderAnimation}
-              />
-              <Text style={styles.loaderStatusText}>
-                {LOADING_STATUSES[currentStatusIndex]}
-              </Text>
             </View>
-          ) : (
-            <View style={styles.buttonContent}>
-              <Ionicons name="sparkles" size={20} color="#0a0f1d" />
-              <Text style={styles.analyzeButtonText} numberOfLines={1} adjustsFontSizeToFit>
-                {`Запустить ${analysisButtonTitle} (${dynamicCost} 💎)`}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
 
-        {renderAnalysisResult()}
+            {/* Кнопка запуска */}
+            <TouchableOpacity
+              style={[styles.analyzeButton, isLoading && styles.analyzeButtonDisabled]}
+              onPress={analyzeWork}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <View style={styles.fullScreenLoader}>
+                  <LottieView
+                    source={require('@/assets/images/cyber_head.json')}
+                    autoPlay
+                    loop
+                    style={styles.loaderAnimation}
+                  />
+                  <Text style={styles.loaderStatusText}>
+                    {LOADING_STATUSES[currentStatusIndex]}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.buttonContent}>
+                  <Ionicons name="sparkles" size={20} color="#0a0f1d" />
+                  <Ionicons name="diamond" size={14} color="#0a0f1d" />
+                  <Text style={styles.analyzeButtonText} numberOfLines={1} adjustsFontSizeToFit>
+                    {`Запустить ${analysisButtonTitle} (${dynamicCost})`}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {renderAnalysisResult()}
+          </>
+        )}
       </ScrollView>
 
       <Modal
@@ -889,25 +928,34 @@ const styles = StyleSheet.create({
     height: 56,
   },
   bellButton: {
-    padding: 2,
+    backgroundColor: 'rgba(13, 15, 20, 0.65)',
+    borderWidth: 1,
+    borderColor: '#bda15d',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
     position: 'relative',
   },
   notificationBadge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
-    backgroundColor: '#f2ca50',
-    borderRadius: 10,
-    minWidth: 18,
-    height: 18,
+    top: -4,
+    right: -4,
+    backgroundColor: '#c0392b',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(13,15,20,0.8)',
   },
   notificationBadgeText: {
-    color: '#000000',
-    fontSize: 10,
-    fontWeight: 'bold',
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '700',
   },
   headerRight: {
     flexDirection: 'row',
@@ -928,6 +976,55 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  actions: {
+    gap: 12,
+  },
+  primaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#f2ca50',
+    paddingVertical: 16,
+    borderRadius: 14,
+  },
+  primaryBtnText: {
+    color: '#031427',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  secondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#0a1628',
+    paddingVertical: 16,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#f2ca50',
+  },
+  secondaryBtnText: {
+    color: '#f2ca50',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  recommendationsBtn: {
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#f2ca5060',
+    borderRadius: 20,
+    backgroundColor: 'transparent',
+    marginTop: 40,
+  },
+  recommendationsBtnText: {
+    color: '#f2ca50',
+    fontSize: 13,
+    opacity: 0.7,
+    textAlign: 'center',
   },
   localTitle: {
     fontSize: 20,

@@ -20,6 +20,7 @@ import {
   View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ToothFormula from '../components/ToothFormula';
 import StyledToast from '../components/ui/StyledToast';
 import { useNewOrdersCount } from '../hooks/useNewOrdersCount';
 
@@ -871,125 +872,17 @@ export default function NewOrderScreen() {
           </View>
         </View>
 
-        {/* Зубная формула */}
-        <View style={styles.section}>
-          <View style={styles.cardContainer}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <Text style={styles.sectionTitle}>🦷 ЗУБНАЯ ФОРМУЛА</Text>
-              <TouchableOpacity
-                onPress={() => { setSelectedTeeth([]); setConnections([]); }}
-                style={{ padding: 4, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Верхняя челюсть */}
-            <View style={{ marginBottom: 20, width: '100%' }}>
-              <Text style={styles.sectionLabel}>Верхняя челюсть</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: 15, flexGrow: 1, justifyContent: 'center', alignItems: 'center' }}
-                ref={topJawScrollRef}
-              >
-                <View style={{ flexDirection: 'row', paddingVertical: 10, justifyContent: 'center', alignItems: 'center', width: '100%' }}>
-                  {[18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28].map((toothNumber, idx, arr) => {
-                    const isSelected = selectedTeeth.some(t => t.number === toothNumber);
-                    const toothData = selectedTeeth.find(t => t.number === toothNumber);
-                    const isPontic = toothData?.type === 'pontic';
-                    const nextTooth = arr[idx + 1];
-                    const connId = `${toothNumber}-${nextTooth}`;
-                    const isConnected = connections.includes(connId);
-                    return (
-                      <View key={toothNumber} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <View style={{ alignItems: 'center', width: 46, marginHorizontal: 2 }}>
-                          <View style={{ height: 20, justifyContent: 'center', position: 'relative', width: '100%' }}>
-                            {nextTooth && (
-                              <TouchableOpacity
-                                onPress={() => toggleConnection(connId)}
-                                style={{
-                                  width: 12, height: 12, borderRadius: 6,
-                                  backgroundColor: isConnected ? '#FFD700' : 'rgba(255,255,255,0.15)',
-                                  position: 'absolute', right: -8, zIndex: 10,
-                                }}
-                              />
-                            )}
-                          </View>
-                          <TouchableOpacity
-                            onPress={() => toggleTooth(toothNumber)}
-                            onLongPress={() => toggleToothType(toothNumber)}
-                            style={[
-                              styles.toothButton,
-                              { width: 46, height: 44 },
-                              isSelected && styles.toothSelected,
-                              isPontic && styles.toothPontic,
-                            ]}
-                          >
-                            <Text style={styles.toothText}>{toothNumber}</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              </ScrollView>
-            </View>
-
-            {/* Нижняя челюсть */}
-            <View style={{ marginBottom: 20, width: '100%' }}>
-              <Text style={styles.sectionLabel}>Нижняя челюсть</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: 15, flexGrow: 1, justifyContent: 'center', alignItems: 'center' }}
-                ref={bottomJawScrollRef}
-              >
-                <View style={{ flexDirection: 'row', paddingVertical: 10, justifyContent: 'center', alignItems: 'center', width: '100%' }}>
-                  {[48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38].map((toothNumber, idx, arr) => {
-                    const isSelected = selectedTeeth.some(t => t.number === toothNumber);
-                    const toothData = selectedTeeth.find(t => t.number === toothNumber);
-                    const isPontic = toothData?.type === 'pontic';
-                    const nextTooth = arr[idx + 1];
-                    const connId = `${toothNumber}-${nextTooth}`;
-                    const isConnected = connections.includes(connId);
-                    return (
-                      <View key={toothNumber} style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <View style={{ alignItems: 'center', width: 46, marginHorizontal: 2 }}>
-                          <View style={{ height: 20, justifyContent: 'center', position: 'relative', width: '100%' }}>
-                            {nextTooth && (
-                              <TouchableOpacity
-                                onPress={() => toggleConnection(connId)}
-                                style={{
-                                  width: 12, height: 12, borderRadius: 6,
-                                  backgroundColor: isConnected ? '#FFD700' : 'rgba(255,255,255,0.15)',
-                                  position: 'absolute', right: -8, zIndex: 10,
-                                }}
-                              />
-                            )}
-                          </View>
-                          <TouchableOpacity
-                            onPress={() => toggleTooth(toothNumber)}
-                            onLongPress={() => toggleToothType(toothNumber)}
-                            style={[
-                              styles.toothButton,
-                              { width: 46, height: 44 },
-                              isSelected && styles.toothSelected,
-                              isPontic && styles.toothPontic,
-                            ]}
-                          >
-                            <Text style={styles.toothText}>{toothNumber}</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              </ScrollView>
-            </View>
-          </View>
-        </View>
+        <ToothFormula
+          selectedTeeth={selectedTeeth}
+          setSelectedTeeth={setSelectedTeeth}
+          connections={connections}
+          toggleConnection={toggleConnection}
+          toggleTooth={toggleTooth}
+          toggleToothType={toggleToothType}
+          topJawScrollRef={topJawScrollRef}
+          bottomJawScrollRef={bottomJawScrollRef}
+          styles={styles}
+        />
 
         {/* 🛠️ КОНСТРУКЦИИ */}
         <View style={styles.section}>
@@ -1399,6 +1292,32 @@ export default function NewOrderScreen() {
                                       )}
                                     </View>
                                   )}
+
+                                  <TextInput
+                                    style={{
+                                      marginTop: 8,
+                                      backgroundColor: 'rgba(255,255,255,0.05)',
+                                      borderRadius: 12,
+                                      borderWidth: 1,
+                                      borderColor: details.implantDiameters?.[toothNum] ? '#E2BD75' : 'rgba(242,202,80,0.25)',
+                                      paddingHorizontal: 14,
+                                      paddingVertical: 12,
+                                      color: details.implantDiameters?.[toothNum] ? '#E2BD75' : '#ffffff',
+                                      fontSize: 13,
+                                    }}
+                                    placeholder="Ввести систему имплантов вручную..."
+                                    placeholderTextColor="rgba(255,255,255,0.35)"
+                                    value={details.implantDiameters?.[toothNum] ?? ''}
+                                    onChangeText={(text) => {
+                                      setBlockDetails(prev => ({
+                                        ...prev,
+                                        [blockKey]: {
+                                          ...prev[blockKey],
+                                          implantDiameters: { ...(prev[blockKey]?.implantDiameters || {}), [toothNum]: text },
+                                        }
+                                      }));
+                                    }}
+                                  />
                                 </View>
                               )}
                             </View>
@@ -1447,7 +1366,12 @@ export default function NewOrderScreen() {
                   onPress={() => setShowVitaDetails(!showVitaDetails)}
                 >
                   <Text style={{ color: '#f2ca50', fontSize: 32, fontWeight: 'bold', letterSpacing: 1 }}>
-                    {vitaResult.primary_range ?? vitaResult.shade ?? '—'}
+                    {(() => {
+                      const pr = vitaResult.primary_range ?? vitaResult.shade ?? '—';
+                      return typeof pr === 'string' && pr.includes('-')
+                        ? pr.split('-').reverse().join('-')
+                        : pr;
+                    })()}
                   </Text>
                   <Ionicons name={showVitaDetails ? 'chevron-up' : 'chevron-down'} size={24} color="#f2ca50" />
                 </TouchableOpacity>
@@ -1640,7 +1564,13 @@ export default function NewOrderScreen() {
             <View style={{ marginBottom: 12 }}>
               <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>Цвет</Text>
               <Text style={{ color: '#f2ca50', fontSize: 15, fontWeight: '600' }}>
-                {(manualVitaColor.trim() || vitaResult?.primary_range || vitaResult?.shade || 'Не указан').toString()}
+                {(() => {
+                  const raw = manualVitaColor.trim() || vitaResult?.primary_range || vitaResult?.shade || 'Не указан';
+                  const s = raw.toString();
+                  return s.includes('-') && !manualVitaColor.trim()
+                    ? s.split('-').reverse().join('-')
+                    : s;
+                })()}
               </Text>
             </View>
             <View style={{ marginBottom: 12 }}>

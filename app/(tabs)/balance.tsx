@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import {
     Alert,
     ImageBackground,
+    Modal,
     ScrollView,
     Share,
     StyleSheet,
@@ -110,13 +111,14 @@ const PACKAGES = [
 
 export default function BalanceScreen() {
   const insets = useSafeAreaInsets();
-  const [balance, setBalance] = useState<number>((globalThis as any).getDiamondBalance?.() || 150);
+  const [balance, setBalance] = useState<number>((globalThis as any).getDiamondBalance?.() || 20);
   const [promoCode, setPromoCode] = useState<string>('');
   const [hasShared, setHasShared] = useState<boolean>(false);
+  const [showBetaModal, setShowBetaModal] = useState<boolean>(false);
 
   useEffect(() => {
     const subscription = (globalThis as any).forceDiamondUpdate = () => {
-      setBalance((globalThis as any).getDiamondBalance?.() || 150);
+      setBalance((globalThis as any).getDiamondBalance?.() || 20);
     };
     
     AsyncStorage.getItem('user').then((data) => {
@@ -133,17 +135,7 @@ export default function BalanceScreen() {
   }, []);
 
   const handlePurchase = (pkg: typeof PACKAGES[0]) => {
-    if (pkg.isBasic) return;
-    const totalDiamonds = pkg.diamonds + pkg.bonusDiamonds;
-    const newBalance = balance + totalDiamonds;
-    setBalance(newBalance);
-    (globalThis as any).spendDiamonds?.(-totalDiamonds);
-    (globalThis as any).forceDiamondUpdate?.();
-    const bonusText = pkg.bonusDiamonds > 0 ? ` (+${pkg.bonusDiamonds} бонус)` : '';
-    Alert.alert(
-      'Успешная покупка',
-      `Вы приобрели пакет "${pkg.name}" на ${pkg.diamonds} 💎${bonusText}. Ваш новый баланс: ${newBalance} 💎`
-    );
+    setShowBetaModal(true);
   };
 
   const handleCopyPromoCode = () => {
@@ -172,7 +164,7 @@ export default function BalanceScreen() {
           }
         });
         
-        Alert.alert('Бонус получен!', 'Вы получили 1 💎 за первый шеринг');
+        Alert.alert('Бонус получен!', 'Вы получили 1 алмаз за первый шеринг');
       }
     } catch (error) {
       console.error('Error sharing:', error);
@@ -204,7 +196,7 @@ export default function BalanceScreen() {
             <Text style={styles.balanceLabel}>Текущий баланс</Text>
             <View style={styles.balanceValueContainer}>
               <Text style={styles.balanceValue}>{balance}</Text>
-              <Text style={styles.balanceDiamond}>💎</Text>
+              <Ionicons name="diamond" size={28} color="#f2ca50" style={{ marginLeft: 8 }} />
             </View>
             <Text style={styles.balanceHelper}>Используйте для ИИ-анализа и ассистента</Text>
           </View>
@@ -240,7 +232,7 @@ export default function BalanceScreen() {
                 <View style={styles.packageHeader}>
                   <Text style={[styles.packageName, pkg.isBasic && styles.packageNameBasic, { color: pkg.isBasic ? pkg.color : pkg.color }]}>{pkg.name}</Text>
                   <Text style={styles.packageDiamonds}>
-                    {pkg.diamonds} 💎{pkg.bonusDiamonds > 0 && ` +${pkg.bonusDiamonds} бонус`}
+                    {pkg.diamonds} алм.{pkg.bonusDiamonds > 0 && ` +${pkg.bonusDiamonds} бонус`}
                   </Text>
                 </View>
                 {pkg.description && (
@@ -274,7 +266,7 @@ export default function BalanceScreen() {
                 </View>
                 <View style={styles.diamondCardRow2}>
                   <Text style={styles.diamondRowDiamonds}>
-                    {pkg.diamonds} 💎{pkg.bonusDiamonds > 0 && ` +${pkg.bonusDiamonds} 💎 бонус`}
+                    {pkg.diamonds} алм.{pkg.bonusDiamonds > 0 && ` +${pkg.bonusDiamonds} бонус`}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -285,7 +277,7 @@ export default function BalanceScreen() {
           <View style={styles.referralBlock}>
             <Text style={styles.sectionTitle}>Реферальная система</Text>
             <Text style={styles.referralDescription}>
-              Пригласите коллегу! За каждого зарегистрированного доктора по вашему коду вы оба получите по 15 💎 на счет
+              Пригласите коллегу! За каждого зарегистрированного доктора по вашему коду вы оба получите по 15 алмазов на счет
             </Text>
             <View style={styles.promoCodeContainer}>
               <Text style={styles.promoCodeLabel}>Ваш промокод:</Text>
@@ -303,6 +295,33 @@ export default function BalanceScreen() {
           </View>
         </ScrollView>
       </View>
+
+      {/* Beta Testing Modal */}
+      <Modal
+        visible={showBetaModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowBetaModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Ionicons name="lock-closed" size={32} color="#f2ca50" />
+            </View>
+            <Text style={styles.modalTitle}>Режим закрытого бета-тестирования</Text>
+            <Text style={styles.modalText}>
+              В данный момент покупка тарифов и алмазов недоступна. Все ИИ-функции открыты для тестирования. Если вам нужны дополнительные алмазы, пожалуйста, обратитесь к разработчику.
+            </Text>
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => setShowBetaModal(false)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.modalButtonText}>Понятно</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ImageBackground>
   );
 }
@@ -644,5 +663,54 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#f2ca50',
     marginLeft: 12,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  modalContent: {
+    backgroundColor: 'rgba(15, 20, 35, 0.95)',
+    borderRadius: 24,
+    padding: 32,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.3)',
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#ffffff',
+    textAlign: 'center',
+    marginBottom: 16,
+    letterSpacing: 0.5,
+  },
+  modalText: {
+    fontSize: 15,
+    color: 'rgba(255, 255, 255, 0.85)',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 28,
+  },
+  modalButton: {
+    backgroundColor: '#f2ca50',
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 48,
+    width: '100%',
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#031427',
   },
 });

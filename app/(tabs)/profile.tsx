@@ -1,6 +1,5 @@
 import { useLanguage } from '@/context/LanguageContext';
 import { useTheme } from '@/context/ThemeContext';
-import { computeMasteryIndex, getMasteryLevel, getMasteryProgress } from '@/data/cases';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
@@ -43,14 +42,6 @@ const PRESET_AVATARS = [
   require('../../assets/avatars/avatar_10.jpg'),
 ];
 
-const SPECIALIZATIONS = [
-  'Металлокерамика',
-  'Циркон',
-  'Композит',
-  'Бюгель',
-  'Съёмные протезы',
-];
-
 interface ProfileData {
   firstName: string;
   lastName: string;
@@ -58,7 +49,6 @@ interface ProfileData {
   laboratory: string;
   city: string;
   experience: string;
-  specialization: string[];
   avatarType: 'custom' | 'preset';
   avatarUrl: string;
   avatarPresetId: number;
@@ -106,7 +96,6 @@ export default function ProfileScreen() {
     laboratory: '',
     city: '',
     experience: '',
-    specialization: [],
     avatarType: 'preset',
     avatarUrl: '',
     avatarPresetId: 1,
@@ -663,15 +652,6 @@ export default function ProfileScreen() {
     setAvatarModalVisible(false);
   };
 
-  const toggleSpecialization = (spec: string) => {
-    setProfile(prev => ({
-      ...prev,
-      specialization: (prev.specialization || []).includes(spec)
-        ? (prev.specialization || []).filter(s => s !== spec)
-        : [...(prev.specialization || []), spec],
-    }));
-  };
-
   const handleSave = async () => {
     try {
       setLoading(true);
@@ -738,23 +718,6 @@ export default function ProfileScreen() {
     };
     AsyncStorage.setItem('userProfile', JSON.stringify(cached)).catch(() => {});
   }, [profile, user]);
-
-  // Индекс мастерства
-  const masteryProgress = getMasteryProgress();
-  const masteryIndex = computeMasteryIndex(masteryProgress);
-  const masteryLevel = getMasteryLevel(masteryIndex);
-  const MASTERY_LEVELS: { name: string; min: number }[] = [
-    { name: 'Ученик', min: 0 },
-    { name: 'Мастер', min: 40 },
-    { name: 'Эксперт', min: 100 },
-    { name: 'Легенда', min: 200 },
-  ];
-  const currentLevelIdx = MASTERY_LEVELS.map((l) => l.min).filter((m) => masteryIndex >= m).length - 1;
-  const nextLevel = MASTERY_LEVELS[currentLevelIdx + 1];
-  const levelStart = MASTERY_LEVELS[currentLevelIdx]?.min ?? 0;
-  const masteryPct = nextLevel
-    ? Math.min(100, Math.round(((masteryIndex - levelStart) / (nextLevel.min - levelStart)) * 100))
-    : 100;
 
   const onShareCode = async () => {
     try {
@@ -827,50 +790,6 @@ export default function ProfileScreen() {
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{statistics.analysesCount}</Text>
             <Text style={styles.statLabel}>Анализов цвета</Text>
-          </View>
-        </View>
-
-        {/* 2.5 Индекс мастерства */}
-        <View style={styles.masteryBlock}>
-          <View style={styles.masteryHeader}>
-            <Ionicons name="trophy" size={18} color={GOLD} />
-            <Text style={styles.masteryTitle}>ИНДЕКС МАСТЕРСТВА</Text>
-            <View style={styles.masteryLevelBadge}>
-              <Text style={styles.masteryLevelText}>{masteryLevel}</Text>
-            </View>
-          </View>
-
-          <View style={styles.masteryIndexRow}>
-            <Text style={styles.masteryIndexValue}>{masteryIndex}</Text>
-            <Text style={styles.masteryIndexUnit}>баллов</Text>
-          </View>
-
-          {/* Прогресс до следующего уровня */}
-          <View style={styles.masteryTrack}>
-            <View style={[styles.masteryFill, { width: `${masteryPct}%` }]} />
-          </View>
-          <Text style={styles.masteryNext}>
-            {nextLevel
-              ? `До уровня «${nextLevel.name}»: ${nextLevel.min - masteryIndex} баллов`
-              : 'Максимальный уровень достигнут — Легенда!'}
-          </Text>
-
-          {/* Разбивка формулы */}
-          <View style={styles.masteryFormula}>
-            <View style={styles.masteryStat}>
-              <Text style={styles.masteryStatValue}>{masteryProgress.publishedWorks}</Text>
-              <Text style={styles.masteryStatLabel}>Работ ×10</Text>
-            </View>
-            <View style={styles.masteryStatDivider} />
-            <View style={styles.masteryStat}>
-              <Text style={styles.masteryStatValue}>{masteryProgress.correctRiddles}</Text>
-              <Text style={styles.masteryStatLabel}>Загадки ×5</Text>
-            </View>
-            <View style={styles.masteryStatDivider} />
-            <View style={styles.masteryStat}>
-              <Text style={styles.masteryStatValue}>{masteryProgress.aiLikes}</Text>
-              <Text style={styles.masteryStatLabel}>AI-лайки</Text>
-            </View>
           </View>
         </View>
 
@@ -1080,24 +999,6 @@ export default function ProfileScreen() {
                   placeholderTextColor="rgba(255,255,255,0.35)"
                   keyboardType="number-pad"
                 />
-              </View>
-
-              <Text style={[styles.label, { marginTop: 4 }]}>Специализация</Text>
-              <View style={styles.specializationContainer}>
-                {SPECIALIZATIONS.map((spec) => {
-                  const selected = (profile.specialization || []).includes(spec);
-                  return (
-                    <TouchableOpacity
-                      key={spec}
-                      style={[styles.chip, selected && styles.chipSelected]}
-                      onPress={() => toggleSpecialization(spec)}
-                    >
-                      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                        {spec}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
               </View>
 
               <TouchableOpacity
@@ -1417,59 +1318,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '500',
   },
-  masteryBlock: {
-    backgroundColor: 'rgba(10, 16, 30, 0.92)',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(242, 202, 80, 0.35)',
-  },
-  masteryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  masteryTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: GOLD,
-    letterSpacing: 0.8,
-  },
-  masteryLevelBadge: {
-    marginLeft: 'auto',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 10,
-    backgroundColor: 'rgba(242, 202, 80, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(242, 202, 80, 0.5)',
-  },
-  masteryLevelText: { fontSize: 13, fontWeight: '800', color: GOLD, letterSpacing: 0.3 },
-  masteryIndexRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: 12 },
-  masteryIndexValue: { fontSize: 40, fontWeight: '900', color: '#ffffff', lineHeight: 42 },
-  masteryIndexUnit: { fontSize: 14, color: 'rgba(255,255,255,0.5)', marginBottom: 6 },
-  masteryTrack: {
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  masteryFill: { height: '100%', borderRadius: 4, backgroundColor: GOLD },
-  masteryNext: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 14 },
-  masteryFormula: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(8, 14, 28, 0.7)',
-    borderRadius: 12,
-    paddingVertical: 12,
-  },
-  masteryStat: { flex: 1, alignItems: 'center' },
-  masteryStatValue: { fontSize: 20, fontWeight: '800', color: GOLD, marginBottom: 2 },
-  masteryStatLabel: { fontSize: 11, color: 'rgba(255,255,255,0.55)', fontWeight: '500' },
-  masteryStatDivider: { width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.1)' },
   networkBlock: {
     backgroundColor: 'rgba(10, 16, 30, 0.92)',
     borderRadius: 16,
@@ -1569,32 +1417,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     borderWidth: 1,
     borderColor: 'rgba(242, 202, 80, 0.18)',
-  },
-  specializationContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 20,
-  },
-  chip: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(242, 202, 80, 0.2)',
-  },
-  chipSelected: {
-    backgroundColor: 'rgba(242, 202, 80, 0.18)',
-    borderColor: GOLD,
-  },
-  chipText: {
-    color: 'rgba(255,255,255,0.65)',
-    fontSize: 13,
-  },
-  chipTextSelected: {
-    color: GOLD,
-    fontWeight: '600',
   },
   saveButton: {
     backgroundColor: GOLD,
