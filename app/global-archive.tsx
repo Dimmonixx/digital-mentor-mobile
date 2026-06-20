@@ -44,6 +44,16 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+const METHOD_LABELS: Record<string, string> = {
+  preston: 'Анатомический стандарт',
+  golden: 'Золотое сечение',
+  red: 'Гармоничная сетка',
+  'Golden Proportion': 'Золотое сечение',
+  'RED Proportion': 'Гармоничная сетка',
+};
+
+const formatMethodName = (methodId?: string) => METHOD_LABELS[methodId || ''] || methodId || '—';
+
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -113,7 +123,7 @@ function ArchiveCard({
     if (item.type === 'golden_proportion') {
       const d = item.data as GoldenProportionData;
       const angle = d.angle !== 0 ? ` · ${d.angle > 0 ? '+' : ''}${d.angle}°` : '';
-      return `Методика: ${d.method || 'Golden'}${angle}`;
+      return `Методика: ${formatMethodName(d.method)}${angle}`;
     }
     if (item.type === 'color_analysis') {
       const d = item.data as ColorAnalysisData;
@@ -278,37 +288,55 @@ function ArchiveCard({
 
             {item.type === 'golden_proportion' && (() => {
               const d = item.data as any;
-              const calcs: Record<string, any> = d.calculations || {};
-              const keys = Object.keys(calcs);
+              const report = d.aiReport;
               return (
                 <>
+                  {/* Архитектурный паспорт улыбки */}
+                  <View style={cardStyles.passportHeader}>
+                    <Text style={cardStyles.passportTitle}>Архитектурный паспорт улыбки</Text>
+                    <View style={cardStyles.passportMethodBadge}>
+                      <Text style={cardStyles.passportMethodText}>
+                        {formatMethodName(d.method)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {report ? (
+                    <View style={cardStyles.passportSection}>
+                      <View style={cardStyles.passportRow}>
+                        <Text style={cardStyles.passportIcon}>📐</Text>
+                        <View style={cardStyles.passportTextWrap}>
+                          <Text style={cardStyles.passportBlockTitle}>Пропорциональный дисбаланс (Ширина/Высота)</Text>
+                          <Text style={cardStyles.passportBlockText}>{report.widthHeight.replace(/^[📐📉⚖️]\s*/, '')}</Text>
+                        </View>
+                      </View>
+                      <View style={cardStyles.passportDivider} />
+                      <View style={cardStyles.passportRow}>
+                        <Text style={cardStyles.passportIcon}>📉</Text>
+                        <View style={cardStyles.passportTextWrap}>
+                          <Text style={cardStyles.passportBlockTitle}>Десневой контур (Зениты десны)</Text>
+                          <Text style={cardStyles.passportBlockText}>{report.zenith.replace(/^[📐📉⚖️]\s*/, '')}</Text>
+                        </View>
+                      </View>
+                      <View style={cardStyles.passportDivider} />
+                      <View style={cardStyles.passportRow}>
+                        <Text style={cardStyles.passportIcon}>⚖️</Text>
+                        <View style={cardStyles.passportTextWrap}>
+                          <Text style={cardStyles.passportBlockTitle}>Симметрия по доминанте (Правило Золотого сечения)</Text>
+                          <Text style={cardStyles.passportBlockText}>{report.goldenSymmetry.replace(/^[📐📉⚖️]\s*/, '')}</Text>
+                        </View>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={cardStyles.passportSection}>
+                      <Text style={cardStyles.passportBlockText}>AI-отчёт недоступен для этого сохранения.</Text>
+                    </View>
+                  )}
+
                   {d.angle !== 0 && d.angle !== undefined && (
                     <View style={cardStyles.detailRow}>
                       <Text style={cardStyles.detailLabel}>Наклон оси</Text>
                       <Text style={cardStyles.detailValue}>{d.angle > 0 ? '+' : ''}{d.angle}°</Text>
-                    </View>
-                  )}
-                  {d.method ? (
-                    <View style={cardStyles.detailRow}>
-                      <Text style={cardStyles.detailLabel}>Методика</Text>
-                      <Text style={cardStyles.detailValue}>{d.method}</Text>
-                    </View>
-                  ) : null}
-                  {keys.length > 0 && (
-                    <View style={cardStyles.zonesBlock}>
-                      <Text style={cardStyles.zonesTitle}>Расчёты пропорций</Text>
-                      {keys.map((k) => {
-                        const c = calcs[k];
-                        const ok = Math.abs(c.deviationPct ?? 0) < 10;
-                        return (
-                          <View key={k} style={cardStyles.zoneRow}>
-                            <Text style={cardStyles.zoneLabel}>{k}</Text>
-                            <Text style={[cardStyles.zoneValue, { color: ok ? '#4caf50' : '#ff5252' }]}>
-                              {c.factMm != null ? `${c.factMm}мм` : ''}{c.deviationPct != null ? ` (${c.deviationPct > 0 ? '+' : ''}${c.deviationPct}%)` : ''}
-                            </Text>
-                          </View>
-                        );
-                      })}
                     </View>
                   )}
                 </>
@@ -790,6 +818,75 @@ const cardStyles = StyleSheet.create({
     fontSize: 15,
     color: 'rgba(255,255,255,0.9)',
     fontWeight: '500',
+  },
+  passportSection: {
+    marginBottom: 4,
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    gap: 10,
+  },
+  passportHeader: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  passportTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  passportMethodBadge: {
+    alignSelf: 'center',
+    maxWidth: '90%',
+    flexWrap: 'wrap',
+    backgroundColor: 'rgba(242,202,80,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.3)',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  passportMethodText: {
+    color: '#f2ca50',
+    fontSize: 12,
+    fontWeight: '600',
+    flexWrap: 'wrap',
+    textAlign: 'center',
+  },
+  passportRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  passportIcon: {
+    fontSize: 22,
+    lineHeight: 28,
+  },
+  passportTextWrap: {
+    flex: 1,
+    gap: 4,
+  },
+  passportBlockTitle: {
+    color: '#f2ca50',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    lineHeight: 18,
+  },
+  passportBlockText: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  passportDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
 });
 

@@ -12,8 +12,15 @@ export interface GoldenProportionData {
     vertical: number[];
     horizontal: number[];
   };
+  lineAngles?: number[];
   method: string;
+  segment?: 'upper' | 'lower';
   calculations: Record<string, { factMm: number; deviationPct: number; diffMm: number }>;
+  aiReport?: {
+    widthHeight: string;
+    zenith: string;
+    goldenSymmetry: string;
+  };
 }
 
 export interface OpticalDiagnosisData {

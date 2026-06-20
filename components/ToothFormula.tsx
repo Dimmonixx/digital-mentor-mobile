@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 
 interface Tooth {
   number: number;
@@ -38,7 +38,7 @@ export default function ToothFormula({
     <View style={styles.section}>
       <View style={styles.cardContainer}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <Text style={styles.sectionTitle}>🦷 ЗУБНАЯ ФОРМУЛА</Text>
+          <Text style={styles.sectionTitle}>🦷 ЗУБНАЯ ФОРМУЛА *</Text>
           <TouchableOpacity
             onPress={clearSelection}
             style={{ padding: 4, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.05)' }}

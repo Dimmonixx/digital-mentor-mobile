@@ -3,7 +3,12 @@ import { saveToArchive } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import React, { useRef, useState } from 'react';
+import {
+    addOrientationChangeListener,
+    lockAsync,
+    OrientationLock
+} from 'expo-screen-orientation';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     Animated,
     GestureResponderEvent,
@@ -18,30 +23,32 @@ import {
     Switch,
     Text,
     TouchableOpacity,
-    View,
+    useWindowDimensions,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '../hooks/useAuth';
 
 type MethodType = 'golden' | 'red' | 'preston';
 
 const METHODS: { key: MethodType; label: string; icon: any; hint: string }[] = [
   {
     key: 'golden',
-    label: 'Golden Proportion',
+    label: 'Золотое сечение',
     icon: 'sparkles-outline',
-    hint: 'Ширина зубов визуально уменьшается от центра к краям на 61.8%. Классический жёсткий стандарт.',
+    hint: 'Классика жанра. Зубы визуально уменьшаются от центра к краям ровно на 61.8%. Строгий, математический идеал улыбки.',
   },
   {
     key: 'red',
-    label: 'RED Proportion',
+    label: 'Гармоничная сетка',
     icon: 'swap-horizontal-outline',
-    hint: 'Соотношение ширины соседних зубов остаётся неизменным вдоль всего ряда. Зубы выглядят крупнее.',
+    hint: 'Более мягкий стандарт. Зубы уменьшаются плавно и выглядят крупнее, чем в золотом сечении. Отлично подходит для широких улыбок.',
   },
   {
     key: 'preston',
-    label: 'Preston Ratio',
+    label: 'Анатомический стандарт',
     icon: 'person-outline',
-    hint: 'Расчёт базируется на индивидуальных физических пропорциях пациента без жёстких констант.',
+    hint: 'Никаких жёстких рамок. Пропорции рассчитываются индивидуально, опираясь только на реальные физические параметры самого пациента.',
   },
 ];
 
@@ -60,16 +67,22 @@ const getDeviationLabel = (pct: number, diffMm: number) => {
 };
 
 const MOCK_RESULTS = [
-  { label: 'Центральные резцы', factMm: 8.4, deviationPct: 1,  diffMm:  0.1 },
+  { label: 'Центральные резцы', factMm: 8.8, deviationPct: 6,  diffMm:  0.5 },
   { label: 'Боковые резцы',    factMm: 5.4, deviationPct: 5,  diffMm:  0.2 },
   { label: 'Клыки',            factMm: 3.1, deviationPct: -2, diffMm: -0.1 },
 ];
 
 export default function GoldenProportionScreen() {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const { user } = useAuth();
+  const [diamonds, setDiamonds] = useState(0);
+  const [diamondsModalVisible, setDiamondsModalVisible] = useState(false);
   const [photo, setPhoto] = useState<string | null>(null);
   const [method, setMethod] = useState<MethodType>('golden');
+  const [selectedSegment, setSelectedSegment] = useState<'upper' | 'lower'>('upper');
   const [gridOpacity, setGridOpacity] = useState(0.6);
+  const lastGridOpacity = useRef(0.6);
   const [zenithAnalysis, setZenithAnalysis] = useState(false);
   const [heightWidthAnalysis, setHeightWidthAnalysis] = useState(false);
   const [showResults, setShowResults] = useState(false);
@@ -83,14 +96,131 @@ export default function GoldenProportionScreen() {
   const [openMethodHint, setOpenMethodHint] = useState<MethodType | null>(null);
   const [openExtraHint, setOpenExtraHint] = useState<string | null>(null);
 
-  // Позиции подвижных линий (0..1 от ширины/высоты контейнера)
+  // Панорамный режим
+  const [panoramaVisible, setPanoramaVisible] = useState(false);
+  const [panoramaGridOpacity, setPanoramaGridOpacity] = useState(0.6);
+  const lastPanoramaGridOpacity = useRef(0.6);
+  const panoramaGridAnim = useRef(new Animated.Value(0.6)).current;
+  const gridHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isInteracting, setIsInteracting] = useState(false);
+
+  // AI-отчет "Архитектурный паспорт улыбки" (3 раздела текста)
+  type AiReport = {
+    widthHeight: string;
+    zenith: string;
+    goldenSymmetry: string;
+  };
+  const [aiReport, setAiReport] = useState<AiReport | null>(null);
+
+  // Ориентация экрана (landscape/panorama mode)
+  const [isLandscape, setIsLandscape] = useState(false);
+  const [screenDimensions, setScreenDimensions] = useState({ width: 0, height: 0 });
+  const orientationListener = useRef<ReturnType<typeof addOrientationChangeListener> | null>(null);
+
+  // Отслеживание изменений размеров экрана через хук
+  useEffect(() => {
+    setScreenDimensions({ width: windowWidth, height: windowHeight });
+    // Автоопределение landscape по соотношению сторон
+    setIsLandscape(windowWidth > windowHeight);
+  }, [windowWidth, windowHeight]);
+
+  // Управление ориентацией - основной экран всегда PORTRAIT
+  useEffect(() => {
+    // При входе на экран блокируем в портрет
+    lockAsync(OrientationLock.PORTRAIT);
+
+    // При размонтировании возвращаем портретную ориентацию
+    return () => {
+      lockAsync(OrientationLock.PORTRAIT);
+    };
+  }, []);
+
+  // Загрузка баланса алмазов при монтировании (как в color-analyzer)
+  useEffect(() => {
+    const loadDiamonds = () => {
+      const balance = (globalThis as any).getDiamondBalance?.() ?? 0;
+      console.log('Loaded diamonds from global:', balance);
+      setDiamonds(balance);
+    };
+    loadDiamonds();
+    
+    // Подписываемся на обновления баланса
+    const interval = setInterval(loadDiamonds, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Загружаем натуральные размеры фото, чтобы потом считать реальную ширину изображения
+  useEffect(() => {
+    if (!photo) {
+      imageNaturalSize.current = { width: 0, height: 0 };
+      return;
+    }
+    Image.getSize(
+      photo,
+      (width, height) => {
+        imageNaturalSize.current = { width, height };
+        calibrateScaleFromAI();
+      },
+      () => {
+        imageNaturalSize.current = { width: 0, height: 0 };
+      },
+    );
+  }, [photo]);
+
+  // Инициализация PanResponder-ов для динамических направляющих
+  useEffect(() => {
+    guideLinePRs.current = guideLinesRef.current.map((_, i) => makeGuideLinePR(i));
+  }, []);
+
+  // При выключении макро-режима осевые линии возвращаются к строго вертикальному положению
+  useEffect(() => {
+    if (!bigGuides) {
+      const reset = [0, 0, 0, 0, 0];
+      vLineAnglesRef.current = reset;
+      setVLineAngles(reset);
+    }
+  }, [bigGuides]);
+
+  // Принудительный переход в landscape при открытии панорамы (ОБЕ СТОРОНЫ)
+  const enterLandscapeMode = async () => {
+    await lockAsync(OrientationLock.LANDSCAPE);
+    setIsLandscape(true);
+  };
+
+  const exitLandscapeMode = async () => {
+    await lockAsync(OrientationLock.PORTRAIT);
+    setIsLandscape(false);
+  };
+
+  // Позиции подвижных линий хранятся ОТНОСИТЕЛЬНО (0..1 от реальной ширины/высоты фото),
+  // поэтому при смене ориентации/масштаба линии остаются на клинических местах.
   const vLines = useRef([0.22, 0.35, 0.5, 0.65, 0.78].map(v => new Animated.Value(v))).current;
   const hLines = useRef([0.33, 0.5, 0.67].map(v => new Animated.Value(v))).current;
-  // Сохранённые "сырые" значения для вычисления дельты
+  // "Сырые" значения 0..1 для вычисления дельты при драге
   const vLinesRaw = useRef([0.22, 0.35, 0.5, 0.65, 0.78]);
   const hLinesRaw = useRef([0.33, 0.5, 0.67]);
+  // Углы наклона вертикальных линий (макро-режим): градусы, 0 = строго вертикально
+  const [vLineAngles, setVLineAngles] = useState([0, 0, 0, 0, 0]);
+  const vLineAnglesRef = useRef([0, 0, 0, 0, 0]);
   // Размеры контейнера фото
   const photoContainerSize = useRef({ width: 1, height: 1 });
+  // Абсолютная позиция контейнера фото на экране (для расчета углов наклона)
+  const photoContainerLayout = useRef({ x: 0, y: 0 });
+  const photoWrapRef = useRef<View>(null);
+  // Натуральные размеры исходного фото (px)
+  const imageNaturalSize = useRef({ width: 0, height: 0 });
+  // Границы реально отрисованного изображения (resizeMode="contain")
+  const imageLayout = useRef({ width: 1, height: 1, left: 0, top: 0 });
+
+  // Динамические направляющие (до 5 вертикальных линий для измерения зубов)
+  const [guideLinesEnabled, setGuideLinesEnabled] = useState(false);
+  const guideLinesRef = useRef<Animated.Value[]>([new Animated.Value(0.5)]);
+  const guideLinesRawRef = useRef<number[]>([0.5]);
+  const [guideLinePositions, setGuideLinePositions] = useState<number[]>([0.5]);
+  const [guideLineDistances, setGuideLineDistances] = useState<number[]>([]);
+  const [guideLineCount, setGuideLineCount] = useState(1);
+  const guideLinePRs = useRef<any[]>([]);
+  const pixelsPerMm = useRef(10); // дефолт, обновляется из калибровки AI
 
   const makePR = (
     animVal: Animated.Value,
@@ -103,16 +233,14 @@ export default function GoldenProportionScreen() {
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: () => setScrollEnabled(false),
       onPanResponderMove: (_e: GestureResponderEvent, gs: PanResponderGestureState) => {
-        const size = axis === 'x'
-          ? photoContainerSize.current.width
-          : photoContainerSize.current.height;
+        updateImageLayout();
+        const size = axis === 'x' ? imageLayout.current.width : imageLayout.current.height;
         const delta = (axis === 'x' ? gs.dx : gs.dy) / size;
         animVal.setValue(Math.min(0.98, Math.max(0.02, rawArr[idx] + delta)));
       },
       onPanResponderRelease: (_e: GestureResponderEvent, gs: PanResponderGestureState) => {
-        const size = axis === 'x'
-          ? photoContainerSize.current.width
-          : photoContainerSize.current.height;
+        updateImageLayout();
+        const size = axis === 'x' ? imageLayout.current.width : imageLayout.current.height;
         const delta = (axis === 'x' ? gs.dx : gs.dy) / size;
         rawArr[idx] = Math.min(0.98, Math.max(0.02, rawArr[idx] + delta));
         setScrollEnabled(true);
@@ -120,10 +248,131 @@ export default function GoldenProportionScreen() {
       onPanResponderTerminate: () => setScrollEnabled(true),
     });
 
+  // PanResponder для вращения вертикальной линии за верхнюю/нижнюю точки (макро-режим)
+  // Угол вычисляется геометрически: atan2 относительно центра линии по положению пальца на экране
+  const makeRotatePR = (idx: number, side: 'top' | 'bottom') => {
+    let containerPos = { x: 0, y: 0 };
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        setScrollEnabled(false);
+        updateImageLayout();
+        photoWrapRef.current?.measureInWindow((x, y, _w, _h) => {
+          containerPos = { x, y };
+          photoContainerLayout.current = { x, y };
+        });
+      },
+      onPanResponderMove: (_e: GestureResponderEvent, gs: PanResponderGestureState) => {
+        const img = imageLayout.current;
+        if (img.width <= 1 || img.height <= 1) return;
+        const touchX = gs.moveX - containerPos.x;
+        const touchY = gs.moveY - containerPos.y;
+        const centerX = img.left + vLinesRaw.current[idx] * img.width;
+        const centerY = img.top + img.height / 2;
+        const dx = touchX - centerX;
+        const dy = touchY - centerY;
+        // Верхняя точка: линия указывает от центра к пальцу через верхний полюс (centerY - y)
+        // Нижняя точка: через нижний полюс (y - centerY)
+        const rad = side === 'top' ? Math.atan2(dx, -dy) : Math.atan2(dx, dy);
+        const deg = rad * 180 / Math.PI;
+        const nextAngle = Math.max(-45, Math.min(45, deg));
+        vLineAnglesRef.current[idx] = nextAngle;
+        setVLineAngles(prev => prev.map((a, i) => (i === idx ? nextAngle : a)));
+      },
+      onPanResponderRelease: () => {
+        setScrollEnabled(true);
+      },
+      onPanResponderTerminate: () => setScrollEnabled(true),
+    });
+  };
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const vPRs = useRef(vLines.map((av, i) => makePR(av, vLinesRaw.current, i, 'x'))).current;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const hPRs = useRef(hLines.map((av, i) => makePR(av, hLinesRaw.current, i, 'y'))).current;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const vTopPRs = useRef(vLines.map((_, i) => makeRotatePR(i, 'top'))).current;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const vBottomPRs = useRef(vLines.map((_, i) => makeRotatePR(i, 'bottom'))).current;
+
+  // ── Динамические направляющие: логика ──
+  const updateGuideLineDistances = (positions?: number[]) => {
+    updateImageLayout();
+    const currentPositions = positions || guideLinesRawRef.current;
+    const sorted = currentPositions.slice().sort((a, b) => a - b);
+    const distances: number[] = [];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const px = (sorted[i + 1] - sorted[i]) * imageLayout.current.width;
+      distances.push(px / pixelsPerMm.current);
+    }
+    setGuideLineDistances(distances);
+    setGuideLinePositions(currentPositions.slice());
+  };
+
+  const makeGuideLinePR = (idx: number) => {
+    let lastNewVal = guideLinesRawRef.current[idx];
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        lastNewVal = guideLinesRawRef.current[idx];
+        setScrollEnabled(false);
+      },
+      onPanResponderMove: (_e: GestureResponderEvent, gs: PanResponderGestureState) => {
+        updateImageLayout();
+        const delta = gs.dx / imageLayout.current.width;
+        lastNewVal = Math.min(0.98, Math.max(0.02, guideLinesRawRef.current[idx] + delta));
+        guideLinesRef.current[idx].setValue(lastNewVal);
+        const nextPositions = guideLinesRawRef.current.slice();
+        nextPositions[idx] = lastNewVal;
+        updateGuideLineDistances(nextPositions);
+      },
+      onPanResponderRelease: () => {
+        guideLinesRawRef.current[idx] = lastNewVal;
+        guideLinesRef.current[idx].setValue(lastNewVal);
+        setScrollEnabled(true);
+        updateGuideLineDistances();
+      },
+      onPanResponderTerminate: () => {
+        guideLinesRawRef.current[idx] = lastNewVal;
+        guideLinesRef.current[idx].setValue(lastNewVal);
+        setScrollEnabled(true);
+        updateGuideLineDistances();
+      },
+    });
+  };
+
+  const resetGuideLines = () => {
+    guideLinesRef.current = [new Animated.Value(0.5)];
+    guideLinesRawRef.current = [0.5];
+    guideLinePRs.current = [makeGuideLinePR(0)];
+    setGuideLinePositions([0.5]);
+    setGuideLineCount(1);
+    updateGuideLineDistances([0.5]);
+  };
+
+  const addGuideLine = () => {
+    if (guideLinesRef.current.length >= 5) return;
+    const positions = guideLinesRawRef.current.slice();
+    // Новая линия появляется справа от самой правой, но не ближе 0.08
+    const rightmost = Math.max(...positions);
+    const newPos = Math.min(0.92, rightmost + 0.12);
+    guideLinesRef.current.push(new Animated.Value(newPos));
+    guideLinesRawRef.current.push(newPos);
+    guideLinePRs.current.push(makeGuideLinePR(guideLinesRef.current.length - 1));
+    setGuideLineCount(guideLinesRef.current.length);
+    updateGuideLineDistances();
+  };
+
+  const removeLastGuideLine = () => {
+    if (guideLinesRef.current.length <= 1) return;
+    guideLinesRef.current.pop();
+    guideLinesRawRef.current.pop();
+    guideLinePRs.current.pop();
+    setGuideLineCount(guideLinesRef.current.length);
+    updateGuideLineDistances();
+  };
 
   const DEFAULT_V_POS = [0.22, 0.35, 0.5, 0.65, 0.78];
   const DEFAULT_H_POS = [0.33, 0.5, 0.67];
@@ -137,6 +386,42 @@ export default function GoldenProportionScreen() {
       hLinesRaw.current[i] = pos;
       hLines[i].setValue(pos);
     });
+  };
+
+  // Вычисляем реальные границы отображаемого изображения (resizeMode="contain")
+  // Возвращает { width, height, left, top } в px относительно контейнера
+  const updateImageLayout = () => {
+    const container = photoContainerSize.current;
+    const natural = imageNaturalSize.current;
+    if (natural.width <= 0 || natural.height <= 0 || container.width <= 1 || container.height <= 1) {
+      imageLayout.current = { width: container.width, height: container.height, left: 0, top: 0 };
+      return;
+    }
+    const scale = Math.min(container.width / natural.width, container.height / natural.height);
+    const width = natural.width * scale;
+    const height = natural.height * scale;
+    const left = (container.width - width) / 2;
+    const top = (container.height - height) / 2;
+    imageLayout.current = { width, height, left, top };
+  };
+
+  // Хелпер: возвращает px-диапазон для интерполяции Animated.Value в текущем layout
+  const getLineOutputRange = (axis: 'x' | 'y'): [number, number] => {
+    const img = imageLayout.current;
+    return axis === 'x'
+      ? [img.left, img.left + img.width]
+      : [img.top, img.top + img.height];
+  };
+
+  // Калибровка масштаба по AI: центральный резец ~8.4 мм занимает ~15% ширины фото
+  const calibrateScaleFromAI = () => {
+    updateImageLayout();
+    if (imageLayout.current.width > 1) {
+      const centralIncisorPixels = imageLayout.current.width * 0.15;
+      const centralIncisorMm = 8.4;
+      pixelsPerMm.current = centralIncisorPixels / centralIncisorMm;
+      updateGuideLineDistances();
+    }
   };
 
   const runAutoAlign = () => {
@@ -172,6 +457,142 @@ export default function GoldenProportionScreen() {
     }, 1600);
   };
 
+  // Системный промпт для Claude API: Архитектурный паспорт улыбки
+  const getClaudeSystemPrompt = (segment: 'upper' | 'lower') => {
+    const isUpper = segment === 'upper';
+    const teeth = isUpper
+      ? '12, 11, 21, 22'
+      : '32, 31, 41, 42';
+    const centralTeeth = isUpper ? '11 и 21' : '31 и 41';
+    const lateralTeeth = isUpper ? '12 и 22' : '32 и 42';
+    const goldenNote = isUpper
+      ? 'Верхние резцы должны сужаться от центра к краям по правилу золотого сечения: центральные доминируют, боковые уже.'
+      : 'Нижние резцы работают ЗЕРКАЛЬНО верхним: центральные (31, 41) — самые узкие, боковые (32, 42) — шире. Оценивай ровность режущего края и отсутствие скученности.';
+
+    return `Ты — профессиональный, строгий и с мягкой иронией эксперт по цифровой эстетике улыбки с 20-летним опытом. Ты составляешь "Архитектурный паспорт улыбки" — геометрический аудит по фото. Сейчас анализируется ${isUpper ? 'ВЕРХНИЙ сегмент (резцы 12, 11, 21, 22)' : 'НИЖНИЙ сегмент (резцы 32, 31, 41, 42)'}. Верни JSON строго на русском языке:
+{
+  "widthHeight": "раздел 1",
+  "zenith": "раздел 2",
+  "goldenSymmetry": "раздел 3"
+}
+Структура отчета:
+1. "📐 Пропорциональный дисбаланс (Ширина/Высота)" — оцени соотношение сторон резцов ${teeth}. ${isUpper ? 'Идеал ~80-85%. Центральные резцы (11, 21) — доминанты фасада.' : 'Центральные резцы (31, 41) должны быть уже боковых (32, 42). Оцени баланс ширины и отсутствие скученности.'} Хлестко опиши аномалии, используя ISO-нумерацию. Ирония допускается, но без грубости.
+2. "📉 Десневой контур (Зениты десны)" — оцени симметрию высших точек десны левой и правой стороны для резцов ${teeth}. ${isUpper ? 'Падающая улыбка — главный враг.' : 'По нижнему контуру десны оцени ровность горизонта и обрати внимание на режущий край.'}
+3. "⚖️ Симметрия по доминанте" — ${goldenNote} Оцени сужение/расширение зубного ряда по выбранной методике. Для нижнего сегмента золотое сечение работает НАОБОРОТ: центральные самые узкие, боковые шире.
+Правила:
+- Только JSON, без вступлений и без воды.
+- Используй ISO-нумерацию: ${teeth}.
+- Пиши по-русски, строго, профессионально, с лёгкой иронией.
+- Если предоставлены углы наклона осевых линий (макро-режим), учитывай их в разделе "Симметрия по доминанте": указывай, какие резцы имеют анатомический наклон зубной оси, и оценивай, усиливает или корректирует этот наклон общую гармонию фасада.
+- Если анализируется нижний сегмент, не применяй верхнюю логику доминанты: центральные нижние резцы (31, 41) не должны быть шире боковых (32, 42).`;
+  };
+
+  const generateAIReport = (results: typeof MOCK_RESULTS): AiReport => {
+    const methodName = method === 'golden' ? 'Золотого сечения' : method === 'red' ? 'Гармоничной сетки' : 'Анатомического стандарта';
+    const isUpper = selectedSegment === 'upper';
+    const angles = vLineAnglesRef.current;
+    const hasMacroAngles = bigGuides && angles.some(a => Math.abs(a) > 0.5);
+    const maxAngle = hasMacroAngles ? Math.max(...angles.map(Math.abs)) : 0;
+    const maxAngleIdx = hasMacroAngles ? angles.findIndex(a => Math.abs(a) === maxAngle) : -1;
+
+    const central = results.find(r => r.label === 'Центральные резцы');
+    const lateral = results.find(r => r.label === 'Боковые резцы');
+    const canine = results.find(r => r.label === 'Клыки');
+
+    let widthHeight: string;
+    let zenith: string;
+    let goldenSymmetry: string;
+
+    if (isUpper) {
+      widthHeight = central
+        ? `Зуб 11 доминирует на ${Math.abs(central.deviationPct) + 80}%, выглядя как главный босс, на фоне которого боковые резцы ушли в тень. Соотношение В/Ш смещено на ${Math.abs(central.diffMm).toFixed(1)} мм — идеальные 80% остались в учебнике.`
+        : 'Соотношение В/Ш центральных резцов 11 и 21 в пределах нормы. Фасад держится уверенно.';
+
+      zenith = lateral
+        ? `Асимметрия зенитов десны между боковыми резцами 12 и 22 ${lateral.deviationPct > 0 ? 'превышает' : 'сохраняется на уровне'} ${Math.abs(lateral.deviationPct)}%. Если не скорректировать контур, улыбка начнёт "падать" в сторону доминанты.`
+        : 'Десневой контур симметричен. Зениты левой и правой стороны держат одну горизонталь.';
+
+      const macroNote = hasMacroAngles
+        ? ` Макро-режим показал наклон оси линии ${maxAngleIdx + 1} на ${maxAngle.toFixed(1)}° — это анатомическая особенность, которую стоит учесть при планировании реставраций.`
+        : '';
+
+      goldenSymmetry = canine
+        ? `${canine.deviationPct > 0 ? 'Левый' : 'Правый'} сегмент выбился из сетки ${methodName} на ${Math.abs(canine.deviationPct)}% — зуб 22 ${canine.deviationPct > 0 ? 'шире' : 'уже'}, чем требует математика гармонии. Передняя группа требует пересчёта пропорций.${macroNote}`
+        : `Сужение зубного ряда 12→11→21→22 по методике ${methodName} выдержано. Математика гармонии на своём месте.${macroNote}`;
+    } else {
+      widthHeight = central
+        ? `Нижние резцы 31 и 41 зажаты, боковые 32 и 42 перехватили доминанту. Соотношение В/Ш смещено на ${Math.abs(central.diffMm).toFixed(1)} мм — истинный геометрический бунт против природы.`
+        : 'Соотношение В/Ш нижних резцов 31, 41, 32, 42 в пределах нормы. Режущий край держит баланс.';
+
+      zenith = lateral
+        ? `По нижнему контуру десны вопросов нет, все идут в ровном горизонте, но обрати внимание на режущий край — боковые резцы 32 и 42 ${lateral.deviationPct > 0 ? 'выше' : 'ниже'} центральных на ${Math.abs(lateral.deviationPct)}%.`
+        : 'Десневой контур нижнего сегмента симметричен. Зениты 32, 31, 41, 42 держат одну горизонталь.';
+
+      const macroNote = hasMacroAngles
+        ? ` Макро-режим зафиксировал наклон оси линии ${maxAngleIdx + 1} на ${maxAngle.toFixed(1)}° — в нижнем сегменте это особенно критично для оценки скученности и режущего края.`
+        : '';
+
+      goldenSymmetry = canine
+        ? `Скученность в ${canine.deviationPct > 0 ? 'левом' : 'правом'} сегменте ломает математику гармонии на ${Math.abs(canine.deviationPct)}%. Зуб ${canine.deviationPct > 0 ? '32' : '42'} слегка развернут — нижний ряд требует пересчёта пропорций.${macroNote}`
+        : `Расширение нижнего зубного ряда 32→31→41→42 по методике ${methodName} выдержано. Геометрия зеркально отвечает верхней группе.${macroNote}`;
+    }
+
+    return { widthHeight, zenith, goldenSymmetry };
+  };
+
+  // Управление видимостью сетки в панорамном режиме
+  const showGridTemporarily = () => {
+    // Отменяем предыдущий таймер
+    if (gridHideTimeout.current) {
+      clearTimeout(gridHideTimeout.current);
+    }
+
+    // Если сетка выключена (0%), оставляем её скрытой
+    if (panoramaGridOpacity <= 0) {
+      panoramaGridAnim.setValue(0);
+      return;
+    }
+
+    // Показываем сетку с текущей прозрачностью
+    Animated.timing(panoramaGridAnim, {
+      toValue: panoramaGridOpacity,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+
+    // Устанавливаем таймер на скрытие через 2.5 сек
+    gridHideTimeout.current = setTimeout(() => {
+      if (!isInteracting) {
+        Animated.timing(panoramaGridAnim, {
+          toValue: 0.12, // 12% прозрачности
+          duration: 400,
+          useNativeDriver: true,
+        }).start();
+      }
+    }, 2500);
+  };
+
+  const handlePanoramaOpen = async () => {
+    setPanoramaVisible(true);
+    // Синхронизируем прозрачность сетки из основного экрана в панораму
+    setPanoramaGridOpacity(gridOpacity);
+    panoramaGridAnim.setValue(gridOpacity);
+    // Принудительно переходим в landscape режим
+    await enterLandscapeMode();
+    showGridTemporarily();
+  };
+
+  const handlePanoramaClose = async () => {
+    if (gridHideTimeout.current) {
+      clearTimeout(gridHideTimeout.current);
+    }
+    setPanoramaVisible(false);
+    // Синхронизируем настройки обратно
+    setGridOpacity(panoramaGridOpacity);
+    // Возвращаем портретную ориентацию
+    await exitLandscapeMode();
+  };
+
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -204,14 +625,14 @@ export default function GoldenProportionScreen() {
       resizeMode="cover"
     >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + 16 }]}>
 
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Ionicons name="arrow-back" size={24} color="#f2ca50" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Золотое сечение</Text>
+          <Text style={styles.headerTitle}>DSD Анализ</Text>
           <TouchableOpacity
             style={styles.infoBtn}
             onPress={() => setInfoVisible(true)}
@@ -226,66 +647,14 @@ export default function GoldenProportionScreen() {
           <View style={styles.infoOverlay}>
             <View style={styles.infoModal}>
               <View style={styles.infoModalHeader}>
-                <Ionicons name="git-network-outline" size={28} color="#f2ca50" />
-                <Text style={styles.infoModalTitle}>О методе Золотого сечения</Text>
+                <Ionicons name="information-circle-outline" size={28} color="#f2ca50" />
+                <Text style={styles.infoModalTitle}>Как здесь всё устроено?</Text>
               </View>
               <ScrollView showsVerticalScrollIndicator={false}>
                 <Text style={styles.infoModalText}>
-                  {'Функция анализирует гармонию улыбки по фотографии в анфас. За основу берётся видимая ширина зубов.\n\nИдеальные пропорции:\n  • Центральный резец — 1.618\n  • Боковой резец — 1.000\n  • Клык — 0.618'}
+                  {'Простая инструкция:\n\nШаг 1. Загрузи фото улыбки 📸\nНажми на главную область экрана сверху, чтобы сделать новый снимок на камеру или выбрать готовую фотографию пациента из галереи смартфона.\n\nШаг 2. Настрой горизонт 📐\nЕсли фото получилось слегка кривым, нажми «ИИ Выравнивание». Умный алгоритм сам аккуратно покрутит картинку, чтобы зубы стояли строго ровно, а не боком.\n\nШаг 3. Выбери челюсть 🦷\nПрямо под фото есть переключатель «Верх / Нижний». Нажми его в зависимости от того, какие зубы ты хочешь измерить прямо сейчас.\n\nШаг 4. Включи и настрой линейки 📏\nНажми кнопку «Направляющие» внизу. Появятся вертикальные палочки. Кнопками «+» и «-» можно менять их количество до 5 строк. Просто перетаскивай их пальцем на стыки (межзубные промежутки). На черных табличках сразу покажется точное расстояние между ними в миллиметрах!\n\nШаг 5. Наклони оси (если нужно) 🔄\nЕсли зубы растут немного под наклоном, включи тумблер «Осевые линии (макро)». Теперь на концах палочек появятся круглые маркеры — тяни за них пальцем, чтобы наклонить линию ровно вдоль анатомической оси каждого зуба.\n\nШаг 6. Выбери методику 📋\nВ выпадающем списке выбери математическое правило, по которому хочешь оценить улыбку ("Золотое сечение", "Гармоничная сетка" или "Анатомический стандарт"). Рядом с каждой методикой есть своя кнопка (i), которая объяснит, как именно она считает.\n\nШаг 7. Получи Архитектурный паспорт 🧠\nНажми большую кнопку «Анализ пропорций». ИИ-Сенсей мгновенно изучит твои линейки, углы наклона, само фото и выдаст честный, строгий геометрический отчет: что получилось идеально, где есть перекосы и что с этим делать!'}
                 </Text>
 
-                <Text style={styles.infoSectionTitle}>Методики расчёта</Text>
-                <View style={styles.infoUsageBlock}>
-                  <Text style={styles.infoUsageLabel}>Golden Proportion</Text>
-                  <Text style={styles.infoUsageText}>
-                    Классическое жёсткое геометрическое уменьшение зубов от центра к краям на 61.8%. Центральный резец берётся за единицу, каждый следующий зуб уже предыдущего ровно в 1.618 раза.
-                  </Text>
-                </View>
-                <View style={styles.infoUsageBlock}>
-                  <Text style={styles.infoUsageLabel}>RED Proportion</Text>
-                  <Text style={styles.infoUsageText}>
-                    Соотношение ширины соседних зубов остаётся постоянным на протяжении всего зубного ряда. Позволяет подбирать пропорции индивидуально под ширину улыбки.
-                  </Text>
-                </View>
-                <View style={styles.infoUsageBlock}>
-                  <Text style={styles.infoUsageLabel}>Preston Ratio</Text>
-                  <Text style={styles.infoUsageText}>
-                    Расчёт основан на индивидуальных физиологических пропорциях пациента. Учитывает реальные размеры лица и менее жёсток, чем Golden Proportion.
-                  </Text>
-                </View>
-
-                <Text style={styles.infoSectionTitle}>Доп. параметры анализа</Text>
-                <View style={styles.infoUsageBlock}>
-                  <Text style={styles.infoUsageLabel}>Анализ зенитов десны</Text>
-                  <Text style={styles.infoUsageText}>
-                    Оценка симметрии высших точек десневого контура (зенитов) левой и правой стороны. Асимметрия зенитов более 0.5 мм визуально заметна и влияет на эстетику улыбки.
-                  </Text>
-                </View>
-                <View style={styles.infoUsageBlock}>
-                  <Text style={styles.infoUsageLabel}>Соотношение В/Ш (80%)</Text>
-                  <Text style={styles.infoUsageText}>
-                    Контроль пропорции высоты зуба к его ширине. Идеальным считается соотношение около 80%: зуб шириной 10 мм должен иметь высоту 8 мм.
-                  </Text>
-                </View>
-
-                <View style={styles.infoUsageBlock}>
-                  <View style={styles.infoUsageRow}>
-                    <Ionicons name="medkit-outline" size={16} color="#f2ca50" />
-                    <Text style={styles.infoUsageLabel}>Врачу</Text>
-                  </View>
-                  <Text style={styles.infoUsageText}>
-                    Планирование виниров и демонстрация пациенту желаемого результата до начала лечения.
-                  </Text>
-                </View>
-                <View style={styles.infoUsageBlock}>
-                  <View style={styles.infoUsageRow}>
-                    <Ionicons name="construct-outline" size={16} color="#f2ca50" />
-                    <Text style={styles.infoUsageLabel}>Технику</Text>
-                  </View>
-                  <Text style={styles.infoUsageText}>
-                    Контроль симметрии и моделирование реставраций согласно эстетическим нормам.
-                  </Text>
-                </View>
                 <View style={styles.infoDisclaimerBlock}>
                   <Ionicons name="alert-circle-outline" size={14} color="rgba(255,255,255,0.3)" />
                   <Text style={styles.infoDisclaimerText}>
@@ -303,7 +672,7 @@ export default function GoldenProportionScreen() {
         <ScrollView
           scrollEnabled={scrollEnabled}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[styles.scroll, { paddingBottom: 120 }]}
         >
           {/* ── ШАГ 1: Загрузка фото ── */}
           <View style={styles.section}>
@@ -325,10 +694,15 @@ export default function GoldenProportionScreen() {
               </View>
             ) : (
               <View
+                ref={photoWrapRef}
                 style={styles.photoWrap}
                 onLayout={e => {
                   const { width, height } = e.nativeEvent.layout;
                   photoContainerSize.current = { width, height };
+                  photoWrapRef.current?.measureInWindow((x, y, _w, _h) => {
+                    photoContainerLayout.current = { x, y };
+                  });
+                  calibrateScaleFromAI();
                 }}
               >
                 <Image
@@ -338,26 +712,37 @@ export default function GoldenProportionScreen() {
                 />
                 {/* Подвижные направляющие */}
                 <View style={[styles.gridOverlay, { opacity: gridOpacity }]}>
-                  {/* Вертикальные линии */}
+                  {/* Вертикальные линии — позиция 0..1 от реальной ширины фото */}
                   {vLines.map((animVal, i) => (
                     <Animated.View
                       key={`v${i}`}
                       style={[
                         styles.dragLineV,
-                        { left: animVal.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) },
+                        { left: animVal.interpolate({ inputRange: [0, 1], outputRange: getLineOutputRange('x') }) },
+                        { transform: [{ rotate: `${vLineAngles[i]}deg` }] },
                       ]}
-                      {...vPRs[i].panHandlers}
+                      {...(!bigGuides ? vPRs[i].panHandlers : {})}
                     >
                       <View style={styles.dragLineVInner} />
+                      {bigGuides && (
+                        <>
+                          <View style={styles.lineHandleTop} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }} {...vTopPRs[i].panHandlers}>
+                            <View style={styles.lineHandleKnob} />
+                          </View>
+                          <View style={styles.lineHandleBottom} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }} {...vBottomPRs[i].panHandlers}>
+                            <View style={styles.lineHandleKnob} />
+                          </View>
+                        </>
+                      )}
                     </Animated.View>
                   ))}
-                  {/* Горизонтальные линии */}
+                  {/* Горизонтальные линии — позиция 0..1 от реальной высоты фото */}
                   {hLines.map((animVal, i) => (
                     <Animated.View
                       key={`h${i}`}
                       style={[
                         styles.dragLineH,
-                        { top: animVal.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) },
+                        { top: animVal.interpolate({ inputRange: [0, 1], outputRange: getLineOutputRange('y') }) },
                       ]}
                       {...hPRs[i].panHandlers}
                     >
@@ -373,12 +758,95 @@ export default function GoldenProportionScreen() {
                     </>
                   )}
                 </View>
+
+                {/* Оверлей динамических направляющих */}
+                {guideLinesEnabled && (() => {
+                  const img = imageLayout.current;
+                  const sorted = guideLinePositions.slice().sort((a, b) => a - b);
+                  return (
+                    <View style={styles.guideLinesOverlay} pointerEvents="box-none">
+                      {guideLinesRef.current.map((animVal, i) => (
+                        <Animated.View
+                          key={`guide-${i}`}
+                          style={[
+                            styles.guideLine,
+                            { left: animVal.interpolate({ inputRange: [0, 1], outputRange: getLineOutputRange('x') }) },
+                          ]}
+                          {...guideLinePRs.current[i].panHandlers}
+                        >
+                          <View style={styles.guideLineHandle} />
+                          <View style={styles.guideLineKnob} />
+                        </Animated.View>
+                      ))}
+                      {sorted.map((pos, i, arr) => {
+                        if (i === arr.length - 1) return null;
+                        const nextPos = arr[i + 1];
+                        const mid = (pos + nextPos) / 2;
+                        return (
+                          <React.Fragment key={`guide-segment-${i}`}>
+                            <View style={[styles.guideArrow, { left: img.left + pos * img.width, width: (nextPos - pos) * img.width }]}>
+                              <View style={styles.guideArrowLeft} />
+                              <View style={styles.guideArrowLine} />
+                              <View style={styles.guideArrowRight} />
+                            </View>
+                            <View style={[styles.guideBadge, { left: img.left + mid * img.width }]}>
+                              <Text style={styles.guideBadgeText} numberOfLines={1}>
+                                {guideLineDistances[i]?.toFixed(1)} мм
+                              </Text>
+                            </View>
+                          </React.Fragment>
+                        );
+                      })}
+                    </View>
+                  );
+                })()}
+
                 <TouchableOpacity style={styles.photoChangeHint} onPress={pickImage} activeOpacity={0.8}>
                   <Text style={styles.photoChangeText}>Нажмите, чтобы сменить фото</Text>
+                </TouchableOpacity>
+
+                {/* Кнопка Панорама */}
+                <TouchableOpacity 
+                  style={styles.panoramaBtn} 
+                  onPress={handlePanoramaOpen}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="expand-outline" size={20} color="#f2ca50" />
+                  <Text style={styles.panoramaBtnText}>Панорама</Text>
                 </TouchableOpacity>
               </View>
             )}
           </View>
+
+          {/* Переключатель сегмента: Верх / Низ */}
+          {photo && (
+            <View style={styles.segmentControlWrapper}>
+              <View style={styles.segmentControl}>
+                <TouchableOpacity
+                  style={[styles.segmentBtn, selectedSegment === 'upper' && styles.segmentBtnActive]}
+                  onPress={() => {
+                    setSelectedSegment('upper');
+                    resetGuideLines();
+                    calibrateScaleFromAI();
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.segmentBtnText, selectedSegment === 'upper' && styles.segmentBtnTextActive]}>Верх</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.segmentBtn, selectedSegment === 'lower' && styles.segmentBtnActive]}
+                  onPress={() => {
+                    setSelectedSegment('lower');
+                    resetGuideLines();
+                    calibrateScaleFromAI();
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.segmentBtnText, selectedSegment === 'lower' && styles.segmentBtnTextActive]}>Низ</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
           {/* ── ШАГ 2–3: Прозрачность сетки (только если есть фото) ── */}
           {photo && (
@@ -393,13 +861,34 @@ export default function GoldenProportionScreen() {
                   <View style={[styles.sliderFill, { width: `${gridOpacity * 100}%` }]} />
                 </View>
                 <Text style={styles.sliderValue}>{Math.round(gridOpacity * 100)}%</Text>
+                <TouchableOpacity
+                  style={styles.eyeToggleBtn}
+                  onPress={() => {
+                    if (gridOpacity > 0) {
+                      lastGridOpacity.current = gridOpacity;
+                      setGridOpacity(0);
+                    } else {
+                      setGridOpacity(lastGridOpacity.current || 0.6);
+                    }
+                  }}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Ionicons
+                    name={gridOpacity > 0 ? 'eye-outline' : 'eye-off-outline'}
+                    size={18}
+                    color={gridOpacity > 0 ? '#f2ca50' : 'rgba(242,202,80,0.4)'}
+                  />
+                </TouchableOpacity>
               </View>
               <View style={styles.opacityBtns}>
-                {[0.2, 0.5, 0.8, 1.0].map(val => (
+                {[0, 0.2, 0.5, 0.8, 1.0].map(val => (
                   <TouchableOpacity
                     key={val}
                     style={[styles.opacityBtn, Math.abs(gridOpacity - val) < 0.05 && styles.opacityBtnActive]}
-                    onPress={() => setGridOpacity(val)}
+                    onPress={() => {
+                      if (val > 0) lastGridOpacity.current = val;
+                      setGridOpacity(val);
+                    }}
                   >
                     <Text style={[styles.opacityBtnText, Math.abs(gridOpacity - val) < 0.05 && styles.opacityBtnTextActive]}>
                       {Math.round(val * 100)}%
@@ -430,30 +919,88 @@ export default function GoldenProportionScreen() {
                 </View>
               </View>
 
-              {/* Кнопка ИИ-выравнивания — отдельная строка */}
-              <Animated.View style={[styles.aiAlignRow, { transform: [{ scale: aiPulse }] }]}>
+              {/* Единый блок ИИ-кнопок */}
+              <View style={styles.aiBlock}>
+                <Animated.View style={[styles.aiBlockBtnWrap, { transform: [{ scale: aiPulse }] }]}>
+                  <TouchableOpacity
+                    style={[styles.aiBlockBtn, aiAligning && styles.aiBlockBtnActive]}
+                    onPress={runAutoAlign}
+                    activeOpacity={0.8}
+                    disabled={aiAligning}
+                  >
+                    <Ionicons
+                      name={aiAligning ? 'hourglass-outline' : 'sparkles-outline'}
+                      size={14}
+                      color={aiAligning ? 'rgba(242,202,80,0.5)' : 'rgba(242,202,80,0.7)'}
+                    />
+                    <Text style={[styles.aiBlockBtnText, aiAligning && { opacity: 0.6 }]}>
+                      {aiAligning ? 'Анализ...' : 'ИИ Горизонт'}
+                    </Text>
+                  </TouchableOpacity>
+                </Animated.View>
+              </View>
+
+              {/* Компактная панель управления направляющими: [toggle] [-] [count] [+] [reset] */}
+              <View style={styles.guideControlPanel}>
                 <TouchableOpacity
-                  style={[styles.aiAlignBtn, aiAligning && styles.aiAlignBtnActive]}
-                  onPress={runAutoAlign}
+                  style={[styles.guideToggleBtn, guideLinesEnabled && styles.guideToggleBtnActive]}
+                  onPress={() => {
+                    const next = !guideLinesEnabled;
+                    setGuideLinesEnabled(next);
+                    if (next && guideLinesRef.current.length === 0) {
+                      resetGuideLines();
+                    }
+                    if (next) calibrateScaleFromAI();
+                  }}
                   activeOpacity={0.8}
-                  disabled={aiAligning}
                 >
                   <Ionicons
-                    name={aiAligning ? 'hourglass-outline' : 'sparkles-outline'}
-                    size={14}
-                    color={aiAligning ? 'rgba(242,202,80,0.5)' : 'rgba(242,202,80,0.7)'}
+                    name={guideLinesEnabled ? 'options' : 'options-outline'}
+                    size={16}
+                    color={guideLinesEnabled ? '#031427' : '#f2ca50'}
                   />
-                  <Text style={[styles.aiAlignBtnText, aiAligning && { opacity: 0.6 }]}>
-                    {aiAligning ? 'ИИ анализирует горизонт улыбки...' : 'ИИ-выравнивание горизонта'}
-                  </Text>
                 </TouchableOpacity>
-              </Animated.View>
 
-              {/* Сброс линий */}
-              <TouchableOpacity style={styles.resetLinesBtn} onPress={resetLines} activeOpacity={0.8}>
-                <Ionicons name="refresh-outline" size={14} color="rgba(242,202,80,0.7)" />
-                <Text style={styles.resetLinesBtnText}>Сбросить направляющие</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.guideTinyBtn, guideLinesRef.current.length <= 1 && styles.guideTinyBtnDisabled]}
+                  onPress={() => {
+                    removeLastGuideLine();
+                    calibrateScaleFromAI();
+                  }}
+                  activeOpacity={0.8}
+                  disabled={guideLinesRef.current.length <= 1}
+                >
+                  <Ionicons name="remove" size={16} color="#f2ca50" />
+                </TouchableOpacity>
+
+                <View style={styles.guideCountBadge}>
+                  <Text style={styles.guideCountText}>{guideLineCount}/5</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.guideTinyBtn, guideLinesRef.current.length >= 5 && styles.guideTinyBtnDisabled]}
+                  onPress={() => {
+                    if (!guideLinesEnabled) setGuideLinesEnabled(true);
+                    addGuideLine();
+                    calibrateScaleFromAI();
+                  }}
+                  activeOpacity={0.8}
+                  disabled={guideLinesRef.current.length >= 5}
+                >
+                  <Ionicons name="add" size={16} color="#f2ca50" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.guideTinyBtn}
+                  onPress={() => {
+                    resetGuideLines();
+                    calibrateScaleFromAI();
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="refresh-outline" size={16} color="#f2ca50" />
+                </TouchableOpacity>
+              </View>
 
               {/* Тумблер больших направляющих */}
               <View style={[styles.toggleRow, { marginTop: 8, borderBottomWidth: 0 }]}>
@@ -520,7 +1067,7 @@ export default function GoldenProportionScreen() {
             <View style={styles.toggleRow}>
               <View style={styles.toggleInfo}>
                 <Ionicons name="analytics-outline" size={18} color="#f2ca50" />
-                <Text style={styles.toggleLabel}>Анализ зенитов десны</Text>
+                <Text style={styles.toggleLabel} numberOfLines={1} ellipsizeMode="tail">Анализ зенитов десны</Text>
                 <TouchableOpacity
                   onPress={() => setOpenExtraHint(openExtraHint === 'zenith' ? null : 'zenith')}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -549,7 +1096,7 @@ export default function GoldenProportionScreen() {
             <View style={styles.toggleRow}>
               <View style={styles.toggleInfo}>
                 <Ionicons name="resize-outline" size={18} color="#f2ca50" />
-                <Text style={styles.toggleLabel}>Соотношение В/Ш (80%)</Text>
+                <Text style={styles.toggleLabel} numberOfLines={1} ellipsizeMode="tail">Соотношение В/Ш (80%)</Text>
                 <TouchableOpacity
                   onPress={() => setOpenExtraHint(openExtraHint === 'heightWidth' ? null : 'heightWidth')}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -580,7 +1127,27 @@ export default function GoldenProportionScreen() {
             <TouchableOpacity
               style={styles.analyzeBtn}
               onPress={async () => {
+                // Проверяем баланс алмазов (как в color-analyzer)
+                const currentBalance = (globalThis as any).getDiamondBalance?.() ?? 0;
+                console.log('Current balance before check:', currentBalance);
+                if (currentBalance < 1) {
+                  setDiamondsModalVisible(true);
+                  return;
+                }
+
+                // Списываем 1 алмаз (как в color-analyzer)
+                const didSpend = (globalThis as any).spendDiamonds?.(1);
+                if (!didSpend) {
+                  setDiamondsModalVisible(true);
+                  return;
+                }
+                setDiamonds(currentBalance - 1);
+
+                // Генерируем Архитектурный паспорт улыбки
+                const report = generateAIReport(MOCK_RESULTS);
+                setAiReport(report);
                 setShowResults(true);
+                calibrateScaleFromAI();
                 saveToArchive(
                   'golden_proportion',
                   'Анализ пропорций',
@@ -591,80 +1158,78 @@ export default function GoldenProportionScreen() {
                       vertical: vLinesRaw.current.slice(),
                       horizontal: hLinesRaw.current.slice(),
                     },
+                    lineAngles: vLineAnglesRef.current.slice(),
                     method,
+                    segment: selectedSegment,
                     calculations: Object.fromEntries(
                       MOCK_RESULTS.map(r => [
                         r.label,
                         { factMm: r.factMm, deviationPct: r.deviationPct, diffMm: r.diffMm },
                       ])
                     ),
-                  },
+                    aiReport: report,
+                  } as GoldenProportionData,
                 );
               }}
               activeOpacity={0.85}
             >
-              <Ionicons name="git-network-outline" size={22} color="#031427" />
-              <Text style={styles.analyzeBtnText}>Рассчитать пропорции</Text>
+              <Ionicons name="git-network" size={26} color="#031427" />
+              <Text style={styles.analyzeBtnText}>Анализ пропорций</Text>
             </TouchableOpacity>
           )}
 
-          {/* ── ШАГ 4–5: РЕЗУЛЬТАТЫ ── */}
+          {/* ── ШАГ 4–5: AI-РЕЗУЛЬТАТЫ ── */}
           {showResults && (
             <View style={styles.section}>
               <View style={styles.resultsHeader}>
-                <Text style={styles.stepLabel}>Результаты анализа</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <View style={styles.methodActiveBadge}>
-                    <Text style={styles.methodActiveBadgeText}>
-                      {METHODS.find(m => m.key === method)?.label}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.shareResultBtn}
-                    onPress={() => router.push('/global-archive?tab=golden_proportion' as any)}
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  >
-                    <Ionicons name="share-social-outline" size={15} color="#f2ca50" />
-                    <Text style={styles.shareResultBtnText}>Поделиться</Text>
-                  </TouchableOpacity>
+                <Text style={[styles.stepLabel, { textAlign: 'center' }]}>Архитектурный паспорт улыбки</Text>
+                <View style={styles.methodActiveBadge}>
+                  <Text style={styles.methodActiveBadgeText}>
+                    {METHODS.find(m => m.key === method)?.label}
+                  </Text>
                 </View>
               </View>
-              {MOCK_RESULTS.map((r, i) => {
-                const color = getDeviationColor(r.deviationPct);
-                const sign = r.deviationPct > 0 ? '+' : '';
-                const hint = getDeviationLabel(r.deviationPct, r.diffMm);
-                return (
-                  <View key={i} style={styles.resultCard}>
-                    <View style={styles.resultCardTop}>
-                      <View style={[styles.resultDot, { backgroundColor: color }]} />
-                      <Text style={styles.resultLabel}>{r.label}</Text>
-                      <Text style={[styles.resultDeviationBig, { color }]}>
-                        {sign}{r.deviationPct}%
-                      </Text>
+
+              {/* Архитектурный паспорт улыбки: 3 раздела */}
+              {aiReport && (
+                <View style={styles.passportSection}>
+                  <View style={styles.passportRow}>
+                    <Text style={styles.passportIcon}>📐</Text>
+                    <View style={styles.passportTextWrap}>
+                      <Text style={styles.passportTitle}>Пропорциональный дисбаланс (Ширина/Высота)</Text>
+                      <Text style={styles.passportText}>{aiReport.widthHeight.replace(/^[📐📉⚖️]\s*/, '')}</Text>
                     </View>
-                    <Text style={styles.resultDetail}>
-                      {'Факт: '}{r.factMm}{' мм  ·  '}
-                      <Text style={{ color }}>{hint}</Text>
-                    </Text>
                   </View>
-                );
-              })}
-              {zenithAnalysis && (
-                <View style={styles.extraResult}>
-                  <Ionicons name="analytics-outline" size={16} color="#f2ca50" />
-                  <Text style={styles.extraResultText}>
-                    Зениты десны: Лев. +0.4 мм / Прав. −0.2 мм
-                  </Text>
+                  <View style={styles.passportDivider} />
+                  <View style={styles.passportRow}>
+                    <Text style={styles.passportIcon}>📉</Text>
+                    <View style={styles.passportTextWrap}>
+                      <Text style={styles.passportTitle}>Десневой контур (Зениты десны)</Text>
+                      <Text style={styles.passportText}>{aiReport.zenith.replace(/^[📐📉⚖️]\s*/, '')}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.passportDivider} />
+                  <View style={styles.passportRow}>
+                    <Text style={styles.passportIcon}>⚖️</Text>
+                    <View style={styles.passportTextWrap}>
+                      <Text style={styles.passportTitle}>Симметрия по доминанте (Правило Золотого сечения)</Text>
+                      <Text style={styles.passportText}>{aiReport.goldenSymmetry.replace(/^[📐📉⚖️]\s*/, '')}</Text>
+                    </View>
+                  </View>
                 </View>
               )}
-              {heightWidthAnalysis && (
-                <View style={styles.extraResult}>
-                  <Ionicons name="resize-outline" size={16} color="#f2ca50" />
-                  <Text style={styles.extraResultText}>
-                    В/Ш центр. резец: 82% (норма 78–82%)
-                  </Text>
-                </View>
-              )}
+
+              {/* Кнопка поделиться */}
+              <View style={{ alignItems: 'center', marginTop: 4, marginBottom: 8 }}>
+                <TouchableOpacity
+                  style={styles.shareResultBtn}
+                  onPress={() => router.push('/global-archive?tab=golden_proportion' as any)}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Ionicons name="share-social-outline" size={15} color="#f2ca50" />
+                  <Text style={styles.shareResultBtnText}>Поделиться</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
@@ -676,6 +1241,7 @@ export default function GoldenProportionScreen() {
                 style={[styles.resultPhoto, { transform: [{ rotate: `${rotationDeg}deg` }] }]}
                 resizeMode="contain"
               />
+              {/* Сетка */}
               <View style={[styles.gridOverlay, { opacity: 0.5 }]} pointerEvents="none">
                 {[0.22, 0.35, 0.5, 0.65, 0.78].map((pos, i) => (
                   <View key={`rv${i}`} style={[styles.gridLineV, { left: `${pos * 100}%` }]} />
@@ -687,10 +1253,361 @@ export default function GoldenProportionScreen() {
               </View>
             </View>
           )}
-
-          <View style={{ height: 120 }} />
         </ScrollView>
       </View>
+
+      {/* ── МОДАЛЬНОЕ ОКНО: ПАНОРАМНЫЙ РЕЖИМ (ПОЛНОЭКРАННЫЙ) ── */}
+      <Modal
+        visible={panoramaVisible}
+        transparent={false}
+        animationType="fade"
+        presentationStyle="fullScreen"
+        statusBarTranslucent={true}
+        onRequestClose={handlePanoramaClose}
+      >
+        <View style={styles.panoramaContainer}>
+          {/* Кнопка закрытия - плавающая в углу */}
+          <TouchableOpacity 
+            onPress={handlePanoramaClose} 
+            style={styles.panoramaCloseFloating}
+            activeOpacity={0.7}
+          >
+            <View style={styles.panoramaCloseCircle}>
+              <Ionicons name="close" size={24} color="#f2ca50" />
+            </View>
+          </TouchableOpacity>
+
+          {/* Фото на весь экран */}
+          <View
+            ref={photoWrapRef}
+            style={styles.panoramaPhotoWrap}
+            onLayout={e => {
+              const { width, height } = e.nativeEvent.layout;
+              photoContainerSize.current = { width, height };
+              photoWrapRef.current?.measureInWindow((x, y, _w, _h) => {
+                photoContainerLayout.current = { x, y };
+              });
+              calibrateScaleFromAI();
+            }}
+            onTouchStart={() => {
+              setIsInteracting(true);
+              showGridTemporarily();
+            }}
+            onTouchEnd={() => {
+              setIsInteracting(false);
+              showGridTemporarily();
+            }}
+          >
+            <Image
+              source={{ uri: photo || '' }}
+              style={[styles.panoramaPhotoFullscreen, { transform: [{ rotate: `${rotationDeg}deg` }] }]}
+              resizeMode="contain"
+            />
+            
+            {/* Сетка с анимированной прозрачностью */}
+            <Animated.View style={[styles.panoramaGridOverlay, { opacity: panoramaGridAnim }]}>
+              {/* Вертикальные линии */}
+              {vLines.map((animVal, i) => (
+                <Animated.View
+                  key={`pv${i}`}
+                  style={[
+                    styles.panoramaDragLineV,
+                    { left: animVal.interpolate({ inputRange: [0, 1], outputRange: getLineOutputRange('x') }) },
+                    { transform: [{ rotate: `${vLineAngles[i]}deg` }] },
+                  ]}
+                  {...(!bigGuides ? vPRs[i].panHandlers : {})}
+                >
+                  <View style={styles.panoramaDragLineVInner} />
+                  {bigGuides && (
+                    <>
+                      <View style={styles.lineHandleTop} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }} {...vTopPRs[i].panHandlers}>
+                        <View style={styles.lineHandleKnob} />
+                      </View>
+                      <View style={styles.lineHandleBottom} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }} {...vBottomPRs[i].panHandlers}>
+                        <View style={styles.lineHandleKnob} />
+                      </View>
+                    </>
+                  )}
+                </Animated.View>
+              ))}
+              {/* Горизонтальные линии */}
+              {hLines.map((animVal, i) => (
+                <Animated.View
+                  key={`ph${i}`}
+                  style={[
+                    styles.panoramaDragLineH,
+                    { top: animVal.interpolate({ inputRange: [0, 1], outputRange: getLineOutputRange('y') }) },
+                  ]}
+                  {...hPRs[i].panHandlers}
+                >
+                  <View style={styles.panoramaDragLineHInner} />
+                </Animated.View>
+              ))}
+              <View style={styles.panoramaGridCenter} />
+            </Animated.View>
+
+            {/* Оверлей динамических направляющих в панорамном режиме */}
+            {guideLinesEnabled && (() => {
+              const img = imageLayout.current;
+              const sorted = guideLinePositions.slice().sort((a, b) => a - b);
+              return (
+                <View style={styles.panoramaGuideLinesOverlay} pointerEvents="box-none">
+                  {guideLinesRef.current.map((animVal, i) => (
+                    <Animated.View
+                      key={`pguide-${i}`}
+                      style={[
+                        styles.panoramaGuideLine,
+                        { left: animVal.interpolate({ inputRange: [0, 1], outputRange: getLineOutputRange('x') }) },
+                      ]}
+                      {...guideLinePRs.current[i].panHandlers}
+                    >
+                      <View style={styles.panoramaGuideLineHandle} />
+                      <View style={styles.panoramaGuideLineKnob} />
+                    </Animated.View>
+                  ))}
+                  {sorted.map((pos, i, arr) => {
+                    if (i === arr.length - 1) return null;
+                    const nextPos = arr[i + 1];
+                    const mid = (pos + nextPos) / 2;
+                    return (
+                      <React.Fragment key={`pguide-segment-${i}`}>
+                        <View style={[styles.guideArrow, { left: img.left + pos * img.width, width: (nextPos - pos) * img.width }]}>
+                          <View style={styles.guideArrowLeft} />
+                          <View style={styles.guideArrowLine} />
+                          <View style={styles.guideArrowRight} />
+                        </View>
+                        <View style={[styles.panoramaGuideBadge, { left: img.left + mid * img.width }]}>
+                          <Text style={styles.panoramaGuideBadgeText} numberOfLines={1}>
+                            {guideLineDistances[i]?.toFixed(1)} мм
+                          </Text>
+                        </View>
+                      </React.Fragment>
+                    );
+                  })}
+                </View>
+              );
+            })()}
+          </View>
+
+          {/* Ультра-компактная однострочная панель: сетка + направляющие + поворот */}
+          <View style={styles.panoramaToolbar}>
+            {/* Группа сетки: глаз / минус / % / плюс */}
+            <View style={styles.toolbarGroup}>
+              <TouchableOpacity
+                style={styles.toolbarTinyBtn}
+                onPress={() => {
+                  if (panoramaGridOpacity > 0) {
+                    lastPanoramaGridOpacity.current = panoramaGridOpacity;
+                    setPanoramaGridOpacity(0);
+                    panoramaGridAnim.setValue(0);
+                  } else {
+                    const restored = lastPanoramaGridOpacity.current || 0.6;
+                    setPanoramaGridOpacity(restored);
+                    panoramaGridAnim.setValue(restored);
+                  }
+                  showGridTemporarily();
+                }}
+              >
+                <Ionicons
+                  name={panoramaGridOpacity > 0 ? 'eye-outline' : 'eye-off-outline'}
+                  size={14}
+                  color={panoramaGridOpacity > 0 ? '#f2ca50' : 'rgba(242,202,80,0.4)'}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.toolbarTinyBtn}
+                onPress={() => {
+                  const newVal = Math.max(0, panoramaGridOpacity - 0.1);
+                  if (newVal > 0) lastPanoramaGridOpacity.current = newVal;
+                  setPanoramaGridOpacity(newVal);
+                  panoramaGridAnim.setValue(newVal);
+                  showGridTemporarily();
+                }}
+              >
+                <Ionicons name="remove" size={14} color="#f2ca50" />
+              </TouchableOpacity>
+              <View style={styles.toolbarTinyValue}>
+                <Text style={styles.toolbarTinyText}>{Math.round(panoramaGridOpacity * 100)}%</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.toolbarTinyBtn}
+                onPress={() => {
+                  const newVal = Math.min(1, panoramaGridOpacity + 0.1);
+                  lastPanoramaGridOpacity.current = newVal;
+                  setPanoramaGridOpacity(newVal);
+                  panoramaGridAnim.setValue(newVal);
+                  showGridTemporarily();
+                }}
+              >
+                <Ionicons name="add" size={14} color="#f2ca50" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Разделитель */}
+            <View style={styles.toolbarTinyDivider} />
+
+            {/* ИИ-выравнивание горизонта */}
+            <View style={styles.toolbarGroup}>
+              <TouchableOpacity
+                style={[styles.toolbarTinyBtn, aiAligning && styles.toolbarTinyBtnActive]}
+                onPress={() => {
+                  runAutoAlign();
+                  showGridTemporarily();
+                }}
+                disabled={aiAligning}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={aiAligning ? 'hourglass-outline' : 'sparkles-outline'}
+                  size={14}
+                  color={aiAligning ? 'rgba(242,202,80,0.5)' : '#f2ca50'}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* Разделитель */}
+            <View style={styles.toolbarTinyDivider} />
+
+            {/* Группа направляющих: тумблер / минус / count / плюс */}
+            <View style={styles.toolbarGroup}>
+              <TouchableOpacity
+                style={[styles.toolbarTinyBtn, guideLinesEnabled && styles.toolbarTinyBtnActive]}
+                onPress={() => {
+                  const next = !guideLinesEnabled;
+                  setGuideLinesEnabled(next);
+                  if (next && guideLinesRef.current.length === 0) resetGuideLines();
+                  if (next) calibrateScaleFromAI();
+                  showGridTemporarily();
+                }}
+              >
+                <Ionicons
+                  name={guideLinesEnabled ? 'options' : 'options-outline'}
+                  size={14}
+                  color={guideLinesEnabled ? '#031427' : '#f2ca50'}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.toolbarTinyBtn, guideLinesRef.current.length <= 1 && styles.toolbarTinyBtnDisabled]}
+                onPress={() => {
+                  removeLastGuideLine();
+                  calibrateScaleFromAI();
+                  showGridTemporarily();
+                }}
+                disabled={guideLinesRef.current.length <= 1}
+              >
+                <Ionicons name="remove" size={14} color="#f2ca50" />
+              </TouchableOpacity>
+              <View style={styles.toolbarTinyValue}>
+                <Text style={styles.toolbarTinyText}>{guideLineCount}/5</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.toolbarTinyBtn, guideLinesRef.current.length >= 5 && styles.toolbarTinyBtnDisabled]}
+                onPress={() => {
+                  if (!guideLinesEnabled) setGuideLinesEnabled(true);
+                  addGuideLine();
+                  calibrateScaleFromAI();
+                  showGridTemporarily();
+                }}
+                disabled={guideLinesRef.current.length >= 5}
+              >
+                <Ionicons name="add" size={14} color="#f2ca50" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Разделитель */}
+            <View style={styles.toolbarTinyDivider} />
+
+            {/* Сегмент-переключатель: Верх / Низ */}
+            <View style={styles.toolbarSegmentControl}>
+              <TouchableOpacity
+                style={[styles.toolbarSegmentBtn, selectedSegment === 'upper' && styles.toolbarSegmentBtnActive]}
+                onPress={() => {
+                  setSelectedSegment('upper');
+                  resetGuideLines();
+                  calibrateScaleFromAI();
+                  showGridTemporarily();
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.toolbarSegmentBtnText, selectedSegment === 'upper' && styles.toolbarSegmentBtnTextActive]}>В</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.toolbarSegmentBtn, selectedSegment === 'lower' && styles.toolbarSegmentBtnActive]}
+                onPress={() => {
+                  setSelectedSegment('lower');
+                  resetGuideLines();
+                  calibrateScaleFromAI();
+                  showGridTemporarily();
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.toolbarSegmentBtnText, selectedSegment === 'lower' && styles.toolbarSegmentBtnTextActive]}>Н</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Разделитель */}
+            <View style={styles.toolbarTinyDivider} />
+
+            {/* Группа поворота: влево / градус / вправо / сброс */}
+            <View style={styles.toolbarGroup}>
+              <TouchableOpacity
+                style={styles.toolbarTinyBtn}
+                onPress={() => {
+                  setRotationDeg(prev => prev - 1);
+                  showGridTemporarily();
+                }}
+              >
+                <Ionicons name="chevron-back" size={14} color="#f2ca50" />
+              </TouchableOpacity>
+              <View style={styles.toolbarTinyValue}>
+                <Text style={styles.toolbarTinyText}>{rotationDeg}°</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.toolbarTinyBtn}
+                onPress={() => {
+                  setRotationDeg(prev => prev + 1);
+                  showGridTemporarily();
+                }}
+              >
+                <Ionicons name="chevron-forward" size={14} color="#f2ca50" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.toolbarTinyBtn}
+                onPress={() => {
+                  setRotationDeg(0);
+                  showGridTemporarily();
+                }}
+              >
+                <Ionicons name="refresh" size={12} color="rgba(242,202,80,0.8)" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── МОДАЛЬНОЕ ОКНО: НЕДОСТАТОЧНО АЛМАЗОВ ── */}
+      <Modal
+        visible={diamondsModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDiamondsModalVisible(false)}
+      >
+        <View style={styles.diamondsModalOverlay}>
+          <View style={styles.diamondsModalContainer}>
+            <Ionicons name="diamond-outline" size={48} color="#f2ca50" style={{ marginBottom: 16 }} />
+            <Text style={styles.diamondsModalTitle}>Недостаточно алмазов</Text>
+            <Text style={styles.diamondsModalText}>
+              Недостаточно алмазов для проведения AI-анализа. Пожалуйста, проверьте ваш баланс в профиле.
+            </Text>
+            <TouchableOpacity
+              style={styles.diamondsModalButton}
+              onPress={() => setDiamondsModalVisible(false)}
+            >
+              <Text style={styles.diamondsModalButtonText}>ОК</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <BottomTabBar />
     </ImageBackground>
@@ -807,6 +1724,34 @@ const styles = StyleSheet.create({
     width: 1.5,
     height: '100%',
     backgroundColor: '#f2ca50',
+  },
+  lineHandleTop: {
+    position: 'absolute',
+    top: -10,
+    left: '50%',
+    marginLeft: -10,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lineHandleBottom: {
+    position: 'absolute',
+    bottom: -10,
+    left: '50%',
+    marginLeft: -10,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lineHandleKnob: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#f2ca50',
+    borderWidth: 2,
+    borderColor: '#031427',
   },
   dragLineH: {
     position: 'absolute',
@@ -938,12 +1883,14 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 14,
+    flexWrap: 'wrap',
   },
   methodBtnActive: {
     backgroundColor: 'rgba(242,202,80,0.12)',
     borderColor: '#f2ca50',
   },
   methodBtnText: {
+    flex: 1,
     color: 'rgba(255,255,255,0.5)',
     fontSize: 14,
     fontWeight: '500',
@@ -964,42 +1911,51 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
+    marginRight: 10,
   },
   toggleLabel: {
     color: 'rgba(255,255,255,0.8)',
     fontSize: 14,
     fontWeight: '500',
+    flexShrink: 1,
+    flex: 1,
   },
   analyzeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 8,
     backgroundColor: '#f2ca50',
     borderRadius: 14,
-    paddingVertical: 15,
-    marginBottom: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    alignSelf: 'center',
+    marginBottom: 8,
   },
   analyzeBtnText: {
     color: '#031427',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   methodActiveBadge: {
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
+    maxWidth: '90%',
+    flexWrap: 'wrap',
     backgroundColor: 'rgba(242,202,80,0.12)',
     borderWidth: 1,
     borderColor: 'rgba(242,202,80,0.3)',
     borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   methodActiveBadgeText: {
     color: '#f2ca50',
     fontSize: 12,
     fontWeight: '600',
+    flexWrap: 'wrap',
+    textAlign: 'center',
   },
   resultRow: {
     flexDirection: 'row',
@@ -1037,22 +1993,6 @@ const styles = StyleSheet.create({
   resultDeviation: {
     fontSize: 12,
     fontWeight: '600',
-  },
-  extraResult: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: 'rgba(242,202,80,0.06)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(242,202,80,0.15)',
-  },
-  extraResultText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 13,
-    flex: 1,
   },
   disclaimer: {
     marginTop: 12,
@@ -1156,9 +2096,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   resultsHeader: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    gap: 8,
     marginBottom: 4,
   },
   resultCard: {
@@ -1277,48 +2218,69 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 2,
   },
-  aiAlignRow: {
-    marginTop: 8,
-    marginBottom: 2,
-    alignItems: 'flex-end',
+  eyeToggleBtn: {
+    padding: 4,
   },
-  aiAlignBtn: {
+  aiBlock: {
+    marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(242,202,80,0.4)',
+    borderColor: 'rgba(242,202,80,0.35)',
+    backgroundColor: 'rgba(242,202,80,0.06)',
+    overflow: 'hidden',
+  },
+  aiBlockBtnWrap: {
+    flex: 1,
+  },
+  aiBlockBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  aiBlockBtnActive: {
     backgroundColor: 'rgba(242,202,80,0.08)',
   },
-  aiAlignBtnActive: {
-    borderColor: 'rgba(242,202,80,0.15)',
-    backgroundColor: 'rgba(242,202,80,0.04)',
-  },
-  aiAlignBtnText: {
+  aiBlockBtnText: {
     color: '#f2ca50',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
-  resetLinesBtn: {
+  segmentControlWrapper: {
+    marginTop: 8,
+    marginHorizontal: 16,
+    marginBottom: 4,
+  },
+  segmentControl: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    alignSelf: 'flex-end',
-    marginTop: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(242,202,80,0.2)',
-    backgroundColor: 'rgba(242,202,80,0.04)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
+    padding: 2,
+    gap: 2,
   },
-  resetLinesBtnText: {
-    color: 'rgba(242,202,80,0.7)',
-    fontSize: 11,
+  segmentBtn: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  segmentBtnActive: {
+    backgroundColor: '#f2ca50',
+  },
+  segmentBtnText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
     fontWeight: '600',
+  },
+  segmentBtnTextActive: {
+    color: '#031427',
   },
   hintBox: {
     backgroundColor: 'rgba(255,255,255,0.05)',
@@ -1354,5 +2316,485 @@ const styles = StyleSheet.create({
     color: '#f2ca50',
     fontSize: 11,
     fontWeight: '600',
+  },
+
+  // ── Стили Архитектурного паспорта улыбки ──
+  passportSection: {
+    marginBottom: 16,
+    padding: 12,
+    paddingBottom: 40,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    gap: 10,
+  },
+  passportRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  passportIcon: {
+    fontSize: 22,
+    lineHeight: 28,
+  },
+  passportTextWrap: {
+    flex: 1,
+    gap: 4,
+  },
+  passportTitle: {
+    color: '#f2ca50',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    lineHeight: 18,
+  },
+  passportText: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  passportDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+
+  // ── Стили кнопки Панорама ──
+  panoramaBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(8,13,26,0.85)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.3)',
+  },
+  panoramaBtnText: {
+    color: '#f2ca50',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  // ── Стили панорамного режима (ПОЛНОЭКРАННЫЙ) ──
+  panoramaContainer: {
+    flex: 1,
+    backgroundColor: '#0B0F19',
+  },
+  panoramaCloseFloating: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    zIndex: 100,
+    padding: 4,
+  },
+  panoramaCloseCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(8,13,26,0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  panoramaPhotoWrap: {
+    flex: 1,
+    position: 'relative',
+    backgroundColor: '#0B0F19',
+  },
+  panoramaPhotoFullscreen: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  panoramaGridOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  panoramaDragLineV: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 28,
+    marginLeft: -14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  panoramaDragLineVInner: {
+    width: 1,
+    height: '100%',
+    backgroundColor: '#f2ca50',
+  },
+  panoramaDragLineH: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 28,
+    marginTop: -14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  panoramaDragLineHInner: {
+    height: 1,
+    width: '100%',
+    backgroundColor: '#f2ca50',
+  },
+  panoramaGridCenter: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: '50%',
+    width: 1.5,
+    backgroundColor: '#fff',
+    opacity: 0.6,
+  },
+
+  // ── Ультра-компактная однострочная панель инструментов ──
+  panoramaToolbar: {
+    position: 'absolute',
+    bottom: 16,
+    left: '50%',
+    transform: [{ translateX: '-50%' }],
+    maxWidth: '90%',
+    height: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(8,13,26,0.92)',
+    borderRadius: 23,
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.2)',
+  },
+  toolbarGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  toolbarTinyBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(242,202,80,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toolbarTinyBtnActive: {
+    backgroundColor: 'rgba(242,202,80,0.2)',
+    borderColor: 'rgba(242,202,80,0.5)',
+  },
+  toolbarTinyDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: 'rgba(242,202,80,0.15)',
+  },
+  toolbarTinyValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(242,202,80,0.05)',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.1)',
+  },
+  toolbarTinyText: {
+    color: '#f2ca50',
+    fontSize: 10,
+    fontWeight: '600',
+    minWidth: 20,
+    textAlign: 'center',
+  },
+
+  // ── Стили модального окна алмазов ──
+  diamondsModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  diamondsModalContainer: {
+    backgroundColor: '#151518',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.2)',
+    width: '100%',
+    maxWidth: 320,
+  },
+  diamondsModalTitle: {
+    color: '#f2ca50',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  diamondsModalText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  diamondsModalButton: {
+    backgroundColor: '#f2ca50',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+  },
+  diamondsModalButtonText: {
+    color: '#031427',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  // ── Стили динамических направляющих (1-5 линий) ──
+  guideControlPanel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(242,202,80,0.1)',
+  },
+  guideToggleBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.3)',
+    backgroundColor: 'rgba(242,202,80,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guideToggleBtnActive: {
+    backgroundColor: '#f2ca50',
+    borderColor: '#f2ca50',
+  },
+  guideTinyBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.3)',
+    backgroundColor: 'rgba(242,202,80,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guideTinyBtnDisabled: {
+    opacity: 0.4,
+  },
+  guideCountBadge: {
+    minWidth: 36,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(242,202,80,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guideCountText: {
+    color: '#f2ca50',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  guideLinesOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+  },
+  guideLine: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 24,
+    marginLeft: -12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guideLineHandle: {
+    width: 1,
+    height: '100%',
+    backgroundColor: '#FFD700',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  guideLineKnob: {
+    position: 'absolute',
+    top: 12,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    borderWidth: 1,
+    borderColor: '#FFD700',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  guideArrow: {
+    position: 'absolute',
+    top: '55%',
+    height: 10,
+    marginTop: -5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+  },
+  guideArrowLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(255,215,0,0.85)',
+  },
+  guideArrowLeft: {
+    width: 0,
+    height: 0,
+    borderTopWidth: 4,
+    borderBottomWidth: 4,
+    borderRightWidth: 6,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderRightColor: 'rgba(255,215,0,0.85)',
+    marginRight: -1,
+  },
+  guideArrowRight: {
+    width: 0,
+    height: 0,
+    borderTopWidth: 4,
+    borderBottomWidth: 4,
+    borderLeftWidth: 6,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderLeftColor: 'rgba(255,215,0,0.85)',
+    marginLeft: -1,
+  },
+  guideBadge: {
+    position: 'absolute',
+    top: '48%',
+    marginTop: -12,
+    marginLeft: -32,
+    width: 64,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guideBadgeText: {
+    color: '#FFD700',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  panoramaGuideLinesOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+  },
+  panoramaGuideLine: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 28,
+    marginLeft: -14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  panoramaGuideLineHandle: {
+    width: 1,
+    height: '100%',
+    backgroundColor: '#FFD700',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  panoramaGuideLineKnob: {
+    position: 'absolute',
+    top: 16,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    borderWidth: 1,
+    borderColor: '#FFD700',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 5,
+    elevation: 8,
+  },
+  panoramaGuideBadge: {
+    position: 'absolute',
+    top: '48%',
+    marginTop: -14,
+    marginLeft: -36,
+    width: 72,
+    paddingVertical: 5,
+    paddingHorizontal: 4,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  panoramaGuideBadgeText: {
+    color: '#FFD700',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  toolbarTinyBtnDisabled: {
+    opacity: 0.4,
+  },
+  toolbarSegmentControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 13,
+    padding: 2,
+    gap: 2,
+  },
+  toolbarSegmentBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toolbarSegmentBtnActive: {
+    backgroundColor: '#f2ca50',
+  },
+  toolbarSegmentBtnText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  toolbarSegmentBtnTextActive: {
+    color: '#031427',
   },
 });

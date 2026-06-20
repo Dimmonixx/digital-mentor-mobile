@@ -7,17 +7,17 @@ import { StatusBar } from 'expo-status-bar';
 import { get, push, ref } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Image,
-  ImageBackground,
-  Keyboard,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Image,
+    ImageBackground,
+    Keyboard,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ToothFormula from '../components/ToothFormula';
@@ -87,6 +87,14 @@ export default function NewOrderScreen() {
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const [vitaSectionY, setVitaSectionY] = useState(0);
+
+  // Стейты для валидации и автоскролла
+  const [errorField, setErrorField] = useState<string | null>(null);
+  const [patientY, setPatientY] = useState(0);
+  const [technicianY, setTechnicianY] = useState(0);
+  const [datesY, setDatesY] = useState(0);
+  const [teethY, setTeethY] = useState(0);
+  const [constructionsY, setConstructionsY] = useState(0);
 
   useEffect(() => {
     const loadPartners = async () => {
@@ -605,11 +613,123 @@ export default function NewOrderScreen() {
 
   const handleSubmit = async () => {
     Keyboard.dismiss();
+    setErrorField(null);
 
-    if (!selectedDoctor || !selectedTechnician || !patientName.trim()) {
-      setToastMessage('Пожалуйста, заполните ФИО пациента, а также выберите врача и техника');
+    // ДЕБАГ: Логируем данные перед валидацией
+    console.log('=== ВАЛИДАЦИЯ НАРЯДА ===', {
+      blockDetails,
+      implantData,
+      workType,
+      selectedTeeth: selectedTeeth.map(t => t.number),
+    });
+
+    // 1. ФИО пациента
+    if (!patientName.trim()) {
+      setErrorField('patient');
+      setToastMessage('Укажите ФИО пациента');
       setToastType('error');
       setToastVisible(true);
+      formScrollRef.current?.scrollTo({ y: patientY, animated: true });
+      return;
+    }
+
+    // 2. Зубной техник
+    if (!selectedTechnician) {
+      setErrorField('technician');
+      setToastMessage('Выберите зубного техника');
+      setToastType('error');
+      setToastVisible(true);
+      formScrollRef.current?.scrollTo({ y: technicianY, animated: true });
+      return;
+    }
+
+    // 3. Дата сдачи
+    if (!dates.delivery) {
+      setErrorField('delivery');
+      setToastMessage('Выберите дату сдачи работы');
+      setToastType('error');
+      setToastVisible(true);
+      formScrollRef.current?.scrollTo({ y: datesY, animated: true });
+      return;
+    }
+
+    // 4. Зубная формула
+    if (selectedTeeth.length === 0) {
+      setErrorField('teeth');
+      setToastMessage('Выберите хотя бы один зуб на зубной формуле');
+      setToastType('error');
+      setToastVisible(true);
+      formScrollRef.current?.scrollTo({ y: teethY, animated: true });
+      return;
+    }
+
+    // 5. Конструкция / Вид работы и Материал
+    const hasConstruction = Object.entries(blockDetails || {}).some(([key, block]: [string, any]) => {
+      if (key === 'material' || key === 'workType') return false;
+      return block?.workType || block?.material;
+    });
+    if (!hasConstruction) {
+      setErrorField('constructions');
+      setToastMessage('Выберите тип ортопедической конструкции и материал');
+      setToastType('error');
+      setToastVisible(true);
+      setShowConstructions(true);
+      formScrollRef.current?.scrollTo({ y: constructionsY, animated: true });
+      return;
+    }
+
+    // 6. ЗАВИСИМАЯ проверка имплантов: данные лежат внутри блока в implantSystems и implantDiameters
+    for (const [blockKey, block] of Object.entries(blockDetails || {})) {
+      if (blockKey === 'material' || blockKey === 'workType') continue;
+      if (!block || typeof block !== 'object') continue;
+      
+      // Проверяем флаги импланта
+      const isImplantBlock = block.isImplant === true || 
+                             block.workType === 'implant' || 
+                             (block.material && block.material.toLowerCase().includes('имплант'));
+      
+      if (!isImplantBlock) continue;
+      
+      // Получаем номера зубов из ключа (например "11-12" -> [11, 12])
+      const toothNumbers = blockKey.split('-').map(n => parseInt(n, 10)).filter(n => !isNaN(n));
+      
+      for (const toothNum of toothNumbers) {
+        // Данные импланта хранятся ВНУТРИ блока!
+        const system = block.implantSystems?.[toothNum];
+        const diameter = block.implantDiameters?.[toothNum];
+        
+        console.log(`Проверка импланта для зуба ${toothNum}: system=${system}, diameter=${diameter}`);
+        
+        if (!system || !diameter) {
+          setErrorField(`implant-${blockKey}`);
+          setToastMessage(`Для зуба ${toothNum} на импланте необходимо указать систему и диаметр`);
+          setToastType('error');
+          setToastVisible(true);
+          setShowConstructions(true);
+          formScrollRef.current?.scrollTo({ y: constructionsY, animated: true });
+          return;
+        }
+      }
+    }
+
+    // 7. Цвет VITA
+    const hasVitaColor = manualVitaColor.trim() || vitaResult?.primary_range || vitaResult?.shade;
+    if (!hasVitaColor) {
+      setErrorField('vita');
+      setToastMessage('Укажите цвет VITA вручную или через анализатор');
+      setToastType('error');
+      setToastVisible(true);
+      formScrollRef.current?.scrollTo({ y: vitaSectionY, animated: true });
+      return;
+    }
+
+    // 8. Врач (проверяем последним, т.к. обычно предзаполнен)
+    if (!selectedDoctor) {
+      setErrorField('doctor');
+      setToastMessage('Выберите врача');
+      setToastType('error');
+      setToastVisible(true);
+      formScrollRef.current?.scrollTo({ y: 0, animated: true });
       return;
     }
     setLoading(true);
@@ -654,10 +774,17 @@ export default function NewOrderScreen() {
     // Жесткая очистка перед push/set
     const cleanData = JSON.parse(JSON.stringify(order, (key, value) => value === undefined ? null : value));
 
-    // Дополнительно убедись, что если в блоке работы какие-то поля не выбраны, мы принудительно пишем туда строки
+    // Устанавливаем дефолтные значения для каждого блока конструкции, импланты остаются опциональными
     if (cleanData.blockDetails) {
-      cleanData.blockDetails.workType = cleanData.blockDetails.workType || "Не указан";
-      cleanData.blockDetails.material = cleanData.blockDetails.material || "Не указан";
+      Object.keys(cleanData.blockDetails).forEach((key) => {
+        if (key === 'material' || key === 'workType') return;
+        const block = cleanData.blockDetails[key];
+        if (block && typeof block === 'object') {
+          block.workType = block.workType || 'Не указан';
+          block.material = block.material || 'Не указан';
+          // isImplant, implantSystem, implantDiameter остаются как есть (опциональные)
+        }
+      });
     }
 
     await push(ref(database, 'orders'), cleanData);
@@ -757,11 +884,11 @@ export default function NewOrderScreen() {
         contentContainerStyle={{ paddingBottom: 16 }}
       >
         {/* Анкета: Врач, Пациент, Техник */}
-        <View style={styles.section}>
-          <View style={styles.cardContainer}>
+        <View style={styles.section} onLayout={(e) => setPatientY(e.nativeEvent.layout.y)}>
+          <View style={[styles.cardContainer, errorField === 'patient' || errorField === 'doctor' || errorField === 'technician' ? styles.cardError : null]}>
             {/* Врач */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <Text style={styles.sectionTitle}>👨‍⚕️ ВРАЧ</Text>
+              <Text style={styles.sectionTitle}>👨‍⚕️ ВРАЧ *</Text>
               <TouchableOpacity
                 onPress={() => {
                   setSelectedDoctor(null);
@@ -774,7 +901,10 @@ export default function NewOrderScreen() {
                 <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.4)" />
               </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={() => setShowDoctorModal(true)} style={[styles.input, { marginBottom: 12 }]}>
+            <TouchableOpacity 
+              onPress={() => { setShowDoctorModal(true); if (errorField === 'doctor') setErrorField(null); }}
+              style={[styles.input, { marginBottom: 12 }, errorField === 'doctor' && styles.inputError]}
+            >
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flex: 1 }}>
                 <Text style={{ color: selectedDoctor ? '#ffffff' : 'rgba(255,255,255,0.4)', fontSize: 16, fontWeight: '500' }}>
                   {selectedDoctor?.name || 'Выберите врача'}
@@ -791,11 +921,11 @@ export default function NewOrderScreen() {
               <Text style={styles.sectionTitle}>👤 ПАЦИЕНТ</Text>
             </View>
             <TextInput
-              style={[styles.input, { marginBottom: 12 }]}
+              style={[styles.input, { marginBottom: 12 }, errorField === 'patient' && styles.inputError]}
               placeholder="ФИО пациента *"
               placeholderTextColor="rgba(255,255,255,0.4)"
               value={patientName}
-              onChangeText={setPatientName}
+              onChangeText={(text) => { setPatientName(text); if (errorField === 'patient') setErrorField(null); }}
             />
 
             {/* Разделитель */}
@@ -803,9 +933,12 @@ export default function NewOrderScreen() {
 
             {/* Техник */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <Text style={styles.sectionTitle}>👨‍💻 ТЕХНИК</Text>
+              <Text style={styles.sectionTitle}>👨‍💻 ТЕХНИК *</Text>
             </View>
-            <TouchableOpacity onPress={() => setShowTechnicianModal(true)} style={styles.input}>
+            <TouchableOpacity 
+              onPress={() => { setShowTechnicianModal(true); if (errorField === 'technician') setErrorField(null); }}
+              style={[styles.input, errorField === 'technician' && styles.inputError]}
+            >
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flex: 1 }}>
                 <Text style={{ color: selectedTechnician ? '#ffffff' : 'rgba(255,255,255,0.4)', fontSize: 16, fontWeight: '500' }}>
                   {selectedTechnician?.name || 'Выберите техника'}
@@ -817,10 +950,10 @@ export default function NewOrderScreen() {
         </View>
 
         {/* Даты */}
-        <View style={styles.section}>
-          <View style={styles.cardContainer}>
+        <View style={styles.section} onLayout={(e) => setDatesY(e.nativeEvent.layout.y)}>
+          <View style={[styles.cardContainer, errorField === 'delivery' ? styles.cardError : null]}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <Text style={styles.sectionTitle}>📅 ДАТЫ</Text>
+            <Text style={styles.sectionTitle}>📅 ДАТЫ (сдача обязательна)</Text>
             <TouchableOpacity
               onPress={() => setDates({ impressions: new Date(), fitting: null, delivery: null })}
               style={{ padding: 4, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.05)' }}
@@ -859,34 +992,39 @@ export default function NewOrderScreen() {
               </Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={() => setShowDatePicker('delivery')} style={styles.dateInput}>
+          <TouchableOpacity 
+            onPress={() => { setShowDatePicker('delivery'); if (errorField === 'delivery') setErrorField(null); }}
+            style={[styles.dateInput, errorField === 'delivery' && styles.inputError]}
+          >
             <Text style={styles.dateText} numberOfLines={1}>
-              <Text style={{ color: '#f2ca50' }}>Сдача:</Text>{' '}
+              <Text style={{ color: '#f2ca50' }}>Сдача: *</Text>{' '}
               <Text style={{ color: '#ffffff' }}>
-                {dates.delivery && times.delivery 
-                  ? `${formatDateWithDay(dates.delivery)} в ${formatTime(times.delivery)}` 
-                  : 'Нажмите для выбора'}
+                {dates.delivery && times.delivery
+                  ? `${formatDateWithDay(dates.delivery)} в ${formatTime(times.delivery)}`
+                  : 'Нажмите для выбора *'}
               </Text>
             </Text>
           </TouchableOpacity>
           </View>
         </View>
 
-        <ToothFormula
-          selectedTeeth={selectedTeeth}
-          setSelectedTeeth={setSelectedTeeth}
-          connections={connections}
-          toggleConnection={toggleConnection}
-          toggleTooth={toggleTooth}
-          toggleToothType={toggleToothType}
-          topJawScrollRef={topJawScrollRef}
-          bottomJawScrollRef={bottomJawScrollRef}
-          styles={styles}
-        />
+        <View onLayout={(e) => setTeethY(e.nativeEvent.layout.y)}>
+          <ToothFormula
+            selectedTeeth={selectedTeeth}
+            setSelectedTeeth={(teeth) => { setSelectedTeeth(teeth); if (errorField === 'teeth' && teeth.length > 0) setErrorField(null); }}
+            connections={connections}
+            toggleConnection={toggleConnection}
+            toggleTooth={toggleTooth}
+            toggleToothType={toggleToothType}
+            topJawScrollRef={topJawScrollRef}
+            bottomJawScrollRef={bottomJawScrollRef}
+            styles={{...styles, cardContainer: errorField === 'teeth' ? [styles.cardContainer, styles.cardError] : styles.cardContainer}}
+          />
+        </View>
 
         {/* 🛠️ КОНСТРУКЦИИ */}
-        <View style={styles.section}>
-          <View style={styles.cardContainer}>
+        <View style={styles.section} onLayout={(e) => setConstructionsY(e.nativeEvent.layout.y)}>
+          <View style={[styles.cardContainer, (errorField === 'constructions' || errorField?.startsWith('implant-')) ? styles.cardError : null]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <TouchableOpacity
                 onPress={() => setShowConstructions(prev => !prev)}
@@ -894,7 +1032,7 @@ export default function NewOrderScreen() {
                 activeOpacity={0.7}
               >
                 <Text style={styles.sectionTitle}>
-                  🛠️ КОНСТРУКЦИИ{' '}
+                  🛠️ КОНСТРУКЦИИ *{' '}
                   <Text style={{ color: '#E2BD75', fontSize: 13, fontWeight: 'bold' }}>
                     {showConstructions ? '▼' : '►'}
                   </Text>
@@ -1081,13 +1219,15 @@ export default function NewOrderScreen() {
                                 [blockKey]: {
                                   ...prev[blockKey],
                                   material: wt.label,
-                                  isImplant: prev[blockKey]?.isImplant || false,
+                                  isImplant: wt.id === 'implant',
                                   implantSystems: wt.id === 'implant' ? {} : prev[blockKey]?.implantSystems,
                                   implantDiameters: wt.id === 'implant' ? {} : prev[blockKey]?.implantDiameters,
                                 }
                               }));
                               setShowWorkTypes(false);
                               setSelectedBlockIndex(null);
+                              // Сбрасываем ошибку конструкций при выборе
+                              if (errorField === 'constructions') setErrorField(null);
                             }}
                             style={{
                               paddingVertical: 10, paddingHorizontal: 12,
@@ -1237,6 +1377,8 @@ export default function NewOrderScreen() {
                                                 implantDiameters: { ...(prev[blockKey]?.implantDiameters || {}), [toothNum]: undefined },
                                               }
                                             }));
+                                            // Сбрасываем ошибку при очистке
+                                            if (errorField === `implant-${blockKey}`) setErrorField(null);
                                           }}
                                           style={{ marginLeft: 8, padding: 4 }}
                                         >
@@ -1264,6 +1406,8 @@ export default function NewOrderScreen() {
                                                   implantDiameters: { ...(prev[blockKey]?.implantDiameters || {}), [toothNum]: '' },
                                                 }
                                               }));
+                                              // Сбрасываем ошибку если она была для этого блока
+                                              if (errorField === `implant-${blockKey}`) setErrorField(null);
                                             }}
                                             style={{ paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' }}
                                           >
@@ -1283,6 +1427,8 @@ export default function NewOrderScreen() {
                                                 }
                                               }));
                                               setOpenImplantDropdownId(null);
+                                              // Сбрасываем ошибку при выборе диаметра (оба поля заполнены)
+                                              if (errorField === `implant-${blockKey}`) setErrorField(null);
                                             }}
                                             style={{ paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' }}
                                           >
@@ -1348,9 +1494,9 @@ export default function NewOrderScreen() {
           style={styles.section}
           onLayout={(event) => setVitaSectionY(event.nativeEvent.layout.y)}
         >
-          <View style={styles.cardContainer}>
+          <View style={[styles.cardContainer, errorField === 'vita' ? styles.cardError : null]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <Text style={styles.sectionTitle}>🎨 ЦВЕТ VITA</Text>
+              <Text style={styles.sectionTitle}>🎨 ЦВЕТ VITA *</Text>
               <TouchableOpacity
                 onPress={() => setVitaResult(null)}
                 style={{ padding: 4, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.05)' }}
@@ -1475,20 +1621,20 @@ export default function NewOrderScreen() {
             <TextInput
               style={{
                 marginTop: 12,
-                backgroundColor: 'rgba(255,255,255,0.05)',
+                backgroundColor: errorField === 'vita' ? 'rgba(255,107,107,0.05)' : 'rgba(255,255,255,0.05)',
                 borderRadius: 12,
-                borderWidth: 1,
-                borderColor: manualVitaFocused ? '#f2ca50' : 'rgba(242,202,80,0.25)',
+                borderWidth: 2,
+                borderColor: errorField === 'vita' ? '#ff6b6b' : (manualVitaFocused ? '#f2ca50' : 'rgba(242,202,80,0.25)'),
                 paddingHorizontal: 14,
                 paddingVertical: 12,
                 color: manualVitaColor ? '#f2ca50' : '#ffffff',
                 fontSize: 10,
                 fontWeight: '600',
               }}
-              placeholder="Ввести цвет вручную (напр. A3, B2)..."
+              placeholder="Ввести цвет вручную * (напр. A3, B2)..."
               placeholderTextColor="rgba(255,255,255,0.35)"
               value={manualVitaColor}
-              onChangeText={setManualVitaColor}
+              onChangeText={(text) => { setManualVitaColor(text); if (errorField === 'vita' && text.trim()) setErrorField(null); }}
               onFocus={() => setManualVitaFocused(true)}
               onBlur={() => setManualVitaFocused(false)}
               autoCapitalize="characters"
@@ -2144,4 +2290,18 @@ const styles = StyleSheet.create({
   toothPontic: { borderStyle: 'dashed', backgroundColor: 'rgba(255,255,255,0.05)' },
   toothText: { color: '#ffffff', fontSize: 12, fontWeight: '600' },
   textArea: { height: 80, textAlignVertical: 'top' },
+  cardError: {
+    borderWidth: 2,
+    borderColor: '#ff6b6b',
+    shadowColor: '#ff6b6b',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  inputError: {
+    borderWidth: 2,
+    borderColor: '#ff6b6b',
+    backgroundColor: 'rgba(255,107,107,0.05)',
+  },
 });

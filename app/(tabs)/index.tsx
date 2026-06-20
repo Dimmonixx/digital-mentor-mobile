@@ -80,7 +80,7 @@ export default function HomeScreen() {
     { id: 'techmap', label: 'Оптическая\nдиагностика', icon: 'layers-outline', active: true, route: '/detalization', col: 1, row: 2 },
     { id: 'etalon', label: 'Эталонный замер', icon: 'options-outline', active: false },
     { id: 'detail', label: 'Детализация', icon: 'list-outline', active: false },
-    { id: 'golden', label: 'ЗОЛОТОЕ\nСЕЧЕНИЕ', icon: 'git-network-outline', active: true, route: '/golden-proportion' },
+    { id: 'golden', label: 'DSD\nАнализ', icon: 'git-network-outline', active: true, route: '/golden-proportion' },
     { id: 'ceramics', label: 'Визуализатор масс', icon: 'book-outline', active: false },
   ];
 
@@ -93,7 +93,7 @@ export default function HomeScreen() {
     { id: 'premium', label: 'Анатомия зубов', icon: 'diamond-outline', active: false, col: 0, row: 3, route: '/(tabs)/balance' },
     { id: 'etalon', label: 'Эталонный замер', icon: 'options-outline', active: false },
     { id: 'detail', label: 'Детализация', icon: 'list-outline', active: false },
-    { id: 'golden', label: 'ЗОЛОТОЕ\nСЕЧЕНИЕ', icon: 'git-network-outline', active: true, route: '/golden-proportion' },
+    { id: 'golden', label: 'DSD\nАнализ', icon: 'git-network-outline', active: true, route: '/golden-proportion' },
     { id: 'ceramics', label: 'Гид по керамике', icon: 'book-outline', active: false },
   ];
 
@@ -159,8 +159,8 @@ export default function HomeScreen() {
   };
 
   const TechMapPanel = ({ item, onPress, style }: any) => (
-    <TouchableOpacity activeOpacity={item.active ? 0.78 : 1} onPress={onPress} style={[styles.techMapPanel, !item.active && { opacity: 0.4 }, style]}>
-      <Svg width={360} height={92} viewBox="0 0 360 92" style={StyleSheet.absoluteFill}>
+    <TouchableOpacity activeOpacity={item.active ? 0.78 : 1} onPress={onPress} style={[styles.techMapPanel, { width: item.id === 'golden' ? 306 : 360 }, !item.active && { opacity: 0.4 }, style]}>
+      <Svg width={item.id === 'golden' ? 306 : 360} height={92} viewBox={item.id === 'golden' ? '0 0 306 92' : '0 0 360 92'} style={StyleSheet.absoluteFill}>
         <Defs>
           <SvgLinearGradient id="techMapBody" x1="0" y1="0" x2="1" y2="1">
             <Stop offset="0%" stopColor="#433715" />
@@ -173,10 +173,10 @@ export default function HomeScreen() {
             <Stop offset="100%" stopColor="#6b4a10" />
           </SvgLinearGradient>
         </Defs>
-        <Polygon points="38,7 322,7 354,84 6,84" fill="none" stroke="#f2ca50" strokeWidth={5} opacity={0.22} />
-        <Polygon points="38,7 322,7 354,84 6,84" fill="url(#techMapBody)" stroke="url(#techMapEdge)" strokeWidth={2.5} />
-        <Polygon points="50,17 310,17 334,74 26,74" fill="#130b02" opacity={0.95} />
-        <Polygon points="50,17 310,17 334,74 26,74" fill="none" stroke="#FFE57A" strokeWidth={1} opacity={0.45} />
+        <Polygon points={item.id === 'golden' ? '32,7 274,7 301,84 5,84' : '38,7 322,7 354,84 6,84'} fill="none" stroke="#f2ca50" strokeWidth={5} opacity={0.22} />
+        <Polygon points={item.id === 'golden' ? '32,7 274,7 301,84 5,84' : '38,7 322,7 354,84 6,84'} fill="url(#techMapBody)" stroke="url(#techMapEdge)" strokeWidth={2.5} />
+        <Polygon points={item.id === 'golden' ? '43,17 263,17 284,74 22,74' : '50,17 310,17 334,74 26,74'} fill="#130b02" opacity={0.95} />
+        <Polygon points={item.id === 'golden' ? '43,17 263,17 284,74 22,74' : '50,17 310,17 334,74 26,74'} fill="none" stroke="#FFE57A" strokeWidth={1} opacity={0.45} />
       </Svg>
       <View style={styles.techMapContent}>
         <Ionicons name={item.icon as any} size={34} color="#f2ca50" />
