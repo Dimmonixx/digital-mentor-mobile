@@ -1,4 +1,4 @@
-import { database } from '@/constants/firebase';
+import { getFirebaseDB } from '@/constants/firebase';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -99,10 +99,10 @@ export default function NewOrderScreen() {
   useEffect(() => {
     const loadPartners = async () => {
       try {
-        const userId = user?.id;
+        const userId = user?.uid || user?.id;
         if (!userId) return;
 
-        const partnershipsRef = ref(database, 'partnerships');
+        const partnershipsRef = ref(getFirebaseDB(), 'partnerships');
         const snapshot = await get(partnershipsRef);
 
         if (!snapshot.exists()) return;
@@ -120,12 +120,12 @@ export default function NewOrderScreen() {
         Object.values(partnershipsData).forEach((p) => {
           if (!p) return;
 
-          if (user.role === 'doctor' && p.doctorUid === userId && p.technicianUid && p.technicianName) {
+          if (user.role === 'doctor' && (p.doctorUid === userId || p.doctorUid === user?.id) && p.technicianUid && p.technicianName) {
             if (!seenIds.has(p.technicianUid)) {
               seenIds.add(p.technicianUid);
               partnersList.push({ id: p.technicianUid, name: p.technicianName });
             }
-          } else if (user.role === 'technician' && p.technicianUid === userId && p.doctorUid && p.doctorName) {
+          } else if (user.role === 'technician' && (p.technicianUid === userId || p.technicianUid === user?.id) && p.doctorUid && p.doctorName) {
             if (!seenIds.has(p.doctorUid)) {
               seenIds.add(p.doctorUid);
               partnersList.push({ id: p.doctorUid, name: p.doctorName });
@@ -161,9 +161,9 @@ export default function NewOrderScreen() {
   useEffect(() => {
     if (user) {
       if (user.role === 'doctor' && !selectedDoctor) {
-        setSelectedDoctor({ id: user.id, name: user.name });
+        setSelectedDoctor({ id: user.uid || user.id, name: user.name });
       } else if (user.role === 'technician' && !selectedTechnician) {
-        setSelectedTechnician({ id: user.id, name: user.name });
+        setSelectedTechnician({ id: user.uid || user.id, name: user.name });
       }
     }
   }, [user, selectedDoctor, selectedTechnician]);
@@ -634,7 +634,7 @@ export default function NewOrderScreen() {
     }
 
     // 2. Зубной техник
-    if (!selectedTechnician) {
+    if (!selectedTechnician || !selectedTechnician.id) {
       setErrorField('technician');
       setToastMessage('Выберите зубного техника');
       setToastType('error');
@@ -724,7 +724,7 @@ export default function NewOrderScreen() {
     }
 
     // 8. Врач (проверяем последним, т.к. обычно предзаполнен)
-    if (!selectedDoctor) {
+    if (!selectedDoctor || !selectedDoctor.id) {
       setErrorField('doctor');
       setToastMessage('Выберите врача');
       setToastType('error');
@@ -734,11 +734,11 @@ export default function NewOrderScreen() {
     }
     setLoading(true);
     const order = {
-      doctorId: selectedDoctor?.id || null,
-      doctorName: selectedDoctor?.name || 'Не указан',
-      technicianId: selectedTechnician?.id || null,
-      technicianName: selectedTechnician?.name || 'Не указан',
-      techName: selectedTechnician?.name || 'Не указан',
+      doctorId: selectedDoctor.id,
+      doctorName: selectedDoctor.name || 'Не указан',
+      technicianId: selectedTechnician.id,
+      technicianName: selectedTechnician.name || 'Не указан',
+      techName: selectedTechnician.name || 'Не указан',
       patientName,
       workType,
       impressionsDate: dates.impressions.toISOString(),
@@ -787,7 +787,7 @@ export default function NewOrderScreen() {
       });
     }
 
-    await push(ref(database, 'orders'), cleanData);
+    await push(ref(getFirebaseDB(), 'orders'), cleanData);
     await AsyncStorage.removeItem('pendingVitaResult');
     await AsyncStorage.removeItem('orderDraft');
     setLoading(false);

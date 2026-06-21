@@ -1,4 +1,4 @@
-import { database } from '@/constants/firebase';
+import { getFirebaseDB } from '@/constants/firebase';
 import { addCase } from '@/data/cases';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -151,7 +151,7 @@ export default function CreateCaseScreen() {
     console.log('[CreateCase] Сохранение в Firebase + AsyncStorage...');
     try {
       // Записываем только этот пост в его узел — не трогаем остальные
-      await set(ref(database, `case_club_posts/${newCase.id}`), newCase);
+      await set(ref(getFirebaseDB(), `case_club_posts/${newCase.id}`), newCase);
       // Обновляем локальный кэш: читаем существующее, заменяем/добавляем этот пост
       const existing = await AsyncStorage.getItem('@global_case_club_posts');
       const posts: any[] = existing ? JSON.parse(existing) : [];

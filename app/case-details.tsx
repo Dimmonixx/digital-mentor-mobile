@@ -1,16 +1,16 @@
 import BottomTabBar from '@/components/BottomTabBar';
 import { PostActionsSheet } from '@/components/case-post-actions';
 import GlobalHeader from '@/components/global-header';
-import { database } from '@/constants/firebase';
+import { getFirebaseDB } from '@/constants/firebase';
 import {
-  CASES,
-  CaseComment,
-  CaseMedia,
-  ClinicalCase,
-  deleteCaseById,
-  isOwnCase,
-  registerAiLike,
-  registerCorrectRiddle
+    CASES,
+    CaseComment,
+    CaseMedia,
+    ClinicalCase,
+    deleteCaseById,
+    isOwnCase,
+    registerAiLike,
+    registerCorrectRiddle
 } from '@/data/cases';
 import { getUserIdentity } from '@/utils/getUserIdentity';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -19,20 +19,20 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { get, ref, set } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  FlatList,
-  Image,
-  ImageBackground,
-  ImageSourcePropType,
-  Modal,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    Dimensions,
+    FlatList,
+    Image,
+    ImageBackground,
+    ImageSourcePropType,
+    Modal,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, Polygon, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
@@ -229,7 +229,7 @@ const AiReviewBlock = ({ review, onSpent }: { review: string; onSpent: () => voi
   const runReview = () => {
     const ok = (globalThis as any).spendDiamonds?.(AI_REVIEW_COST);
     if (!ok) {
-      Alert.alert('Недостаточно алмазов', `Для AI-разбора нужно ${AI_REVIEW_COST} алмаза. Пополните баланс в разделе «Премиум».`);
+      Alert.alert('Недостаточно алмазов', `Для AI-разбора нужно ${AI_REVIEW_COST} алмаза. Пополните баланс в разделе «Маркет».`);
       return;
     }
     (globalThis as any).forceDiamondUpdate?.();
@@ -392,7 +392,7 @@ export default function CaseDetailsScreen() {
     const loadCase = async () => {
       try {
         // Читаем из Firebase как основного источника
-        const fbSnap = await get(ref(database, `case_club_posts/${id}`));
+        const fbSnap = await get(ref(getFirebaseDB(), `case_club_posts/${id}`));
         let found: ClinicalCase | null = fbSnap.exists() ? fbSnap.val() : null;
         // Fallback: локальный кэш
         if (!found) {
@@ -491,7 +491,7 @@ export default function CaseDetailsScreen() {
     setCommentText('');
     try {
       // Обновляем в Firebase
-      await set(ref(database, `case_club_posts/${item.id}/commentsList`), updated);
+      await set(ref(getFirebaseDB(), `case_club_posts/${item.id}/commentsList`), updated);
       // Обновляем локальный кэш
       const raw = await AsyncStorage.getItem('@global_case_club_posts');
       const posts: ClinicalCase[] = raw ? JSON.parse(raw) : [];

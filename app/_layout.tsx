@@ -1,3 +1,5 @@
+import '@/constants/firebase'; // Инициализация Firebase ДО всех импортов, использующих Firebase
+
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import * as NavigationBar from 'expo-navigation-bar';
 import { Stack } from 'expo-router';

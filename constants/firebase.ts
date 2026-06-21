@@ -14,9 +14,16 @@ const firebaseConfig = {
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const database = getDatabase(app);
+const firestore = getFirestore(app);
+const storage = getStorage(app);
 
-export const database = getDatabase(app);
-export const storage = getStorage(app);
-export const firestore = getFirestore(app);
-export { app };
+export { app, database, firestore, storage };
+export const getFirebaseDatabase = () => database;
+export const getFirebaseFirestore = () => firestore;
+export const getFirebaseStorage = () => storage;
+export const getFirebaseDB = () => database;
+export const getFirebaseAuth = () => null;
+
+export { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from './auth';
 

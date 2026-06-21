@@ -1,8 +1,8 @@
-import { database } from '@/constants/firebase';
+import { getFirebaseDB } from '@/constants/firebase';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
-import { onValue, ref, remove } from 'firebase/database';
+import { equalTo, onValue, orderByChild, query, ref, remove } from 'firebase/database';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -109,6 +109,7 @@ type ListItem =
 
 interface Order {
   id: string;
+  doctorId?: string;
   doctorName: string;
   patientName: string;
   techName: string;
@@ -177,13 +178,15 @@ export default function SearchScreen() {
 
   const deleteAllMyOrders = async () => {
     if (!user) return;
+    const uid = user.uid || user.id;
+    if (!uid) return;
     const myOrders = orders.filter(order => {
-      if (user.role === 'doctor') return order.doctorName === user.name;
-      if (user.role === 'technician') return order.techName === user.name || order.technicianName === user.name;
+      if (user.role === 'doctor') return order.doctorId === uid;
+      if (user.role === 'technician') return order.technicianId === uid;
       return false;
     });
     for (const order of myOrders) {
-      await remove(ref(database, `orders/${order.id}`));
+      await remove(ref(getFirebaseDB(), `orders/${order.id}`));
     }
     setShowDeleteAllConfirm(false);
   };
@@ -217,7 +220,13 @@ export default function SearchScreen() {
 
   // Real-time listener на наряды (только для отображения)
   useEffect(() => {
-    const ordersRef = ref(database, 'orders');
+    if (!user) return;
+
+    const uid = user.uid || user.id;
+    if (!uid) return;
+
+    const field = user.role === 'doctor' ? 'doctorId' : 'technicianId';
+    const ordersRef = query(ref(getFirebaseDB(), 'orders'), orderByChild(field), equalTo(uid));
     const unsubscribe = onValue(ordersRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -235,7 +244,7 @@ export default function SearchScreen() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   const applyTimeFilter = (order: Order): boolean => {
     const d = parseDelivery(order);
@@ -265,13 +274,16 @@ export default function SearchScreen() {
   const filteredOrders = orders.filter(order => {
     if (!user) return false;
     const uid = user.uid || user.id;
+    if (!uid) return false;
     const isNew = order.status === 'new' || order.status === 'Новый' || order.status === 'New';
     if (user.role === 'technician') {
-      const mine = order.techId === uid || order.technicianId === uid;
-      if (!mine) return false;
+      if (order.technicianId !== uid) return false;
       if (filterParam === 'new' || filter === 'new') return isNew && applyTimeFilter(order);
       if (filter !== 'all') return order.status === filter && applyTimeFilter(order);
       return applyTimeFilter(order);
+    }
+    if (user.role === 'doctor') {
+      if (order.doctorId !== uid) return false;
     }
     if (filter !== 'all' && order.status !== filter) return false;
     return applyTimeFilter(order);

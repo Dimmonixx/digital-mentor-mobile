@@ -1,4 +1,5 @@
-import { database } from '@/constants/firebase';
+import { loginUser, registerUser } from '@/constants/auth';
+import { getFirebaseDB } from '@/constants/firebase';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
@@ -123,23 +124,30 @@ export default function AuthScreen() {
     setError('');
 
     try {
-      const usersRef = ref(database, 'users');
-      const snapshot = await get(child(usersRef, email.replace('.','_')));
+      const emailKey = email.replace(/\./g, '_');
+      const currentDb = getFirebaseDB();
+
+      const usersRef = ref(currentDb, 'users');
+      const snapshot = await get(child(usersRef, emailKey));
       if (snapshot.exists()) {
         setError('Пользователь уже существует');
         return;
       }
+
+      const registered = await registerUser(email.trim(), password, `${surname} ${name}`, role);
+      const dbKey = emailKey;
+
       const userData = {
-        id: email.replace(/\./g, '_'),
+        id: dbKey,
+        uid: registered.uid,
+        emailKey,
         name: `${surname} ${name}`,
         email,
-        password,
         role,
         createdAt: Date.now(),
       };
-      await set(ref(database, 
-        'users/' + email.replace(/\./g, '_')), userData);
-      
+      await set(ref(currentDb, 'users/' + dbKey), userData);
+
       // Also save to profile with separate fields
       const profileData = {
         firstName: name,
@@ -153,13 +161,12 @@ export default function AuthScreen() {
         avatarUrl: '',
         avatarPresetId: 1,
       };
-      await set(ref(database, 
-        'users/' + email.replace(/\./g, '_') + '/profile'), profileData);
-      
+      await set(ref(currentDb, 'users/' + dbKey + '/profile'), profileData);
+
       await AsyncStorage.setItem('user', JSON.stringify(userData));
       router.replace('/(tabs)');
     } catch (error: any) {
-      console.log('Register error:', error.code, error.message);
+      console.log('Register error:', error.message);
       setError(error.message || 'Ошибка регистрации');
     } finally {
       setLoading(false);
@@ -167,28 +174,20 @@ export default function AuthScreen() {
   };
 
   const handleForgotPassword = async () => {
-  if (!email.trim()) {
+    if (!email.trim()) {
+      Alert.alert(
+        'Введите email',
+        'Укажите email в поле выше, мы отправим ссылку для сброса пароля'
+      );
+      return;
+    }
     Alert.alert(
-      'Введите email', 
-      'Укажите email в поле выше, мы отправим ссылку для сброса пароля'
+      'Сброс пароля',
+      'Обратитесь к администратору для сброса пароля.'
     );
-    return;
-  }
-  try {
-    const { sendPasswordResetEmail } = await import('firebase/auth');
-    const { getAuth } = await import('firebase/auth');
-    const auth = getAuth();
-    await sendPasswordResetEmail(auth, email.trim());
-    Alert.alert(
-      '✅ Письмо отправлено',
-      'Проверьте вашу почту и следуйте инструкциям для сброса пароля'
-    );
-  } catch (error: any) {
-    Alert.alert('Ошибка', 'Пользователь с таким email не найден');
-  }
-};
+  };
 
-const handleLogin = async () => {
+  const handleLogin = async () => {
     if (!email || !password) {
       setError('Заполните все поля');
       return;
@@ -211,26 +210,28 @@ const handleLogin = async () => {
     setError('');
 
     try {
-      const snapshot = await get(
-        ref(database, 'users/' + email.replace(/\./g, '_'))
-      );
+      const emailKey = email.replace(/\./g, '_');
+      const currentDb = getFirebaseDB();
+
+      const userData = await loginUser(email.trim(), password);
+      console.log('[Auth Debug] Login user:', userData);
+
+      let snapshot = await get(ref(currentDb, 'users/' + emailKey));
+      console.log('[Auth Debug] Login RTDB snapshot:', snapshot.val());
+
       if (!snapshot.exists()) {
         setError('Пользователь не найден');
         return;
       }
-      const userData = snapshot.val();
-      if (userData.password !== password) {
-        setError('Неверный пароль');
-        return;
-      }
-      // Ensure id is set in userData
-      if (!userData.id) {
-        userData.id = email.replace(/\./g, '_');
-      }
-      await AsyncStorage.setItem('user', JSON.stringify(userData));
+
+      const dbUser = snapshot.val();
+      dbUser.id = emailKey;
+      dbUser.uid = userData.uid;
+      dbUser.emailKey = emailKey;
+      await AsyncStorage.setItem('user', JSON.stringify(dbUser));
       router.replace('/(tabs)');
     } catch (error: any) {
-      console.log('Login error:', error.code, error.message);
+      console.log('Login error:', error.message);
       setError(error.message || 'Ошибка входа');
     } finally {
       setLoading(false);

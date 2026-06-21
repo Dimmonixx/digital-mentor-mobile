@@ -1,4 +1,4 @@
-import { firestore } from '@/constants/firebase';
+import { getFirebaseFirestore } from '@/constants/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
@@ -16,14 +16,14 @@ export default function IncomingArchiveWatcher() {
       const raw = await AsyncStorage.getItem('user');
       if (!raw) return;
       const user = JSON.parse(raw);
-      const rawUid: string = user.id || user.uid || user.email || '';
+      const rawUid: string = user.uid || user.id || user.email || '';
       const uid = rawUid.replace(/\./g, '_');
       if (!uid) return;
 
       console.log('ROOT_WATCHER: Запуск сквозного слушателя входящих. uid =', uid);
 
       const q = query(
-        collection(firestore, 'archives'),
+        collection(getFirebaseFirestore(), 'archives'),
         where('sharedWith', 'array-contains', uid),
       );
 

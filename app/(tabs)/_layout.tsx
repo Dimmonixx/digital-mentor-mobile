@@ -4,8 +4,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Redirect, Tabs } from 'expo-router';
 
-import { firestore } from '@/constants/firebase';
-import { onValue, ref, set } from 'firebase/database';
+import { getFirebaseDB, getFirebaseFirestore } from '@/constants/firebase';
+import { query as dbQuery, equalTo, onValue, orderByChild, ref, set } from 'firebase/database';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -22,8 +22,6 @@ import GlobalHeader from '@/components/global-header';
 
 import DrawerMenu from '@/components/DrawerMenu';
 
-import { database } from '@/constants/firebase';
-
 import { HeaderHeightProvider } from '../../context/HeaderHeightContext';
 
 import { playSuccessSound } from '../../utils/audio';
@@ -34,51 +32,25 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 
 
-const countNewOrdersForUser = (orders: { status?: string; doctorId?: string; doctorName?: string; technicianId?: string; technicianName?: string; techName?: string }[], currentUser: { email?: string; id?: string; name?: string; role?: string }) => {
+const countNewOrdersForUser = (orders: { status?: string; doctorId?: string; technicianId?: string }[], currentUser: { id?: string; uid?: string; role?: string }) => {
 
   return orders.filter((order) => {
 
     if (order.status !== 'new') return false;
 
+    const userId = currentUser.uid || currentUser.id;
 
-
-    const userId = currentUser.email || currentUser.id;
-
-    const userName = currentUser.name;
-
-
+    if (!userId) return false;
 
     if (currentUser.role === 'technician') {
-
-      return (
-
-        order.technicianId === userId ||
-
-        order.technicianName === userName ||
-
-        order.techName === userName
-
-      );
-
+      return order.technicianId === userId;
     }
-
-
 
     if (currentUser.role === 'doctor') {
-
-      return (
-
-        order.doctorId === userId ||
-
-        order.doctorName === userName
-
-      );
-
+      return order.doctorId === userId;
     }
 
-
-
-    return true;
+    return false;
 
   }).length;
 
@@ -121,8 +93,9 @@ export default function TabLayout() {
     const rawUid: string = (user as any).id || (user as any).uid || (user as any).email || '';
     const uid = rawUid.replace(/\./g, '_');
     if (!uid) return;
+    const currentFirestore = getFirebaseFirestore();
     const q = query(
-      collection(firestore, 'archives'),
+      collection(currentFirestore, 'archives'),
       where('sharedWith', 'array-contains', uid),
     );
     const unsub = onSnapshot(q, (snap) => {
@@ -155,15 +128,23 @@ export default function TabLayout() {
 
   // Подписка баланса алмазов из RTDB — единственный источник истины
   useEffect(() => {
-    if (!user) return;
-    const uid: string = ((user as any).id || (user as any).uid || (user as any).email || '').replace(/\./g, '_');
+    if (!user) {
+      console.log('[Auth Debug] _layout: no user, skipping balance listener');
+      return;
+    }
+    const uid: string = (user as any)?.uid || (user as any)?.id || (user as any)?.email?.replace(/\./g, '_') || '';
+    console.log('[Auth Debug] _layout: formatted balance path key:', uid);
     if (!uid) return;
-    const diamondRef = ref(database, `users/${uid}/diamondBalance`);
+    const currentDb = getFirebaseDB();
+    const diamondRef = ref(currentDb, `users/${uid}/diamondBalance`);
+    console.log('[Auth Debug] _layout: subscribing to', `users/${uid}/diamondBalance`);
     const unsub = onValue(diamondRef, (snap) => {
       const val = snap.val();
+      console.log('[Auth Debug] _layout: raw diamondBalance snapshot:', val);
       if (val !== null && val !== undefined) {
         setDiamondBalance(val);
         diamondBalanceRef.current = val;
+        (globalThis as any).forceDiamondUpdate?.();
         console.log('💎 RTDB_BALANCE: Баланс из RTDB =', val, '| путь: users/' + uid + '/diamondBalance');
       } else {
         // Поля нет — инициализируем значением из кэша или 20
@@ -172,6 +153,8 @@ export default function TabLayout() {
         console.log('💎 RTDB_BALANCE: Поле не найдено, записываем начальный баланс =', initial, '| путь: users/' + uid + '/diamondBalance');
       }
       console.log('💎 СИНХРОНИЗАЦИЯ: Алмазы переведены на Firebase RTDB для', uid);
+    }, (error) => {
+      console.error('[Firebase Error Check] _layout balance:', error);
     });
     return () => unsub();
   }, [user]);
@@ -198,9 +181,10 @@ export default function TabLayout() {
       AsyncStorage.getItem('user').then((raw) => {
         if (!raw) return;
         const u = JSON.parse(raw);
-        const uid: string = (u.id || u.uid || u.email || '').replace(/\./g, '_');
+        const uid: string = u?.uid || u?.id || u?.email?.replace(/\./g, '_') || '';
         if (!uid) return;
-        set(ref(database, `users/${uid}/diamondBalance`), newBalance)
+        const currentDb = getFirebaseDB();
+        set(ref(currentDb, `users/${uid}/diamondBalance`), newBalance)
           .catch((e) => console.log('💎 RTDB_SPEND_ERROR:', e));
       });
 
@@ -224,7 +208,12 @@ export default function TabLayout() {
 
 
 
-    const ordersRef = ref(database, 'orders');
+    const userId = user.uid || user.id;
+    if (!userId) return;
+
+    const field = user.role === 'doctor' ? 'doctorId' : 'technicianId';
+    const currentDb = getFirebaseDB();
+    const ordersRef = dbQuery(ref(currentDb, 'orders'), orderByChild(field), equalTo(userId));
 
     const unsubscribe = onValue(
 
@@ -296,7 +285,8 @@ export default function TabLayout() {
 
 
 
-    const requestsRef = ref(database, 'connection_requests');
+    const currentDb = getFirebaseDB();
+    const requestsRef = ref(currentDb, 'connection_requests');
 
     const unsubscribe = onValue(
 
@@ -314,7 +304,7 @@ export default function TabLayout() {
 
           Object.entries(data).forEach(([key, req]: any) => {
 
-            if (req && req.to === user.id && req.status === 'pending') {
+            if (req && (req.to === user.uid || req.to === user.id) && req.status === 'pending') {
 
               pendingCount++;
 
@@ -539,7 +529,7 @@ export default function TabLayout() {
 
             options={{
 
-              title: 'Премиум',
+              title: 'Маркет',
 
               href: '/(tabs)/balance',
 

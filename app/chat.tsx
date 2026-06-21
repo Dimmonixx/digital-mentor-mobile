@@ -1,5 +1,5 @@
 import { API_BASE_URL } from '@/constants/config';
-import { database } from '@/constants/firebase';
+import { getFirebaseDB } from '@/constants/firebase';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
@@ -144,12 +144,12 @@ export default function ChatScreen() {
 
   // Подписка на онлайн-статус пользователей
   const setupOnlineStatus = () => {
-    const activeUsersRef = ref(database, 'chat_active_users');
+    const activeUsersRef = ref(getFirebaseDB(), 'chat_active_users');
 
     // Добавляем текущего пользователя в список активных
     const addUserToOnline = async () => {
       if (username) {
-        const userRef = ref(database, `chat_active_users/${username}`);
+        const userRef = ref(getFirebaseDB(), `chat_active_users/${username}`);
         await set(userRef, {
           username: username,
           lastSeen: Date.now(),
@@ -160,7 +160,7 @@ export default function ChatScreen() {
     // Удаляем текущего пользователя из списка активных при выходе
     const removeUserFromOnline = async () => {
       if (username) {
-        const userRef = ref(database, `chat_active_users/${username}`);
+        const userRef = ref(getFirebaseDB(), `chat_active_users/${username}`);
         await remove(userRef);
       }
     };
@@ -173,7 +173,7 @@ export default function ChatScreen() {
         const users = snapshot.val();
         Object.keys(users).forEach(key => {
           if (users[key].lastSeen < fiveMinutesAgo) {
-            remove(ref(database, `chat_active_users/${key}`));
+            remove(ref(getFirebaseDB(), `chat_active_users/${key}`));
           }
         });
       }
@@ -237,7 +237,7 @@ export default function ChatScreen() {
   };
 
   const setupFirebaseListener = () => {
-    const messagesRef = ref(database, 'chat_messages');
+    const messagesRef = ref(getFirebaseDB(), 'chat_messages');
     const unsubscribe = onValue(messagesRef, (snapshot: any) => {
       const data = snapshot.val();
       if (data) {
@@ -279,7 +279,7 @@ export default function ChatScreen() {
     setNewMessage('');
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const messagesRef = ref(database, 'chat_messages');
+      const messagesRef = ref(getFirebaseDB(), 'chat_messages');
       await push(messagesRef, {
         username: username,
         text,
@@ -316,7 +316,7 @@ export default function ChatScreen() {
   };
 
   const addReaction = async (messageId: string, emoji: string) => {
-    const messageRef = ref(database, `chat_messages/${messageId}/reactions/${emoji}`);
+    const messageRef = ref(getFirebaseDB(), `chat_messages/${messageId}/reactions/${emoji}`);
     const snapshot = await get(messageRef);
     const current = snapshot.val() || 0;
     await set(messageRef, current + 1);
@@ -326,7 +326,7 @@ export default function ChatScreen() {
   const deleteMessage = async (messageId: string) => {
     try {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const messageRef = ref(database, `chat_messages/${messageId}`);
+      const messageRef = ref(getFirebaseDB(), `chat_messages/${messageId}`);
       await remove(messageRef);
     } catch (error) {
       console.error('Error deleting message:', error);
@@ -362,7 +362,7 @@ export default function ChatScreen() {
           return;
         }
         
-        const messagesRef = ref(database, 'chat_messages');
+        const messagesRef = ref(getFirebaseDB(), 'chat_messages');
         await push(messagesRef, {
           username: username,
           text: '',

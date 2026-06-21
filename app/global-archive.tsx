@@ -1,5 +1,5 @@
 import BottomTabBar from '@/components/BottomTabBar';
-import { firestore } from '@/constants/firebase';
+import { getFirebaseDB, getFirebaseFirestore } from '@/constants/firebase';
 import {
     ARCHIVE_TYPE_ICONS,
     ARCHIVE_TYPE_LABELS,
@@ -13,7 +13,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { router, useLocalSearchParams } from 'expo-router';
-import { get, getDatabase, ref } from 'firebase/database';
+import { get, ref } from 'firebase/database';
 import {
     addDoc,
     arrayRemove,
@@ -104,7 +104,7 @@ function ArchiveCard({
     setExpanded(opening);
     // При первом раскрытии входящей карточки пишем readBy
     if (opening && filterMode === 'incoming' && myUid && !readBy[myUid] && !item.id.startsWith('local_')) {
-      updateDoc(doc(firestore, ARCHIVE_COLLECTION, item.id), { [`readBy.${myUid}`]: true })
+      updateDoc(doc(getFirebaseFirestore(), ARCHIVE_COLLECTION, item.id), { [`readBy.${myUid}`]: true })
         .catch(() => {});
     }
   };
@@ -1085,7 +1085,7 @@ export default function GlobalArchiveScreen() {
   useEffect(() => {
     if (!authUid) return;
     const q = query(
-      collection(firestore, ARCHIVE_COLLECTION),
+      collection(getFirebaseFirestore(), ARCHIVE_COLLECTION),
       where('sharedWith', 'array-contains', authUid),
     );
     const unsub = onSnapshot(q, (snap) => {
@@ -1158,7 +1158,7 @@ export default function GlobalArchiveScreen() {
       }
     });
 
-    const col = collection(firestore, ARCHIVE_COLLECTION);
+    const col = collection(getFirebaseFirestore(), ARCHIVE_COLLECTION);
     console.log('SUBSCRIBE_DEBUG: mode =', mode, '| uid =', uid);
     const q = mode === 'mine'
       ? query(col, where('userId', '==', uid))
@@ -1211,9 +1211,8 @@ export default function GlobalArchiveScreen() {
 
   const loadPartners = async () => {
     if (!currentUser) return;
-    const uid: string = normalizeUid(currentUser.id || currentUser.uid || currentUser.email || '');
-    const db = getDatabase();
-    const snap = await get(ref(db, 'partnerships'));
+    const uid: string = normalizeUid(currentUser.uid || currentUser.id || currentUser.email || '');
+    const snap = await get(ref(getFirebaseDB(), 'partnerships'));
     if (!snap.exists()) return;
     const list: Partner[] = [];
     const seen = new Set<string>();
@@ -1301,14 +1300,14 @@ export default function GlobalArchiveScreen() {
           if (!compressed.base64) throw new Error('base64 пустой после сжатия');
           const dataUri = `data:image/jpeg;base64,${compressed.base64}`;
           console.log('BASE64_SUCCESS: Картинка сжата! Длина строки:', dataUri.length, '| ~', Math.round(dataUri.length * 0.75 / 1024), 'KB');
-          await updateDoc(doc(firestore, ARCHIVE_COLLECTION, docId), { imageUri: dataUri });
+          await updateDoc(doc(getFirebaseFirestore(), ARCHIVE_COLLECTION, docId), { imageUri: dataUri });
         } catch (err) {
           console.log('BASE64_ERROR:', (err as any)?.message ?? err);
         }
       };
 
       console.log('BACKGROUND_SYNC: sharedWith =', JSON.stringify(firestorePayload.sharedWith), '| userId =', firestorePayload.userId, '| размер =', JSON.stringify(firestorePayload).length);
-      addDoc(collection(firestore, ARCHIVE_COLLECTION), firestorePayload)
+      addDoc(collection(getFirebaseFirestore(), ARCHIVE_COLLECTION), firestorePayload)
         .then((docRef) => {
           console.log('🎉🎉🎉 FIRESTORE_LIVE_SUCCESS: Документ создан! ID:', docRef.id);
           uploadImageIfNeeded(docRef.id);
@@ -1363,7 +1362,7 @@ export default function GlobalArchiveScreen() {
         const patch: any = { sharedWith: arrayUnion(colleagueId) };
         if (finalImageUri && finalImageUri.startsWith('data:')) patch.imageUri = finalImageUri;
 
-        updateDoc(doc(firestore, ARCHIVE_COLLECTION, localId), patch)
+        updateDoc(doc(getFirebaseFirestore(), ARCHIVE_COLLECTION, localId), patch)
           .then(() => console.log('SHARE_TRACE [OK]: updateDoc выполнен, imageUri length =', finalImageUri.length))
           .catch((err) => console.log('SHARE_TRACE [ERROR]:', err?.message ?? err));
       })();
@@ -1400,11 +1399,11 @@ export default function GlobalArchiveScreen() {
               const isOwner = item.userId === myUid;
               if (isOwner) {
                 // Владелец помечает как удалённый — коллеги продолжают видеть
-                updateDoc(doc(firestore, ARCHIVE_COLLECTION, item.id), { deletedByOwner: true })
+                updateDoc(doc(getFirebaseFirestore(), ARCHIVE_COLLECTION, item.id), { deletedByOwner: true })
                   .catch((err) => console.error('[deleteArchiveItem] owner soft-delete error', err));
               } else {
                 // Коллега убирает себя из sharedWith — только у него исчезает
-                updateDoc(doc(firestore, ARCHIVE_COLLECTION, item.id), { sharedWith: arrayRemove(myUid) })
+                updateDoc(doc(getFirebaseFirestore(), ARCHIVE_COLLECTION, item.id), { sharedWith: arrayRemove(myUid) })
                   .catch((err) => console.error('[deleteArchiveItem] arrayRemove error', err));
               }
             }

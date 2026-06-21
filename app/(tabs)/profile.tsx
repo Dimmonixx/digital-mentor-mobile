@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { ref as dbRef, get, onValue, remove, set } from 'firebase/database';
+import { ref as dbRef, equalTo, get, onValue, orderByChild, query, remove, set } from 'firebase/database';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import {
@@ -23,7 +23,7 @@ import {
     View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { database, storage } from '../../constants/firebase';
+import { getFirebaseDB, getFirebaseStorage } from '../../constants/firebase';
 import { useAuth } from '../../hooks/useAuth';
 
 const GOLD = '#f2ca50';
@@ -143,14 +143,14 @@ export default function ProfileScreen() {
   };
 
   const loadProfilePartners = () => {
-    const userId = user?.id;
+    const userId = user?.uid || user?.id;
     const userRole = user?.role;
     if (!userId || !userRole) {
       setLinkedPartners([]);
       return () => {};
     }
 
-    const partnershipsRef = dbRef(database, 'partnerships');
+    const partnershipsRef = dbRef(getFirebaseDB(), 'partnerships');
     const unsubscribe = onValue(partnershipsRef, (snapshot) => {
       if (!snapshot.exists()) {
         setLinkedPartners([]);
@@ -208,7 +208,7 @@ export default function ProfileScreen() {
         return;
       }
 
-      const partnershipsRef = dbRef(database, 'partnerships');
+      const partnershipsRef = dbRef(getFirebaseDB(), 'partnerships');
       const snapshot = await get(partnershipsRef);
 
       if (!snapshot.exists()) {
@@ -260,6 +260,9 @@ export default function ProfileScreen() {
   };
 
   useEffect(() => {
+    const userId = user?.uid || user?.id || '';
+    if (!userId) return;
+
     loadProfile();
     loadStatistics();
     loadInviteCode();
@@ -267,9 +270,41 @@ export default function ProfileScreen() {
     const unsubscribePartners = loadProfilePartners();
     const unsubscribeRequests = loadIncomingRequests();
 
+    const profileRef = dbRef(getFirebaseDB(), `users/${userId}/profile`);
+    const unsubscribeProfile = onValue(profileRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const rolePosition =
+          user?.role === 'doctor'
+            ? 'Стоматолог'
+            : user?.role === 'technician'
+              ? 'Зубной техник'
+              : data.position;
+        const mergedProfile = { ...(data as ProfileData), position: rolePosition };
+        setProfile(mergedProfile);
+        AsyncStorage.setItem('userProfile', JSON.stringify(mergedProfile)).catch(() => {});
+      }
+    });
+
+    const userRef = dbRef(getFirebaseDB(), `users/${userId}`);
+    const unsubscribeUser = onValue(userRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        if (data.inviteCode) setInviteCode(data.inviteCode);
+        if (data.createdAt) {
+          setStatistics(prev => ({
+            ...prev,
+            registrationDate: new Date(data.createdAt).toLocaleDateString('ru-RU'),
+          }));
+        }
+      }
+    });
+
     return () => {
       unsubscribePartners();
       unsubscribeRequests();
+      unsubscribeProfile();
+      unsubscribeUser();
     };
   }, [user]);
 
@@ -277,14 +312,14 @@ export default function ProfileScreen() {
     try {
       const storedUser = await AsyncStorage.getItem('user');
       const currentUser = storedUser ? JSON.parse(storedUser) : null;
-      const userId = currentUser?.id || user?.id;
+      const userId = currentUser?.uid || user?.uid || currentUser?.id || user?.id;
       if (!userId) {
         console.log('Profile: No userId yet, skipping load');
         return;
       }
 
       console.log('Profile: Loading profile for userId:', userId);
-      const profileRef = dbRef(database, `users/${userId}/profile`);
+      const profileRef = dbRef(getFirebaseDB(), `users/${userId}/profile`);
       const snapshot = await get(profileRef);
       if (snapshot.exists()) {
         const data = snapshot.val();
@@ -329,23 +364,25 @@ export default function ProfileScreen() {
     try {
       const storedUser = await AsyncStorage.getItem('user');
       const currentUser = storedUser ? JSON.parse(storedUser) : null;
-      const userId = currentUser?.id || user?.id;
+      const userId = currentUser?.uid || user?.uid || currentUser?.id || user?.id;
       if (!userId) return;
 
       // Load orders count
-      const ordersRef = dbRef(database, `orders/${userId}`);
-      const ordersSnapshot = await get(ordersRef);
+      const role = currentUser?.role || user?.role;
+      const field = role === 'technician' ? 'technicianId' : 'doctorId';
+      const ordersQuery = query(dbRef(getFirebaseDB(), 'orders'), orderByChild(field), equalTo(userId));
+      const ordersSnapshot = await get(ordersQuery);
       const ordersData = ordersSnapshot.val();
       const ordersCount = ordersData ? Object.keys(ordersData).length : 0;
       
       // Load analyses count (from color-analyzer results)
-      const analysesRef = dbRef(database, `colorAnalyses/${userId}`);
+      const analysesRef = dbRef(getFirebaseDB(), `colorAnalyses/${userId}`);
       const analysesSnapshot = await get(analysesRef);
       const analysesData = analysesSnapshot.val();
       const analysesCount = analysesData ? Object.keys(analysesData).length : 0;
 
       // Get registration date from user data
-      const userRef = dbRef(database, `users/${userId}`);
+      const userRef = dbRef(getFirebaseDB(), `users/${userId}`);
       const userSnapshot = await get(userRef);
       const userData = userSnapshot.val();
       const regDate = userData?.createdAt ? new Date(userData.createdAt).toLocaleDateString('ru-RU') : '';
@@ -364,10 +401,10 @@ export default function ProfileScreen() {
     try {
       const storedUser = await AsyncStorage.getItem('user');
       const currentUser = storedUser ? JSON.parse(storedUser) : null;
-      const userId = currentUser?.id || user?.id;
+      const userId = currentUser?.uid || user?.uid || currentUser?.id || user?.id;
       if (!userId) return;
 
-      const userRef = dbRef(database, `users/${userId}`);
+      const userRef = dbRef(getFirebaseDB(), `users/${userId}`);
       const userSnapshot = await get(userRef);
       const userData = userSnapshot.val();
 
@@ -387,13 +424,13 @@ export default function ProfileScreen() {
   const handleLinkPartner = async () => {
     try {
       setLinkingLoading(true);
-      const userId = user?.id;
+      const userId = user?.uid || user?.id;
       const userName = user?.name;
       const userRole = user?.role;
       if (!userId || !userName || !userRole) return;
 
       // Query for user with the entered invite code
-      const usersRef = dbRef(database, 'users');
+      const usersRef = dbRef(getFirebaseDB(), 'users');
       const snapshot = await get(usersRef);
       const allUsers = snapshot.val();
 
@@ -423,7 +460,7 @@ export default function ProfileScreen() {
       }
 
       // Check if request already exists
-      const requestsRef = dbRef(database, 'connection_requests');
+      const requestsRef = dbRef(getFirebaseDB(), 'connection_requests');
       const requestsSnapshot = await get(requestsRef);
       if (requestsSnapshot.exists()) {
         const requestsData = requestsSnapshot.val() as Record<string, any>;
@@ -439,7 +476,7 @@ export default function ProfileScreen() {
 
       // Create connection request
       const requestId = `${userId}_${targetUser.uid}_${Date.now()}`;
-      const requestRef = dbRef(database, `connection_requests/${requestId}`);
+      const requestRef = dbRef(getFirebaseDB(), `connection_requests/${requestId}`);
       await set(requestRef, {
         from: userId,
         to: targetUser.uid,
@@ -474,15 +511,15 @@ export default function ProfileScreen() {
             try {
               const storedUser = await AsyncStorage.getItem('user');
               const currentUser = storedUser ? JSON.parse(storedUser) : null;
-              const userId = currentUser?.id || user?.id;
+              const userId = currentUser?.uid || user?.uid || currentUser?.id || user?.id;
               if (!userId) return;
 
               // Remove both partnership keys (mutual deletion)
               const key1 = `${userId}_${partnerId}`;
               const key2 = `${partnerId}_${userId}`;
 
-              const ref1 = dbRef(database, `partnerships/${key1}`);
-              const ref2 = dbRef(database, `partnerships/${key2}`);
+              const ref1 = dbRef(getFirebaseDB(), `partnerships/${key1}`);
+              const ref2 = dbRef(getFirebaseDB(), `partnerships/${key2}`);
 
               await remove(ref1);
               await remove(ref2);
@@ -498,14 +535,14 @@ export default function ProfileScreen() {
   };
 
   const loadIncomingRequests = () => {
-    const userId = user?.id;
+    const userId = user?.uid || user?.id;
     if (!userId) {
       setIncomingRequests([]);
       setSentRequests(new Set());
       return () => {};
     }
 
-    const requestsRef = dbRef(database, 'connection_requests');
+    const requestsRef = dbRef(getFirebaseDB(), 'connection_requests');
     const unsubscribe = onValue(requestsRef, (snapshot) => {
       if (!snapshot.exists()) {
         setIncomingRequests([]);
@@ -519,7 +556,7 @@ export default function ProfileScreen() {
 
       Object.entries(requestsData).forEach(([key, req]) => {
         if (req && req.status === 'pending') {
-          if (req.to === userId) {
+          if (req.to === userId || req.to === user?.id) {
             pendingRequests.push({
               id: key,
               from: req.from,
@@ -528,7 +565,7 @@ export default function ProfileScreen() {
               senderName: req.senderName,
               senderRole: req.senderRole,
             });
-          } else if (req.from === userId) {
+          } else if (req.from === userId || req.from === user?.id) {
             sentRequestTargets.add(req.to);
           }
         }
@@ -547,13 +584,13 @@ export default function ProfileScreen() {
     try {
       const storedUser = await AsyncStorage.getItem('user');
       const currentUser = storedUser ? JSON.parse(storedUser) : null;
-      const userId = currentUser?.id || user?.id;
+      const userId = currentUser?.uid || user?.uid || currentUser?.id || user?.id;
       const userRole = currentUser?.role || user?.role;
       const userName = currentUser?.name || user?.name;
       if (!userId || !userRole || !userName) return;
 
       // Update request status to accepted
-      const requestRef = dbRef(database, `connection_requests/${requestId}`);
+      const requestRef = dbRef(getFirebaseDB(), `connection_requests/${requestId}`);
       await set(requestRef, { status: 'accepted' });
 
       // Create mutual partnership (write to both sides)
@@ -562,8 +599,8 @@ export default function ProfileScreen() {
       const technicianUid = userRole === 'technician' ? userId : fromUserId;
       const technicianName = userRole === 'technician' ? userName : senderName;
 
-      const partnershipRef1 = dbRef(database, `partnerships/${userId}_${fromUserId}`);
-      const partnershipRef2 = dbRef(database, `partnerships/${fromUserId}_${userId}`);
+      const partnershipRef1 = dbRef(getFirebaseDB(), `partnerships/${userId}_${fromUserId}`);
+      const partnershipRef2 = dbRef(getFirebaseDB(), `partnerships/${fromUserId}_${userId}`);
 
       await set(partnershipRef1, {
         doctorUid,
@@ -592,7 +629,7 @@ export default function ProfileScreen() {
 
   const handleRejectRequest = async (requestId: string) => {
     try {
-      const requestRef = dbRef(database, `connection_requests/${requestId}`);
+      const requestRef = dbRef(getFirebaseDB(), `connection_requests/${requestId}`);
       await set(requestRef, { status: 'rejected' });
 
       await loadIncomingRequests();
@@ -623,7 +660,7 @@ export default function ProfileScreen() {
         // Upload to Firebase Storage
         const response = await fetch(result.assets[0].uri);
         const blob = await response.blob();
-        const storageRef = ref(storage, `avatars/${userId}/avatar.jpg`);
+        const storageRef = ref(getFirebaseStorage(), `avatars/${userId}/avatar.jpg`);
         
         await uploadBytes(storageRef, blob);
         const downloadUrl = await getDownloadURL(storageRef);
@@ -658,7 +695,7 @@ export default function ProfileScreen() {
       const userId = user?.id;
       if (!userId) return;
 
-      const profileRef = dbRef(database, `users/${userId}/profile`);
+      const profileRef = dbRef(getFirebaseDB(), `users/${userId}/profile`);
       await set(profileRef, profile);
       showFeedback('Успешно', 'Профиль сохранён');
     } catch (error) {

@@ -1,4 +1,4 @@
-import { firestore } from '@/constants/firebase';
+import { getFirebaseFirestore } from '@/constants/firebase';
 import { ArchiveItem, ArchiveItemData, ArchiveItemType } from '@/types/archive';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -19,7 +19,7 @@ export async function saveToArchive(
       return null;
     }
     const user = JSON.parse(raw);
-    const userId: string = user.id || user.uid || user.email || 'unknown';
+    const userId: string = user.uid || user.id || user.email || 'unknown';
 
     console.log('ARCHIVE_DEBUG: saveToArchive userId =', userId, 'type =', type);
 
@@ -69,7 +69,7 @@ export async function saveToArchive(
     const firestorePayload = { ...payload, data: firestoreData, imageUri: firestoreImageUri };
 
     // ── Firestore (фоновая запись) ─────────────────────────────────────────
-    const doc = await addDoc(collection(firestore, ARCHIVE_COLLECTION), firestorePayload);
+    const doc = await addDoc(collection(getFirebaseFirestore(), ARCHIVE_COLLECTION), firestorePayload);
     console.log('ARCHIVE_DEBUG: saved to Firestore, docId =', doc.id);
 
     // Обновляем локальный id на реальный Firestore id

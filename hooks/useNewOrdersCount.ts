@@ -1,20 +1,22 @@
-import { useEffect, useState } from 'react';
-import { onValue, ref } from 'firebase/database';
-import { database } from '../constants/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { equalTo, onValue, orderByChild, query, ref } from 'firebase/database';
+import { useEffect, useState } from 'react';
+import { getFirebaseDB } from '../constants/firebase';
 
 const countNewOrdersForUser = (ordersList: any[], user: any) => {
   if (!user) return 0;
   const userRole = user.role;
-  const userName = user.name;
+  const userId = user.uid || user.id;
+
+  if (!userId) return 0;
 
   return ordersList.filter((order: any) => {
     if (order.status !== 'new') return false;
-    
+
     if (userRole === 'doctor') {
-      return order.doctor?.name === userName;
+      return order.doctorId === userId;
     } else if (userRole === 'technician') {
-      return order.technician?.name === userName;
+      return order.technicianId === userId;
     }
     return false;
   }).length;
@@ -33,7 +35,11 @@ export const useNewOrdersCount = () => {
   useEffect(() => {
     if (!user) return;
 
-    const ordersRef = ref(database, 'orders');
+    const userId = user.uid || user.id;
+    if (!userId) return;
+
+    const field = user.role === 'doctor' ? 'doctorId' : 'technicianId';
+    const ordersRef = query(ref(getFirebaseDB(), 'orders'), orderByChild(field), equalTo(userId));
     const unsubscribe = onValue(
       ordersRef,
       (snapshot) => {

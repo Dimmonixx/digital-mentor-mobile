@@ -8,7 +8,7 @@ const TABS = [
   { label: 'Наряды', icon: 'clipboard-outline' as const, route: '/(tabs)/search' },
   { label: 'Настройки', icon: 'settings' as const, route: '/(tabs)/settings' },
   { label: 'Профиль', icon: 'person-outline' as const, route: '/(tabs)/profile' },
-  { label: 'Премиум', icon: 'diamond-outline' as const, route: '/(tabs)/balance' },
+  { label: 'Маркет', icon: 'diamond-outline' as const, route: '/(tabs)/balance' },
 ];
 
 export default function BottomTabBar({ activeRoute }: { activeRoute?: string }) {

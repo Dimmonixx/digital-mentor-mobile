@@ -1,7 +1,7 @@
 import {
     API_BASE_URL
 } from '@/constants/config';
-import { firestore } from '@/constants/firebase';
+import { getFirebaseDB, getFirebaseFirestore } from '@/constants/firebase';
 import { saveToArchive } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -10,7 +10,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { ref as dbRef, get, getDatabase } from 'firebase/database';
+import { ref as dbRef, get } from 'firebase/database';
 import { arrayUnion, doc, updateDoc } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -675,10 +675,9 @@ const reset = useCallback(() => {
 
   const loadPartners = async () => {
     if (!currentUser) return;
-    const uid: string = currentUser.id || currentUser.uid || currentUser.email;
+    const uid: string = currentUser.uid || currentUser.id || currentUser.email;
     try {
-      const db = getDatabase();
-      const snap = await get(dbRef(db, 'partnerships'));
+      const snap = await get(dbRef(getFirebaseDB(), 'partnerships'));
       if (!snap.exists()) return;
       const list: { id: string; name: string }[] = [];
       const seen = new Set<string>();
@@ -705,7 +704,7 @@ const reset = useCallback(() => {
     }
     setSharingId(colleagueId);
     try {
-      const docRef = doc(firestore, 'archives', shareArchiveId);
+      const docRef = doc(getFirebaseFirestore(), 'archives', shareArchiveId);
 
       // Сжимаем imageUri в base64 для получателя
       let finalImageUri = '';

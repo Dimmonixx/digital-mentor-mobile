@@ -1,4 +1,4 @@
-﻿import { database } from '@/constants/firebase';
+﻿import { getFirebaseDB } from '@/constants/firebase';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
@@ -6,15 +6,15 @@ import { router } from 'expo-router';
 import { onValue, ref, remove, set } from 'firebase/database';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  FlatList,
-  Image,
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Dimensions,
+    FlatList,
+    Image,
+    SafeAreaView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -245,7 +245,7 @@ export default function CaseClubScreen() {
   );
 
   useEffect(() => {
-    const postsRef = ref(database, 'case_club_posts');
+    const postsRef = ref(getFirebaseDB(), 'case_club_posts');
     const unsub = onValue(postsRef, (snapshot) => {
       const raw = snapshot.exists() ? snapshot.val() : null;
       const arr: any[] = toArray(raw).filter((p: any) => p?.id && p?.description);
@@ -263,7 +263,7 @@ export default function CaseClubScreen() {
       {
         text: 'Удалить', style: 'destructive', onPress: async () => {
           try {
-            await remove(ref(database, `case_club_posts/${id}`));
+            await remove(ref(getFirebaseDB(), `case_club_posts/${id}`));
           } catch (e) {
             console.warn('[CaseClub] Ошибка удаления:', e);
             setPosts(prev => prev.filter(p => p.id !== id));
@@ -275,7 +275,7 @@ export default function CaseClubScreen() {
 
   const deletePhoto = useCallback(async (postId: string) => {
     try {
-      await set(ref(database, `case_club_posts/${postId}/media`), []);
+      await set(ref(getFirebaseDB(), `case_club_posts/${postId}/media`), []);
     } catch (e) {
       console.warn('[CaseClub] Ошибка удаления фото:', e);
     }
@@ -283,7 +283,7 @@ export default function CaseClubScreen() {
 
   const handleLike = useCallback(async (postId: string) => {
     if (!currentUserId) return;
-    const likeRef = ref(database, `case_club_posts/${postId}/likedBy/${currentUserId}`);
+    const likeRef = ref(getFirebaseDB(), `case_club_posts/${postId}/likedBy/${currentUserId}`);
     const post = posts.find(p => p.id === postId);
     const alreadyLiked = post?.likedBy?.[currentUserId];
     try {
@@ -291,7 +291,7 @@ export default function CaseClubScreen() {
         await remove(likeRef);
       } else {
         await set(likeRef, true);
-        await remove(ref(database, `case_club_posts/${postId}/dislikedBy/${currentUserId}`));
+        await remove(ref(getFirebaseDB(), `case_club_posts/${postId}/dislikedBy/${currentUserId}`));
       }
     } catch (e) {
       console.warn('[CaseClub] Ошибка лайка:', e);
@@ -300,7 +300,7 @@ export default function CaseClubScreen() {
 
   const handleDislike = useCallback(async (postId: string) => {
     if (!currentUserId) return;
-    const dislikeRef = ref(database, `case_club_posts/${postId}/dislikedBy/${currentUserId}`);
+    const dislikeRef = ref(getFirebaseDB(), `case_club_posts/${postId}/dislikedBy/${currentUserId}`);
     const post = posts.find(p => p.id === postId);
     const alreadyDisliked = post?.dislikedBy?.[currentUserId];
     try {
@@ -308,7 +308,7 @@ export default function CaseClubScreen() {
         await remove(dislikeRef);
       } else {
         await set(dislikeRef, true);
-        await remove(ref(database, `case_club_posts/${postId}/likedBy/${currentUserId}`));
+        await remove(ref(getFirebaseDB(), `case_club_posts/${postId}/likedBy/${currentUserId}`));
       }
     } catch (e) {
       console.warn('[CaseClub] Ошибка дизлайка:', e);

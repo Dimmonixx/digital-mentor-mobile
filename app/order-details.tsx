@@ -1,4 +1,4 @@
-import { database } from '@/constants/firebase';
+import { getFirebaseDB } from '@/constants/firebase';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -67,7 +67,7 @@ export default function OrderDetailsScreen() {
 
   useEffect(() => {
     if (!orderId) return;
-    const orderRef = ref(database, `orders/${orderId}`);
+    const orderRef = ref(getFirebaseDB(), `orders/${orderId}`);
     const unsubscribe = onValue(orderRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -81,7 +81,7 @@ export default function OrderDetailsScreen() {
 
   // Слушатель для подсчёта новых нарядов
   useEffect(() => {
-    const ordersRef = ref(database, 'orders');
+    const ordersRef = ref(getFirebaseDB(), 'orders');
     const unsubscribe = onValue(ordersRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -99,7 +99,7 @@ export default function OrderDetailsScreen() {
   }, []);
 
   const updateStatus = async (newStatus: string) => {
-    await update(ref(database, `orders/${orderId}`), { 
+    await update(ref(getFirebaseDB(), `orders/${orderId}`), { 
       status: newStatus,
       updatedAt: Date.now(),
     });
@@ -107,7 +107,7 @@ export default function OrderDetailsScreen() {
   };
 
   const deleteOrder = async () => {
-    await remove(ref(database, `orders/${orderId}`));
+    await remove(ref(getFirebaseDB(), `orders/${orderId}`));
     router.back();
   };
 
