@@ -41,8 +41,10 @@ export const registerUser = async (email: string, password: string, name: string
   const uid = push(ref(db, 'users')).key!;
   const userData = { uid, email, name, role, passwordHash: simpleHash(password), createdAt: Date.now() };
   await set(userRef, userData);
-  await AsyncStorage.setItem('user', JSON.stringify(userData));
-  return userData;
+  // Never store passwordHash in AsyncStorage
+  const { passwordHash: _ph, ...safeUserData } = userData;
+  await AsyncStorage.setItem('user', JSON.stringify(safeUserData));
+  return safeUserData;
 };
 
 export const loginUser = async (email: string, password: string) => {
@@ -52,8 +54,10 @@ export const loginUser = async (email: string, password: string) => {
   if (!snap.exists()) throw new Error('Пользователь не найден');
   const userData = snap.val();
   if (userData.passwordHash !== simpleHash(password)) throw new Error('Неверный пароль');
-  await AsyncStorage.setItem('user', JSON.stringify(userData));
-  return userData;
+  // Never store passwordHash in AsyncStorage
+  const { passwordHash: _ph, password: _pw, ...safeUserData } = userData;
+  await AsyncStorage.setItem('user', JSON.stringify(safeUserData));
+  return safeUserData;
 };
 
 export const logoutUser = async () => {
@@ -100,4 +104,9 @@ export const signInWithEmailAndPassword = async (
 
 export const updateProfile = async (_user: any, _profile: any) => {
   return Promise.resolve();
+};
+
+export const isCurrentUserAdmin = async (): Promise<boolean> => {
+  const user = await getCurrentUser();
+  return user?.isAdmin === true || user?.email === 'dimmonix@gmail.com';
 };

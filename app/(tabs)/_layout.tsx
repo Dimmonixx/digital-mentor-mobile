@@ -80,6 +80,7 @@ export default function TabLayout() {
 
   const [diamondBalance, setDiamondBalance] = useState<number>(20);
   const diamondBalanceRef = useRef(diamondBalance);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [drawerVisible, setDrawerVisible] = useState(false);
 
@@ -116,10 +117,16 @@ export default function TabLayout() {
       if (data) {
         const parsed = JSON.parse(data);
         setUser(parsed);
+        const admin = parsed?.isAdmin === true || parsed?.email === 'dimmonix@gmail.com';
+        setIsAdmin(admin);
         // Временно берём кэш пока RTDB не ответил
-        if (parsed.diamondBalance !== undefined) {
+        if (!admin && parsed.diamondBalance !== undefined) {
           setDiamondBalance(parsed.diamondBalance);
           diamondBalanceRef.current = parsed.diamondBalance;
+        }
+        if (admin) {
+          setDiamondBalance(999999);
+          diamondBalanceRef.current = 999999;
         }
       }
       setLoading(false);
@@ -141,6 +148,15 @@ export default function TabLayout() {
     const unsub = onValue(diamondRef, (snap) => {
       const val = snap.val();
       console.log('[Auth Debug] _layout: raw diamondBalance snapshot:', val);
+      // Admins get infinite diamonds — check by email or isAdmin flag
+      const adminCheck = (user as any)?.isAdmin === true || (user as any)?.email === 'dimmonix@gmail.com';
+      if (adminCheck) {
+        setDiamondBalance(999999);
+        diamondBalanceRef.current = 999999;
+        setIsAdmin(true);
+        console.log('💎 ADMIN: unlimited diamonds');
+        return;
+      }
       if (val !== null && val !== undefined) {
         setDiamondBalance(val);
         diamondBalanceRef.current = val;
@@ -169,6 +185,8 @@ export default function TabLayout() {
   useEffect(() => {
     (globalThis as any).getDiamondBalance = () => diamondBalanceRef.current;
     (globalThis as any).spendDiamonds = (amount: number) => {
+      // Admin never spends diamonds
+      if (isAdmin) return true;
       if (diamondBalanceRef.current < amount) return false;
 
       const newBalance = diamondBalanceRef.current - amount;
@@ -193,7 +211,7 @@ export default function TabLayout() {
     (globalThis as any).forceDiamondUpdate = () => {
       setDiamondBalance(prev => prev);
     };
-  }, []);
+  }, [isAdmin]);
 
 
 

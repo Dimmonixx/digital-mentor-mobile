@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { PanResponder, View } from 'react-native';
+import { PanResponder, Text, View } from 'react-native';
 
 export interface Zone {
   id: string;
@@ -19,25 +19,7 @@ interface Props {
   mode?: 'free' | 'linked';
 }
 
-const MIN_SIZE_PX = 40;
-
-const HANDLE_SIZE = 24;
-const HANDLE_RADIUS = 12;
-
-const HANDLE_STYLES: Record<string, any> = {
-  n:  { position: 'absolute', top: -HANDLE_RADIUS, left: '50%', marginLeft: -HANDLE_RADIUS, width: HANDLE_SIZE, height: HANDLE_SIZE, borderRadius: HANDLE_RADIUS, backgroundColor: '#fff', borderWidth: 2, borderColor: '#000', zIndex: 30 },
-  s:  { position: 'absolute', bottom: -HANDLE_RADIUS, left: '50%', marginLeft: -HANDLE_RADIUS, width: HANDLE_SIZE, height: HANDLE_SIZE, borderRadius: HANDLE_RADIUS, backgroundColor: '#fff', borderWidth: 2, borderColor: '#000', zIndex: 30 },
-  e:  { position: 'absolute', right: -HANDLE_RADIUS, top: '50%', marginTop: -HANDLE_RADIUS, width: HANDLE_SIZE, height: HANDLE_SIZE, borderRadius: HANDLE_RADIUS, backgroundColor: '#fff', borderWidth: 2, borderColor: '#000', zIndex: 30 },
-  w:  { position: 'absolute', left: -HANDLE_RADIUS, top: '50%', marginTop: -HANDLE_RADIUS, width: HANDLE_SIZE, height: HANDLE_SIZE, borderRadius: HANDLE_RADIUS, backgroundColor: '#fff', borderWidth: 2, borderColor: '#000', zIndex: 30 },
-  ne: { position: 'absolute', top: -HANDLE_RADIUS, right: -HANDLE_RADIUS, width: HANDLE_SIZE, height: HANDLE_SIZE, borderRadius: HANDLE_RADIUS, backgroundColor: '#fff', borderWidth: 2, borderColor: '#000', zIndex: 35 },
-  nw: { position: 'absolute', top: -HANDLE_RADIUS, left: -HANDLE_RADIUS, width: HANDLE_SIZE, height: HANDLE_SIZE, borderRadius: HANDLE_RADIUS, backgroundColor: '#fff', borderWidth: 2, borderColor: '#000', zIndex: 35 },
-  se: { position: 'absolute', bottom: -HANDLE_RADIUS, right: -HANDLE_RADIUS, width: HANDLE_SIZE, height: HANDLE_SIZE, borderRadius: HANDLE_RADIUS, backgroundColor: '#fff', borderWidth: 2, borderColor: '#000', zIndex: 35 },
-  sw: { position: 'absolute', bottom: -HANDLE_RADIUS, left: -HANDLE_RADIUS, width: HANDLE_SIZE, height: HANDLE_SIZE, borderRadius: HANDLE_RADIUS, backgroundColor: '#fff', borderWidth: 2, borderColor: '#000', zIndex: 35 },
-};
-
-type HandlePosition = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
-
-const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const MIN_SIZE = 0.06;
 
 const DraggableZone = ({
   zone,
@@ -64,104 +46,11 @@ const DraggableZone = ({
   }
 
   const dragStart = useRef({ x: 0, y: 0 });
+  const resizeStart = useRef({ width: 0, height: 0 });
 
   const [localPos, setLocalPos] = useState({
     x: zone.x, y: zone.y, width: zone.width, height: zone.height
   });
-
-  const minW = MIN_SIZE_PX / containerWidth;
-  const minH = MIN_SIZE_PX / containerHeight;
-
-  const applyResize = (start: { x: number; y: number; width: number; height: number }, dx: number, dy: number, position: HandlePosition) => {
-    let newX = start.x;
-    let newY = start.y;
-    let newW = start.width;
-    let newH = start.height;
-
-    if (position.includes('w')) {
-      newX = start.x + dx;
-      newW = start.width - dx;
-    }
-    if (position.includes('e')) {
-      newW = start.width + dx;
-    }
-    if (position.includes('n')) {
-      newY = start.y + dy;
-      newH = start.height - dy;
-    }
-    if (position.includes('s')) {
-      newH = start.height + dy;
-    }
-
-    if (newW < minW) {
-      newW = minW;
-      if (position.includes('w')) {
-        newX = start.x + start.width - minW;
-      }
-    }
-    if (newH < minH) {
-      newH = minH;
-      if (position.includes('n')) {
-        newY = start.y + start.height - minH;
-      }
-    }
-
-    if (newX < 0) {
-      newW = newW + newX;
-      newX = 0;
-    }
-    if (newY < 0) {
-      newH = newH + newY;
-      newY = 0;
-    }
-    if (newX + newW > 1) {
-      newW = 1 - newX;
-    }
-    if (newY + newH > 1) {
-      newH = 1 - newY;
-    }
-
-    if (newW < minW) newW = minW;
-    if (newH < minH) newH = minH;
-
-    return { x: newX, y: newY, width: newW, height: newH };
-  };
-
-  const resizeStart = useRef({ x: 0, y: 0, width: 0, height: 0 });
-
-  const createHandleResponder = (position: HandlePosition) =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onStartShouldSetPanResponderCapture: () => true,
-      onShouldBlockNativeResponder: () => true,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
-        isActiveRef.current = true;
-        onActivate(zone.id);
-        resizeStart.current = { ...posRef.current };
-      },
-      onPanResponderMove: (_, gs) => {
-        const dx = gs.dx / containerWidth;
-        const dy = gs.dy / containerHeight;
-        posRef.current = applyResize(resizeStart.current, dx, dy, position);
-        setLocalPos({ ...posRef.current });
-      },
-      onPanResponderRelease: () => {
-        onActivate(null);
-        onUpdate({ ...zone, ...posRef.current });
-      },
-    });
-
-  const handleResponders = useRef<Record<HandlePosition, ReturnType<typeof PanResponder.create>>>({
-    n: createHandleResponder('n'),
-    s: createHandleResponder('s'),
-    e: createHandleResponder('e'),
-    w: createHandleResponder('w'),
-    ne: createHandleResponder('ne'),
-    nw: createHandleResponder('nw'),
-    se: createHandleResponder('se'),
-    sw: createHandleResponder('sw'),
-  }).current;
 
   const dragResponder = useRef(
     PanResponder.create({
@@ -180,17 +69,50 @@ const DraggableZone = ({
       onPanResponderMove: (_, gs) => {
         const dx = gs.dx / containerWidth;
         const dy = gs.dy / containerHeight;
-        const newX = clamp(
-          dragStart.current.x + dx,
-          0,
-          1 - posRef.current.width
-        );
-        const newY = clamp(
-          dragStart.current.y + dy,
-          0,
-          1 - posRef.current.height
-        );
+        const newX = Math.max(0, Math.min(
+          1 - posRef.current.width,
+          dragStart.current.x + dx
+        ));
+        const newY = Math.max(0, Math.min(
+          1 - posRef.current.height,
+          dragStart.current.y + dy
+        ));
         posRef.current = { ...posRef.current, x: newX, y: newY };
+        setLocalPos({ ...posRef.current });
+      },
+      onPanResponderRelease: () => {
+        onActivate(null);
+        onUpdate({ ...zone, ...posRef.current });
+      },
+    })
+  ).current;
+
+  const resizeResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onShouldBlockNativeResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        isActiveRef.current = true;
+        onActivate(zone.id);
+        resizeStart.current = {
+          width: posRef.current.width,
+          height: posRef.current.height,
+        };
+      },
+      onPanResponderMove: (_, gs) => {
+        const dw = gs.dx / containerWidth;
+        const dh = gs.dy / containerHeight;
+        const newW = Math.max(MIN_SIZE, Math.min(
+          1 - posRef.current.x,
+          resizeStart.current.width + dw
+        ));
+        const newH = Math.max(MIN_SIZE, Math.min(
+          1 - posRef.current.y,
+          resizeStart.current.height + dh
+        ));
+        posRef.current = { ...posRef.current, width: newW, height: newH };
         setLocalPos({ ...posRef.current });
       },
       onPanResponderRelease: () => {
@@ -227,14 +149,25 @@ const DraggableZone = ({
           backgroundColor: zone.color + (isActive ? '35' : '15'),
         }}
       />
-      {(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as HandlePosition[]).map((pos) => (
-        <View
-          key={pos}
-          {...handleResponders[pos].panHandlers}
-          style={HANDLE_STYLES[pos]}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        />
-      ))}
+      <View
+        {...resizeResponder.panHandlers}
+        style={{
+          position: 'absolute',
+          right: -10,
+          bottom: -10,
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+          backgroundColor: zone.color,
+          borderWidth: 2,
+          borderColor: '#fff',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 20,
+        }}
+      >
+        <Text style={{ color: '#fff', fontSize: 10 }}>⤡</Text>
+      </View>
     </View>
   );
 };
@@ -244,6 +177,7 @@ export default function DraggableZones({
   containerHeight,
   zones,
   onZonesChange,
+  mode,
 }: Props) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const zonesRef = useRef(zones);
