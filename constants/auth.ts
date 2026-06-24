@@ -23,6 +23,9 @@ const getApp_ = () => {
 // Lazy getter — never call getDatabase at module top level
 const getDB = () => getDatabase(getApp_());
 
+export const emailToKey = (email: string): string =>
+  email.trim().toLowerCase().replace(/\./g, '_').replace(/@/g, '_at_');
+
 const simpleHash = (str: string) => {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -34,7 +37,8 @@ const simpleHash = (str: string) => {
 
 export const registerUser = async (email: string, password: string, name: string, role: 'doctor' | 'technician') => {
   const db = getDB();
-  const emailKey = email.replace(/\./g, '_').replace(/@/g, '_at_');
+  const emailKey = emailToKey(email);
+  console.log('REGISTER: saving with key:', emailKey, '| email:', email);
   const userRef = ref(db, `users/${emailKey}`);
   const snap = await get(userRef);
   if (snap.exists()) throw new Error('Пользователь уже существует');
@@ -49,7 +53,8 @@ export const registerUser = async (email: string, password: string, name: string
 
 export const loginUser = async (email: string, password: string) => {
   const db = getDB();
-  const emailKey = email.replace(/\./g, '_').replace(/@/g, '_at_');
+  const emailKey = emailToKey(email);
+  console.log('LOGIN: searching for key:', emailKey, '| email:', email);
   const snap = await get(ref(db, `users/${emailKey}`));
   if (!snap.exists()) throw new Error('Пользователь не найден');
   const userData = snap.val();
@@ -74,7 +79,7 @@ export const updateUserProfile = async (updates: any) => {
   const user = await getCurrentUser();
   if (!user) throw new Error('Не авторизован');
   const db = getDB();
-  const emailKey = user.email.replace(/\./g, '_').replace(/@/g, '_at_');
+  const emailKey = emailToKey(user.email);
   await set(ref(db, `users/${emailKey}/profile`), { ...updates, updatedAt: Date.now() });
   const updated = { ...user, ...updates };
   await AsyncStorage.setItem('user', JSON.stringify(updated));

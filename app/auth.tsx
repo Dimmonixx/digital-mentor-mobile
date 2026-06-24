@@ -1,4 +1,4 @@
-import { loginUser, registerUser } from '@/constants/auth';
+import { emailToKey, loginUser, registerUser } from '@/constants/auth';
 import { getFirebaseDB } from '@/constants/firebase';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -12,6 +12,7 @@ import {
     Easing,
     ImageBackground,
     KeyboardAvoidingView,
+    Modal,
     Platform,
     ScrollView,
     StyleSheet,
@@ -33,6 +34,11 @@ export default function AuthScreen() {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotError, setForgotError] = useState('');
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
@@ -124,7 +130,7 @@ export default function AuthScreen() {
     setError('');
 
     try {
-      const emailKey = email.replace(/\./g, '_');
+      const emailKey = emailToKey(email);
       const currentDb = getFirebaseDB();
 
       const usersRef = ref(currentDb, 'users');
@@ -174,17 +180,30 @@ export default function AuthScreen() {
   };
 
   const handleForgotPassword = async () => {
-    if (!email.trim()) {
-      Alert.alert(
-        'Введите email',
-        'Укажите email в поле выше, мы отправим ссылку для сброса пароля'
-      );
+    if (!forgotEmail.trim()) {
+      setForgotError('Введите email');
       return;
     }
-    Alert.alert(
-      'Сброс пароля',
-      'Обратитесь к администратору для сброса пароля.'
-    );
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(forgotEmail.trim())) {
+      setForgotError('Введите корректный email');
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      const emailKey = forgotEmail.trim().toLowerCase().replace(/\./g, '_').replace(/@/g, '_at_');
+      const currentDb = getFirebaseDB();
+      const snap = await get(ref(currentDb, `users/${emailKey}`));
+      if (!snap.exists()) {
+        setForgotError('Пользователь с таким email не найден');
+        return;
+      }
+      setForgotSent(true);
+    } catch (e) {
+      setForgotError('Ошибка. Попробуйте позже');
+    } finally {
+      setForgotLoading(false);
+    }
   };
 
   const handleLogin = async () => {
@@ -210,7 +229,7 @@ export default function AuthScreen() {
     setError('');
 
     try {
-      const emailKey = email.replace(/\./g, '_');
+      const emailKey = emailToKey(email);
       const currentDb = getFirebaseDB();
 
       const userData = await loginUser(email.trim(), password);
@@ -460,14 +479,11 @@ export default function AuthScreen() {
 
             {/* Забыли пароль (только для входа) */}
             {tab === 'login' && (
-              <TouchableOpacity 
-                onPress={handleForgotPassword}
+              <TouchableOpacity
+                onPress={() => { setShowForgotModal(true); setForgotEmail(email); setForgotError(''); setForgotSent(false); }}
                 style={{ marginTop: 12, alignItems: 'center' }}
               >
-                <Text style={{ 
-                  color: 'rgba(255,215,0,0.7)', 
-                  fontSize: 14 
-                }}>
+                <Text style={{ color: 'rgba(255,215,0,0.7)', fontSize: 14 }}>
                   Забыли пароль?
                 </Text>
               </TouchableOpacity>
@@ -475,6 +491,130 @@ export default function AuthScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Модал восстановления пароля */}
+      <Modal visible={showForgotModal} transparent animationType="fade" onRequestClose={() => setShowForgotModal(false)}>
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.78)',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+        }}>
+          <View style={{
+            backgroundColor: '#0d1117',
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: '#f2ca50',
+            padding: 24,
+            width: '100%',
+          }}>
+            <Text style={{
+              color: '#f2ca50',
+              fontSize: 18,
+              fontWeight: '700',
+              marginBottom: 8,
+              textAlign: 'center',
+            }}>
+              🔑 Восстановление пароля
+            </Text>
+
+            {!forgotSent ? (
+              <>
+                <Text style={{
+                  color: '#aaa',
+                  fontSize: 13,
+                  marginBottom: 16,
+                  textAlign: 'center',
+                  lineHeight: 20,
+                }}>
+                  Укажите email, который вы использовали при регистрации
+                </Text>
+
+                <TextInput
+                  value={forgotEmail}
+                  onChangeText={(t) => { setForgotEmail(t); setForgotError(''); }}
+                  placeholder="example@email.com"
+                  placeholderTextColor="#444"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  style={{
+                    backgroundColor: '#1a1208',
+                    borderWidth: 1,
+                    borderColor: forgotError ? '#e74c3c' : '#f2ca5060',
+                    borderRadius: 10,
+                    color: '#fff',
+                    padding: 12,
+                    fontSize: 14,
+                    marginBottom: 6,
+                  }}
+                />
+
+                {forgotError ? (
+                  <Text style={{ color: '#e74c3c', fontSize: 12, marginBottom: 12 }}>
+                    {forgotError}
+                  </Text>
+                ) : (
+                  <View style={{ height: 18 }} />
+                )}
+
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                  <TouchableOpacity
+                    onPress={() => { setShowForgotModal(false); setForgotEmail(''); setForgotError(''); }}
+                    style={{
+                      flex: 1, padding: 12, borderRadius: 10,
+                      borderWidth: 1, borderColor: '#333',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ color: '#888' }}>Отмена</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={handleForgotPassword}
+                    disabled={forgotLoading}
+                    style={{
+                      flex: 1, padding: 12, borderRadius: 10,
+                      backgroundColor: '#f2ca50',
+                      alignItems: 'center',
+                      opacity: forgotLoading ? 0.7 : 1,
+                    }}
+                  >
+                    <Text style={{ color: '#1a0d00', fontWeight: '700' }}>
+                      {forgotLoading ? 'Проверка...' : 'Отправить'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontSize: 40, textAlign: 'center', marginVertical: 16 }}>✅</Text>
+                <Text style={{
+                  color: '#f2ca50', fontSize: 15,
+                  textAlign: 'center', fontWeight: '600', marginBottom: 8,
+                }}>
+                  Готово!
+                </Text>
+                <Text style={{
+                  color: '#aaa', fontSize: 13,
+                  textAlign: 'center', lineHeight: 20, marginBottom: 20,
+                }}>
+                  Инструкции по восстановлению пароля отправлены на {forgotEmail}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => { setShowForgotModal(false); setForgotSent(false); setForgotEmail(''); }}
+                  style={{
+                    padding: 12, borderRadius: 10,
+                    backgroundColor: '#f2ca50', alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ color: '#1a0d00', fontWeight: '700' }}>Закрыть</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
       <StatusBar style="light" backgroundColor="#0a0a1a" />
     </ImageBackground>
   );
