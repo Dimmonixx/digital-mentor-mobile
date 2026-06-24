@@ -1,10 +1,11 @@
 import { emailToKey, loginUser, registerUser } from '@/constants/auth';
 import { getFirebaseDB } from '@/constants/firebase';
+import emailjs from '@emailjs/react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { child, get, ref, set } from 'firebase/database';
+import { child, get, ref, set, update } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     Alert,
@@ -191,16 +192,49 @@ export default function AuthScreen() {
     }
     setForgotLoading(true);
     try {
-      const emailKey = forgotEmail.trim().toLowerCase().replace(/\./g, '_').replace(/@/g, '_at_');
+      const emailKey = emailToKey(forgotEmail);
       const currentDb = getFirebaseDB();
       const snap = await get(ref(currentDb, `users/${emailKey}`));
       if (!snap.exists()) {
         setForgotError('Пользователь с таким email не найден');
         return;
       }
+      const userData = snap.val();
+
+      // Generate temporary password
+      const tempPassword = Math.random().toString(36).slice(-8) +
+        Math.random().toString(36).slice(-4).toUpperCase();
+
+      // Save hashed temp password to Firebase
+      const hashFn = (s: string) => {
+        let h = 0;
+        for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; }
+        return Math.abs(h).toString(36);
+      };
+      await update(ref(currentDb, `users/${emailKey}`), {
+        passwordHash: hashFn(tempPassword),
+        tempPasswordAt: Date.now(),
+      });
+
+      // Send email via EmailJS
+      emailjs.init({
+        publicKey: '9grZ46AJQQvviLerO',
+        blockHeadless: false,
+      });
+      await emailjs.send(
+        'service_rm1eimw',
+        'template_pkoxiqr',
+        {
+          to_email: forgotEmail.trim(),
+          to_name: userData.name || forgotEmail.split('@')[0],
+          temp_password: tempPassword,
+        }
+      );
+
       setForgotSent(true);
-    } catch (e) {
-      setForgotError('Ошибка. Попробуйте позже');
+    } catch (e: any) {
+      console.error('Forgot password error:', e);
+      setForgotError('Ошибка отправки. Попробуйте позже');
     } finally {
       setForgotLoading(false);
     }

@@ -1,3 +1,4 @@
+import GlobalHeader from '@/components/global-header';
 import { API_BASE_URL } from '@/constants/config';
 import { getFirebaseDB } from '@/constants/firebase';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -9,20 +10,20 @@ import { get, off, onValue, push, ref, remove, set } from 'firebase/database';
 import { TrendingUpDown } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
-  Animated,
-  Clipboard,
-  FlatList,
-  Image,
-  ImageBackground,
-  Modal,
-  StatusBar,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    Animated,
+    Clipboard,
+    FlatList,
+    Image,
+    ImageBackground,
+    Modal,
+    StatusBar,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -548,30 +549,31 @@ export default function ChatScreen() {
         style={{ flex: 1 }}
         resizeMode="cover"
       >
-        {/* Header */}
-        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="#f2ca50" />
-          </TouchableOpacity>
+        {/* Header — такой же как на главной */}
+        <GlobalHeader
+          diamonds={currentDiamonds}
+        />
 
-          <View style={styles.onlineIndicator}>
-            <View style={styles.onlineDot} />
-            <Text style={styles.onlineText}>{onlineUsersCount} онлайн</Text>
-          </View>
-
-          <View style={styles.headerRight}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ color: aiAssistantEnabled ? '#4fc3f7' : '#ffffff60', fontSize: 11, fontWeight: '600' }}>
-                ИИ {currentDiamonds} алм.
-              </Text>
-              <Switch
-                value={aiAssistantEnabled}
-                onValueChange={setAiAssistantEnabled}
-                trackColor={{ false: '#ffffff20', true: '#4fc3f730' }}
-                thumbColor={aiAssistantEnabled ? '#4fc3f7' : '#ffffff50'}
-                ios_backgroundColor="#ffffff20"
-              />
+        {/* Chat sub-bar: назад + онлайн + ИИ режим */}
+        <View style={styles.chatSubBar}>
+          <View style={styles.chatSubBarLeft}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.chatBackButton}>
+              <Ionicons name="arrow-back" size={24} color="#f2ca50" />
+            </TouchableOpacity>
+            <View style={styles.chatOnlineRow}>
+              <View style={styles.chatOnlineDot} />
+              <Text style={styles.chatOnlineText}>{onlineUsersCount} онлайн</Text>
             </View>
+          </View>
+          <View style={styles.chatAiRow}>
+            <Text style={styles.chatAiLabel}>ИИ</Text>
+            <Switch
+              value={aiAssistantEnabled}
+              onValueChange={setAiAssistantEnabled}
+              trackColor={{ false: '#1a2233', true: '#f2ca50' }}
+              thumbColor={aiAssistantEnabled ? '#ffffff' : '#a0a0a0'}
+              ios_backgroundColor="#1a2233"
+            />
           </View>
         </View>
 
@@ -721,6 +723,61 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
+  chatSubBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(242, 202, 80, 0.12)',
+    backgroundColor: 'rgba(13, 17, 26, 0.6)',
+  },
+  chatSubBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  chatBackButton: {
+    paddingRight: 10,
+  },
+  chatOnlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(76, 175, 80, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.2)',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+  },
+  chatOnlineDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#4CAF50',
+    marginRight: 6,
+  },
+  chatOnlineText: {
+    color: '#4CAF50',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  chatAiRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  chatAiLabel: {
+    color: '#8e9bb0',
+    fontSize: 12,
+    marginRight: 8,
+    fontWeight: '600',
+  },
   header: {
     backgroundColor: '#031427',
     paddingHorizontal: 20,

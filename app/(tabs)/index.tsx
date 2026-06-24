@@ -15,7 +15,6 @@ import {
     Easing,
     Image,
     ImageBackground,
-    ScrollView,
     StatusBar,
     StyleSheet,
     Text,
@@ -500,12 +499,8 @@ export default function HomeScreen() {
           />
         </View>
 
-        {/* ScrollView on top of earth */}
-        <ScrollView
-          style={{ flex: 1, backgroundColor: 'transparent', zIndex: 1 }}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
+        {/* Fixed content on top of earth */}
+        <View style={{ flex: 1, backgroundColor: 'transparent', zIndex: 1 }}>
         <View style={{
           marginHorizontal: 0,
           marginVertical: 12,
@@ -629,9 +624,7 @@ export default function HomeScreen() {
           </View>
         </Animated.View>
         
-        {/* Spacer for scroll space */}
-        <View style={{ height: 180 }} />
-      </ScrollView>
+      </View>
 
       {/* Полноэкранный оверлей приветствия */}
       {!isAppReady && (

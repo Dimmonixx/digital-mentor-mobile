@@ -11,6 +11,7 @@
     "lint": "expo lint"
   },
   "dependencies": {
+    "@emailjs/react-native": "^5.1.0",
     "@expo-google-fonts/audiowide": "^0.4.1",
     "@expo-google-fonts/orbitron": "^0.4.2",
     "@expo-google-fonts/oxanium": "^0.4.2",
