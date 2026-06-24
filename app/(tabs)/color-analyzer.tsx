@@ -1,7 +1,9 @@
+import { emailToKey } from '@/constants/auth';
 import {
     API_BASE_URL
 } from '@/constants/config';
 import { getFirebaseDB, getFirebaseFirestore } from '@/constants/firebase';
+import { executeWithAiLimit } from '@/services/aiRequestService';
 import { saveToArchive } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -552,8 +554,19 @@ const reset = useCallback(() => {
   containerSize
 );
 
-      // Затем отправляем в Claude с математическим ориентиром
-      const analysis = await analyzeWithClaude(selectedImage!, mime, calculatedShade);
+      // Затем отправляем в Claude с математическим ориентиром (с проверкой дневного лимита)
+      // Читаем email свежо из AsyncStorage — защита от stale closure
+      const rawUser = await AsyncStorage.getItem('user');
+      const userObj = rawUser ? JSON.parse(rawUser) : null;
+      const emailKey = userObj?.email ? emailToKey(userObj.email) : '';
+      const analysis = await executeWithAiLimit(
+        emailKey,
+        () => analyzeWithClaude(selectedImage!, mime, calculatedShade)
+      );
+      if (!analysis) {
+        setLoading(false);
+        return;
+      }
 
       // Сохраняем результат в кэш
       if (selectedImage) {
@@ -588,7 +601,7 @@ const reset = useCallback(() => {
     } finally {
       setLoading(false);
     }
-  }, [selectedImage]);
+  }, [selectedImage, jaw, zones, containerSize]);
 
   const handleAnalyze = useCallback(async () => {
     if (!pendingPayload) return;
@@ -604,23 +617,6 @@ const reset = useCallback(() => {
       }
     }
 
-    const diamondBalance = (globalThis as any).getDiamondBalance?.() ?? 0;
-    if (diamondBalance < COLOR_ANALYSIS_PRICE) {
-      Alert.alert(
-        'Недостаточно алмазов',
-        'Для выполнения анализа цвета требуется 1 алмаз. Пожалуйста, пополните баланс.'
-      );
-      return;
-    }
-    const didSpend = (globalThis as any).spendDiamonds?.(COLOR_ANALYSIS_PRICE);
-    if (!didSpend) {
-      Alert.alert(
-        'Недостаточно алмазов',
-        'Для выполнения анализа цвета требуется 1 алмаз. Пожалуйста, пополните баланс.'
-      );
-      return;
-    }
-    (globalThis as any).forceDiamondUpdate?.();
     void runAnalysis(pendingPayload.base64, pendingPayload.mime);
   }, [pendingPayload, runAnalysis, selectedImage]);
 

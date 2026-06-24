@@ -1,6 +1,8 @@
 import GlobalHeader from '@/components/global-header';
+import { emailToKey } from '@/constants/auth';
 import { API_BASE_URL } from '@/constants/config';
 import { getFirebaseDB } from '@/constants/firebase';
+import { executeWithAiLimit } from '@/services/aiRequestService';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
@@ -10,7 +12,6 @@ import { get, off, onValue, push, ref, remove, set } from 'firebase/database';
 import { TrendingUpDown } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Alert,
     Animated,
     Clipboard,
     FlatList,
@@ -101,7 +102,8 @@ export default function ChatScreen() {
   const [showMenu, setShowMenu] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
-  const [currentDiamonds, setCurrentDiamonds] = useState((globalThis as any).getDiamondBalance?.() || 20);
+  const [currentDiamonds, setCurrentDiamonds] = useState((globalThis as any).getDiamondBalance?.() ?? 0);
+  const [aiDailyLimit, setAiDailyLimit] = useState<number>((globalThis as any).getAiDailyLimit?.() ?? 15);
   const [onlineUsersCount, setOnlineUsersCount] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const insets = useSafeAreaInsets();
@@ -133,6 +135,21 @@ export default function ChatScreen() {
   useEffect(() => {
     loadUsername();
     setupFirebaseListener();
+  }, []);
+
+  // Синхронизация баланса алмазов с _layout (аналогично balance.tsx)
+  useEffect(() => {
+    setCurrentDiamonds((globalThis as any).getDiamondBalance?.() ?? 0);
+    setAiDailyLimit((globalThis as any).getAiDailyLimit?.() ?? 15);
+    const prev = (globalThis as any).forceDiamondUpdate;
+    (globalThis as any).forceDiamondUpdate = () => {
+      setCurrentDiamonds((globalThis as any).getDiamondBalance?.() ?? 0);
+      setAiDailyLimit((globalThis as any).getAiDailyLimit?.() ?? 15);
+      prev?.();
+    };
+    return () => {
+      (globalThis as any).forceDiamondUpdate = prev;
+    };
   }, []);
 
   // Подписка на онлайн-статус пользователей (вызывается после загрузки username)
@@ -288,20 +305,13 @@ export default function ChatScreen() {
       });
 
       if (aiAssistantEnabled) {
-        const balance = (globalThis as any).getDiamondBalance?.() ?? 0;
-        if (balance < 1) {
-          Alert.alert('Недостаточно алмазов', 'Для ИИ-Ассистента требуется 1 алмаз. Пожалуйста, пополните баланс.');
-          return;
-        }
+        const rawUser = await AsyncStorage.getItem('user');
+        const userObj = rawUser ? JSON.parse(rawUser) : null;
+        const emailKey = userObj?.email ? emailToKey(userObj.email) : '';
         setAiThinking(true);
-        const aiReply = await getClaudeResponse(text, messages);
+        const aiReply = await executeWithAiLimit(emailKey, () => getClaudeResponse(text, messages));
         setAiThinking(false);
         if (aiReply) {
-          console.log("Текущий баланс до списания:", (globalThis as any).getDiamondBalance?.());
-          (globalThis as any).spendDiamonds?.(1);
-          (globalThis as any).forceDiamondUpdate?.();
-          setCurrentDiamonds((prev: number) => prev - 1);
-          console.log("Баланс после списания:", (globalThis as any).getDiamondBalance?.());
           await push(messagesRef, {
             username: 'ИИ-Ассистент 🤖',
             text: aiReply,
@@ -552,6 +562,7 @@ export default function ChatScreen() {
         {/* Header — такой же как на главной */}
         <GlobalHeader
           diamonds={currentDiamonds}
+          aiDailyLimit={aiDailyLimit}
         />
 
         {/* Chat sub-bar: назад + онлайн + ИИ режим */}

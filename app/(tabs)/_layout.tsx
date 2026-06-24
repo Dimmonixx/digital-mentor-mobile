@@ -20,7 +20,9 @@ import { HapticTab } from '@/components/haptic-tab';
 
 import GlobalHeader from '@/components/global-header';
 
+import AiLimitModal from '@/components/AiLimitModal';
 import DrawerMenu from '@/components/DrawerMenu';
+import { emailToKey } from '@/constants/auth';
 
 import { HeaderHeightProvider } from '../../context/HeaderHeightContext';
 
@@ -80,6 +82,8 @@ export default function TabLayout() {
 
   const [diamondBalance, setDiamondBalance] = useState<number>(20);
   const diamondBalanceRef = useRef(diamondBalance);
+  const [aiDailyLimit, setAiDailyLimit] = useState<number>(15);
+  const aiDailyLimitRef = useRef(15);
   const [isAdmin, setIsAdmin] = useState(false);
 
   const [drawerVisible, setDrawerVisible] = useState(false);
@@ -91,8 +95,8 @@ export default function TabLayout() {
   // Подписка для бейджа гамбургера (звук в IncomingArchiveWatcher в корневом _layout)
   useEffect(() => {
     if (!user) return;
-    const rawUid: string = (user as any).id || (user as any).uid || (user as any).email || '';
-    const uid = rawUid.replace(/\./g, '_');
+    const email: string = (user as any).email || '';
+    const uid = email ? emailToKey(email) : ((user as any).id || (user as any).uid || '');
     if (!uid) return;
     const currentFirestore = getFirebaseFirestore();
     const q = query(
@@ -133,13 +137,33 @@ export default function TabLayout() {
     });
   }, []);
 
+  // Подписка лимитов ИИ из RTDB
+  useEffect(() => {
+    if (!user) return;
+    const email: string = (user as any)?.email || '';
+    const uid: string = email ? emailToKey(email) : ((user as any)?.uid || (user as any)?.id || '');
+    if (!uid) return;
+    const currentDb = getFirebaseDB();
+    const aiLimitsRef = ref(currentDb, `users/${uid}/aiLimits`);
+    const unsub = onValue(aiLimitsRef, (snap) => {
+      const val = snap.val();
+      if (val && typeof val.aiDailyLimit === 'number') {
+        setAiDailyLimit(val.aiDailyLimit);
+        aiDailyLimitRef.current = val.aiDailyLimit;
+        (globalThis as any).forceDiamondUpdate?.();
+      }
+    });
+    return () => unsub();
+  }, [user]);
+
   // Подписка баланса алмазов из RTDB — единственный источник истины
   useEffect(() => {
     if (!user) {
       console.log('[Auth Debug] _layout: no user, skipping balance listener');
       return;
     }
-    const uid: string = (user as any)?.uid || (user as any)?.id || (user as any)?.email?.replace(/\./g, '_') || '';
+    const email: string = (user as any)?.email || '';
+    const uid: string = email ? emailToKey(email) : ((user as any)?.uid || (user as any)?.id || '');
     console.log('[Auth Debug] _layout: formatted balance path key:', uid);
     if (!uid) return;
     const currentDb = getFirebaseDB();
@@ -164,7 +188,7 @@ export default function TabLayout() {
         console.log('💎 RTDB_BALANCE: Баланс из RTDB =', val, '| путь: users/' + uid + '/diamondBalance');
       } else {
         // Поля нет — инициализируем значением из кэша или 20
-        const initial = diamondBalanceRef.current || 20;
+        const initial = diamondBalanceRef.current ?? 20;
         set(diamondRef, initial);
         console.log('💎 RTDB_BALANCE: Поле не найдено, записываем начальный баланс =', initial, '| путь: users/' + uid + '/diamondBalance');
       }
@@ -184,6 +208,7 @@ export default function TabLayout() {
 
   useEffect(() => {
     (globalThis as any).getDiamondBalance = () => diamondBalanceRef.current;
+    (globalThis as any).getAiDailyLimit = () => aiDailyLimitRef.current;
     (globalThis as any).spendDiamonds = (amount: number) => {
       // Admin never spends diamonds
       if (isAdmin) return true;
@@ -199,7 +224,7 @@ export default function TabLayout() {
       AsyncStorage.getItem('user').then((raw) => {
         if (!raw) return;
         const u = JSON.parse(raw);
-        const uid: string = u?.uid || u?.id || u?.email?.replace(/\./g, '_') || '';
+        const uid: string = u?.email ? emailToKey(u.email) : (u?.uid || u?.id || '');
         if (!uid) return;
         const currentDb = getFirebaseDB();
         set(ref(currentDb, `users/${uid}/diamondBalance`), newBalance)
@@ -384,11 +409,13 @@ export default function TabLayout() {
 
             <GlobalHeader
               diamonds={diamondBalance}
+              aiDailyLimit={aiDailyLimit}
               newOrdersCount={newOrdersCount}
               onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
               onBurgerPress={() => setDrawerVisible(true)}
               unreadAnalysesCount={incomingArchiveCount}
             />
+            <AiLimitModal />
 
             <DrawerMenu
               visible={drawerVisible}

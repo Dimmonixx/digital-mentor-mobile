@@ -4,27 +4,27 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import {
-    addOrientationChangeListener,
-    lockAsync,
-    OrientationLock
+  addOrientationChangeListener,
+  lockAsync,
+  OrientationLock
 } from 'expo-screen-orientation';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Animated,
-    GestureResponderEvent,
-    Image,
-    ImageBackground,
-    Modal,
-    PanResponder,
-    PanResponderGestureState,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Switch,
-    Text,
-    TouchableOpacity,
-    useWindowDimensions,
-    View
+  Animated,
+  GestureResponderEvent,
+  Image,
+  ImageBackground,
+  Modal,
+  PanResponder,
+  PanResponderGestureState,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../hooks/useAuth';
@@ -135,18 +135,15 @@ export default function GoldenProportionScreen() {
     };
   }, []);
 
-  // Загрузка баланса алмазов при монтировании (как в color-analyzer)
+  // Загрузка баланса алмазов и подписка на обновления
   useEffect(() => {
-    const loadDiamonds = () => {
-      const balance = (globalThis as any).getDiamondBalance?.() ?? 0;
-      console.log('Loaded diamonds from global:', balance);
-      setDiamonds(balance);
+    setDiamonds((globalThis as any).getDiamondBalance?.() ?? 0);
+    const prev = (globalThis as any).forceDiamondUpdate;
+    (globalThis as any).forceDiamondUpdate = () => {
+      setDiamonds((globalThis as any).getDiamondBalance?.() ?? 0);
+      prev?.();
     };
-    loadDiamonds();
-    
-    // Подписываемся на обновления баланса
-    const interval = setInterval(loadDiamonds, 2000);
-    return () => clearInterval(interval);
+    return () => { (globalThis as any).forceDiamondUpdate = prev; };
   }, []);
 
   // Загружаем натуральные размеры фото, чтобы потом считать реальную ширину изображения

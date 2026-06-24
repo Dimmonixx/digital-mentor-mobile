@@ -1,14 +1,16 @@
 import CustomAlert from '@/components/CustomAlert';
+import { emailToKey } from '@/constants/auth';
 import { ANTHROPIC_API_KEY } from '@/constants/config';
 import { useLanguage } from '@/context/LanguageContext';
 import { useTheme } from '@/context/ThemeContext';
+import { executeWithAiLimit } from '@/services/aiRequestService';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Alert,
     Dimensions,
     Image,
     ImageBackground,
@@ -255,10 +257,20 @@ export default function WorkAnalysisScreen() {
   const [alertVisible, setAlertVisible] = useState<boolean>(false);
   const [alertTitle, setAlertTitle] = useState<string>('');
   const [alertMessage, setAlertMessage] = useState<string>('');
-  const [diamondBalance, setDiamondBalance] = useState<number>(20);
+  const [diamondBalance, setDiamondBalance] = useState<number>((globalThis as any).getDiamondBalance?.() ?? 0);
   const analysisTypeKey = ANALYSIS_TYPE_KEYS[analysisType] || 'general';
   const analysisPrice = ANALYSIS_PRICES[analysisTypeKey];
   const analysisButtonTitle = ANALYSIS_BUTTON_TITLES[analysisTypeKey];
+
+  useEffect(() => {
+    setDiamondBalance((globalThis as any).getDiamondBalance?.() ?? 0);
+    const prev = (globalThis as any).forceDiamondUpdate;
+    (globalThis as any).forceDiamondUpdate = () => {
+      setDiamondBalance((globalThis as any).getDiamondBalance?.() ?? 0);
+      prev?.();
+    };
+    return () => { (globalThis as any).forceDiamondUpdate = prev; };
+  }, []);
 
   // Calculate dynamic cost based on teeth count and analysis type
   const calculateAnalysisCost = (): number => {
@@ -368,39 +380,31 @@ export default function WorkAnalysisScreen() {
       return;
     }
 
-    if (diamondBalance < dynamicCost) {
-      Alert.alert(
-        'Недостаточно алмазов',
-        `Для этого анализа требуется ${dynamicCost} алмаза. Пожалуйста, пополните баланс.`
-      );
-      return;
-    }
-
-    const didSpend = (globalThis as any).spendDiamonds?.(dynamicCost);
-    if (!didSpend) {
-      Alert.alert(
-        'Недостаточно алмазов',
-        `Для этого анализа требуется ${dynamicCost} алмаза. Пожалуйста, пополните баланс.`
-      );
-      return;
-    }
-    (globalThis as any).forceDiamondUpdate?.();
-    setDiamondBalance((globalThis as any).getDiamondBalance?.() ?? 0);
-
     setIsLoading(true);
     setAnalysisResult(null);
 
     try {
+      const rawUser = await AsyncStorage.getItem('user');
+      const userObj = rawUser ? JSON.parse(rawUser) : null;
+      const emailKey = userObj?.email ? emailToKey(userObj.email) : '';
+
       const teeth = selectedTeeth.length > 0 ? selectedTeeth.join(', ') : 'не указаны';
-      const result = await analyzeWithClaude(
-        imageBase64,
-        imageMime,
-        selectedShade,
-        workStage,
-        analysisType,
-        teeth,
-        notes || 'нет',
+      const result = await executeWithAiLimit(
+        emailKey,
+        () => analyzeWithClaude(
+          imageBase64,
+          imageMime,
+          selectedShade,
+          workStage,
+          analysisType,
+          teeth,
+          notes || 'нет',
+        )
       );
+      if (!result) {
+        setIsLoading(false);
+        return;
+      }
       setAnalysisResult(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не удалось выполнить анализ';

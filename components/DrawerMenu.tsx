@@ -3,16 +3,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated,
-  Dimensions,
-  Image,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  View,
+    Animated,
+    Dimensions,
+    Image,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    TouchableWithoutFeedback,
+    View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -181,8 +181,8 @@ export default function DrawerMenu({ visible, onClose, onRoleSwitch, unreadAnaly
               )}
               {user?.diamondBalance !== undefined && (
                 <View style={styles.diamondRow}>
-                  <Ionicons name="diamond" size={13} color="#bda15d" />
-                  <Text style={styles.diamondText}>{user.diamondBalance} алмазов</Text>
+                  <Ionicons name="flash" size={13} color="#f2ca50" />
+                  <Text style={styles.diamondText}>{user.diamondBalance} зарядов ИИ</Text>
                 </View>
               )}
             </View>

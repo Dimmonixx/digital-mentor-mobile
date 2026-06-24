@@ -192,8 +192,8 @@ const RiddleBlock = ({
         <Text style={styles.sectionTitle}>Кейс-загадка</Text>
       </View>
       <View style={styles.rewardLine}>
-        <Ionicons name="diamond-outline" size={13} color="#4fc3f7" />
-        <Text style={styles.rewardLineText}>+1 алмаз за верный ответ</Text>
+        <Ionicons name="flash-outline" size={13} color="#f2ca50" />
+        <Text style={styles.rewardLineText}>+1 заряд ИИ за верный ответ</Text>
       </View>
 
       <Text style={styles.riddleQuestion}>{riddle.question}</Text>
@@ -213,7 +213,7 @@ const RiddleBlock = ({
       {picked != null && (
         <Text style={[styles.riddleResult, picked !== riddle.correct && styles.riddleResultWrong]}>
           {picked === riddle.correct
-            ? `Верно! Вам начислен +1 алмаз. Большинство коллег выбрали ${riddle.correct}.`
+            ? `Верно! Вам начислен +1 заряд ИИ. Большинство коллег выбрали ${riddle.correct}.`
             : `Правильный ответ — ${riddle.correct}. Вы выбрали ${picked}.`}
         </Text>
       )}
@@ -229,7 +229,7 @@ const AiReviewBlock = ({ review, onSpent }: { review: string; onSpent: () => voi
   const runReview = () => {
     const ok = (globalThis as any).spendDiamonds?.(AI_REVIEW_COST);
     if (!ok) {
-      Alert.alert('Недостаточно алмазов', `Для AI-разбора нужно ${AI_REVIEW_COST} алмаза. Пополните баланс в разделе «Маркет».`);
+      Alert.alert('Низкий заряд ИИ', `Для AI-разбора нужно ${AI_REVIEW_COST} заряда. Пополните заряды в «Станции зарядки».`);
       return;
     }
     (globalThis as any).forceDiamondUpdate?.();
@@ -254,7 +254,7 @@ const AiReviewBlock = ({ review, onSpent }: { review: string; onSpent: () => voi
         <>
           <TouchableOpacity activeOpacity={0.85} style={styles.eshafotnikButton} onPress={runReview}>
             <Text style={styles.eshafotnikText}>Эшафотник за 2</Text>
-            <Ionicons name="diamond" size={14} color="#00e5ff" />
+            <Ionicons name="flash" size={14} color="#f2ca50" />
           </TouchableOpacity>
         </>
       ) : (

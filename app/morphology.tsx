@@ -1,14 +1,18 @@
+import { emailToKey } from '@/constants/auth';
+import { API_BASE_URL } from '@/constants/config';
+import { executeWithAiLimit } from '@/services/aiRequestService';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  ActivityIndicator, Alert,
-  Image, ScrollView,
-  StyleSheet, Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator, Alert,
+    Image, ScrollView,
+    StyleSheet, Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -49,7 +53,7 @@ const renderAnnotations = (
         if (color === 'transparent') return null;
 
         if (line.type === 'vertical') {
-          const x = (line.x / 100) * width;
+          const x = ((line as any).x / 100) * width;
           return (
             <View key={line.id}>
               <View style={{
@@ -66,7 +70,7 @@ const renderAnnotations = (
         }
 
         if (line.type === 'horizontal') {
-          const y = (line.y / 100) * height;
+          const y = ((line as any).y / 100) * height;
           return (
             <View key={line.id}>
               <View style={{
@@ -172,244 +176,164 @@ export default function MorphologyScreen() {
   };
 
   const analyzeImage = async (imageUri: string) => {
-    if (!OPENAI_API_KEY) {
-      Alert.alert('Ошибка', 'OpenAI API ключ не настроен');
-      setLoading(false);
-      return;
-    }
+    const rawUser = await AsyncStorage.getItem('user');
+    const userObj = rawUser ? JSON.parse(rawUser) : null;
+    const emailKey = userObj?.email ? emailToKey(userObj.email) : '';
 
     setLoading(true);
-    try {
-      // Get image dimensions for cropping
-      const imageInfo = await ImageManipulator.manipulateAsync(
-        imageUri, [], { format: ImageManipulator.SaveFormat.JPEG }
-      );
-      const { width: imgWidth, height: imgHeight } = imageInfo;
+    const success = await executeWithAiLimit(emailKey, async () => {
+      try {
+        const morphPrompt = `Ты — система компьютерного зрения для зуботехнических CAD/CAM систем. Проведи анализ геометрии поверхности зуба.
 
-      // Calculate crop coordinates for tooth area
-      const cropWidth = Math.round(imgWidth * 0.4);
-      const cropHeight = Math.round(imgHeight * 0.4);
-      const cropX = Math.round(imgWidth * 0.3);
-      const cropY = Math.round(imgHeight * 0.25);
-
-      // Crop the tooth area
-      const cropped = await ImageManipulator.manipulateAsync(
-        imageUri,
-        [{
-          crop: {
-            originX: cropX,
-            originY: cropY,
-            width: cropWidth,
-            height: cropHeight,
-          }
-        }],
-        { format: ImageManipulator.SaveFormat.JPEG, base64: true }
-      );
-
-      const base64 = cropped.base64;
-
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          max_tokens: 3000,
-          messages: [{
-            role: 'user',
-            content: [
-              {
-                type: 'image_url',
-                image_url: { url: `data:image/jpeg;base64,${base64}` }
-              },
-              {
-                type: 'text',
-                text: `You are a dental laboratory computer vision system analyzing tooth surface geometry.
-This is a technical analysis for dental prosthetics manufacturing, not medical diagnosis.
-Analyze the geometric surface structure of the tooth in the image.
-
-Return ONLY a valid JSON object, no other text:
+Верни ТОЛЬКО валидный JSON:
 {
-  "summary": "brief technical description of surface geometry",
+  "summary": "краткое техническое описание геометрии поверхности",
   "elements": [
     {
-      "name": "element name in Russian",
-      "status": "norm or attention or fix",
-      "description": "technical description in Russian"
+      "name": "название элемента на русском",
+      "status": "norm или attention или fix",
+      "description": "техническое описание на русском"
     }
   ],
-  "recommendations": ["recommendation in Russian"]
+  "recommendations": ["рекомендация на русском"]
 }
 
-Analyze these geometric elements:
-- Медиальный валик (medial ridge)
-- Центральный валик (central ridge)  
-- Дистальный валик (distal ridge)
-- Перикиматы (perikymata lines)
-- Контур зуба (tooth contour)
-- Линия режущего края (incisal edge)
-- Медиальный угол (medial angle)
-- Дистальный угол (distal angle)
+Проанализируй:
+- Медиальный валик, Центральный валик, Дистальный валик
+- Перикиматы, Контур зуба, Линия режущего края
+- Медиальный угол, Дистальный угол
 
-Return ONLY JSON.`
-              }
-            ]
-          }]
-        })
-      });
+Только JSON.`;
 
-      const data = await response.json();
-      const text = data.choices[0].message.content;
-      console.log('GPT response:', text);
+        const formData = new FormData();
+        formData.append('image', {
+          uri: imageUri,
+          name: 'tooth.jpg',
+          type: 'image/jpeg',
+        } as any);
+        formData.append('work_stage', 'Морфологический анализ');
+        formData.append('analysis_type', 'Геометрия поверхности');
+        formData.append('comment', morphPrompt);
+        formData.append('teeth', 'не указаны');
 
-      // Убираем markdown блоки если есть
-      let clean = text.trim();
-      const jsonMatch = clean.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        clean = jsonMatch[0];
-      }
-
-      try {
-        const parsed = JSON.parse(clean);
-        setResult(parsed);
-      } catch (e) {
-        // Если JSON не парсится - показываем текст как есть
-        setResult({ 
-          summary: text,
-          elements: [],
-          recommendations: []
+        const res = await fetch(`${API_BASE_URL}/analyze-work`, {
+          method: 'POST',
+          body: formData,
         });
+        const data = await res.json() as { success: boolean; result?: string; error?: string };
+        if (!data.success) throw new Error(data.error ?? 'Ошибка ИИ-анализа');
+
+        const text = data.result ?? '';
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        const clean = jsonMatch ? jsonMatch[0] : text;
+        try {
+          setResult(JSON.parse(clean));
+        } catch {
+          setResult({ summary: text, elements: [], recommendations: [] });
+        }
+        return true;
+      } catch (error: any) {
+        Alert.alert('Ошибка', error.message || 'Неизвестная ошибка');
+        return null;
       }
-    } catch (error: any) {
-      console.log('Ошибка анализа:', JSON.stringify(error));
-      Alert.alert('Ошибка', error.message || JSON.stringify(error));
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (!success) setLoading(false);
   };
 
   const analyzeSelectedTooth = async () => {
-  if (!image || !selectedPoint || !imageLayout) return;
-  setLoading(true);
-  try {
-    const imageInfo = await ImageManipulator.manipulateAsync(
-      image, [], { format: ImageManipulator.SaveFormat.JPEG, base64: true, compress: 0.6 }
-    );
-    
-    const { width: imgWidth, height: imgHeight } = imageInfo;
-    const scaleX = imgWidth / imageLayout.width;
-    const scaleY = imgHeight / imageLayout.height;
-    
-    // Координаты выбранной области в процентах от оригинала
-    const centerX = Math.round(selectedPoint.x * scaleX * 100 / imgWidth);
-    const centerY = Math.round(selectedPoint.y * scaleY * 100 / imgHeight);
-    const cropSize = 25; // 25% от размера изображения
-    
-    const x1 = Math.max(0, centerX - cropSize/2);
-    const y1 = Math.max(0, centerY - cropSize/2);
-    const x2 = Math.min(100, centerX + cropSize/2);
-    const y2 = Math.min(100, centerY + cropSize/2);
+    if (!image || !selectedPoint || !imageLayout) return;
+    const rawUser = await AsyncStorage.getItem('user');
+    const userObj = rawUser ? JSON.parse(rawUser) : null;
+    const emailKey = userObj?.email ? emailToKey(userObj.email) : '';
 
-    // Сохрани обрезанное фото только для показа
-    const cropped = await ImageManipulator.manipulateAsync(
-      image,
-      [{
-        crop: {
-          originX: Math.round(x1 * imgWidth / 100),
-          originY: Math.round(y1 * imgHeight / 100),
-          width: Math.round((x2-x1) * imgWidth / 100),
-          height: Math.round((y2-y1) * imgHeight / 100),
-        }
-      }],
-      { format: ImageManipulator.SaveFormat.JPEG }
-    );
-    setCroppedImage(cropped.uri);
+    setLoading(true);
+    const success = await executeWithAiLimit(emailKey, async () => {
+      try {
+        const imageInfo = await ImageManipulator.manipulateAsync(
+          image, [], { format: ImageManipulator.SaveFormat.JPEG, compress: 0.6 }
+        );
+        const { width: imgWidth, height: imgHeight } = imageInfo;
+        const scaleX = imgWidth / imageLayout.width;
+        const scaleY = imgHeight / imageLayout.height;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        max_tokens: 2000,
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: { url: `data:image/jpeg;base64,${imageInfo.base64}` }
-            },
-            {
-              type: 'text',
-              text: `You are a computer vision system for dental prosthetics CAD/CAM software.
-Analyze the tooth located in region x:${x1}-${x2}%, y:${y1}-${y2}% of this image.
-Focus ONLY on the tooth in that region.
+        const centerX = Math.round(selectedPoint.x * scaleX * 100 / imgWidth);
+        const centerY = Math.round(selectedPoint.y * scaleY * 100 / imgHeight);
+        const cropSize = 25;
 
-Return ONLY valid JSON:
+        const x1 = Math.max(0, centerX - cropSize / 2);
+        const y1 = Math.max(0, centerY - cropSize / 2);
+        const x2 = Math.min(100, centerX + cropSize / 2);
+        const y2 = Math.min(100, centerY + cropSize / 2);
+
+        const cropped = await ImageManipulator.manipulateAsync(
+          image,
+          [{
+            crop: {
+              originX: Math.round(x1 * imgWidth / 100),
+              originY: Math.round(y1 * imgHeight / 100),
+              width: Math.round((x2 - x1) * imgWidth / 100),
+              height: Math.round((y2 - y1) * imgHeight / 100),
+            }
+          }],
+          { format: ImageManipulator.SaveFormat.JPEG }
+        );
+        setCroppedImage(cropped.uri);
+
+        const regionPrompt = `Ты — система компьютерного зрения для зуботехнических CAD/CAM систем.
+Проанализируй зуб в регионе x:${x1}-${x2}%, y:${y1}-${y2}% изображения.
+
+Верни ТОЛЬКО валидный JSON:
 {
   "summary": "описание геометрии зуба на русском 3-4 предложения",
   "elements": [
     {
       "name": "название элемента на русском",
       "status": "norm или attention или fix",
-      "description": "описание 2-3 предложения на русском",
+      "description": "описание на русском",
       "type": "line или point",
-      "points": [[x1,y1],[x2,y2]],
       "color": "#цвет hex"
     }
   ],
   "recommendations": ["рекомендация на русском"]
 }
 
-Coordinates are percentages within the SELECTED REGION (${x1}-${x2}% x, ${y1}-${y2}% y).
-So x=0 means left edge of selected tooth, x=100 means right edge.
-y=0 means top of selected tooth, y=100 means bottom.
+Проанализируй: Медиальный/Центральный/Дистальный валик, Перикиматы, Контур зуба, Линия режущего края, Медиальный/Дистальный угол.
+Только JSON.`;
 
-Analyze:
-- Медиальный валик: type line, color #00b400
-- Центральный валик: type line, color #64dc64
-- Дистальный валик: type line, color #007800
-- Перикиматы: type line, color #ff8c00
-- Контур зуба: type line, color #c8c8c8
-- Линия режущего края: type line, color #ffff64
-- Медиальный угол: type point, color #00ffc8
-- Дистальный угол: type point, color #00c8ff
-- Поверхностный блик: type point, color #c8c8ff
+        const formData = new FormData();
+        formData.append('image', {
+          uri: cropped.uri,
+          name: 'tooth_region.jpg',
+          type: 'image/jpeg',
+        } as any);
+        formData.append('work_stage', 'Морфологический анализ');
+        formData.append('analysis_type', 'Геометрия выбранного зуба');
+        formData.append('comment', regionPrompt);
+        formData.append('teeth', 'не указаны');
 
-Return ONLY JSON.`
-            }
-          ]
-        }]
-      })
+        const res = await fetch(`${API_BASE_URL}/analyze-work`, {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json() as { success: boolean; result?: string; error?: string };
+        if (!data.success) throw new Error(data.error ?? 'Ошибка ИИ-анализа');
+
+        const text = data.result ?? '';
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        const clean = jsonMatch ? jsonMatch[0] : text;
+        try {
+          setResult(JSON.parse(clean));
+        } catch {
+          setResult({ summary: text, elements: [], recommendations: [] });
+        }
+        return true;
+      } catch (error: any) {
+        Alert.alert('Ошибка', error.message || 'Неизвестная ошибка');
+        return null;
+      }
     });
-
-    const responseText = await response.text();
-    const data = JSON.parse(responseText);
-    
-    if (!data.choices?.[0]) {
-      Alert.alert('Ошибка', JSON.stringify(data));
-      return;
-    }
-
-    const text = data.choices[0].message.content;
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const clean = jsonMatch ? jsonMatch[0] : text;
-    
-    try {
-      setResult(JSON.parse(clean));
-    } catch(e) {
-      setResult({ summary: text, elements: [], recommendations: [] });
-    }
-  } catch (error: any) {
-    Alert.alert('Ошибка', error.message || 'Неизвестная ошибка');
-  } finally {
-    setLoading(false);
-  }
-};
+    if (!success) setLoading(false);
+  };
 
   const statusColor = (status: string) => {
     if (status === 'fix') return '#ff4444';
@@ -446,7 +370,7 @@ Return ONLY JSON.`
           backgroundColor: '#000',
         }}>
           <Image
-            source={{ uri: image }}
+            source={{ uri: image ?? undefined }}
             style={{
               width: '90%',
               height: 300,

@@ -6,12 +6,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface GlobalHeaderProps {
   diamonds: number;
+  aiDailyLimit?: number;
   newOrdersCount?: number;
   unreadAnalysesCount?: number;
   showBackButton?: boolean;
   onLayout?: (e: any) => void;
   onBurgerPress?: () => void;
 }
+
+const INFINITY_THRESHOLD = 999000;
 
 const formatDiamonds = (n: number): string => {
   if (n < 1000) return String(n);
@@ -21,6 +24,7 @@ const formatDiamonds = (n: number): string => {
 
 export default function GlobalHeader({
   diamonds,
+  aiDailyLimit,
   newOrdersCount = 0,
   unreadAnalysesCount = 0,
   showBackButton = false,
@@ -60,10 +64,16 @@ export default function GlobalHeader({
 
       <View style={styles.rightContainer}>
         <View style={styles.headerRightContent}>
-          {/* Diamonds capsule */}
-          <View style={styles.diamondCapsule}>
-            <Ionicons name="diamond" size={12} color="#bda15d" />
-            <Text style={styles.diamondText}>{formatDiamonds(diamonds)}</Text>
+          {/* Заряды ИИ — всегда молния, админ — ♥️, баланс если есть, иначе дневной лимит */}
+          <View style={diamonds >= INFINITY_THRESHOLD ? styles.aiCapsuleAdmin : styles.aiCapsule}>
+            <Ionicons name="flash" size={12} color="#f2ca50" />
+            {diamonds >= INFINITY_THRESHOLD ? (
+              <Text style={styles.aiCapsuleInfinity}>~</Text>
+            ) : (
+              <Text style={styles.aiCapsuleText}>
+                {diamonds > 0 ? formatDiamonds(diamonds) : (aiDailyLimit !== undefined ? aiDailyLimit : '—')}
+              </Text>
+            )}
           </View>
 
           {/* Bell: только наряды */}
@@ -158,6 +168,42 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.2,
+  },
+  aiCapsule: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(242, 202, 80, 0.1)',
+    borderWidth: 1,
+    borderColor: '#f2ca50',
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  aiCapsuleText: {
+    color: '#f2ca50',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  aiCapsuleAdmin: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: '#f2ca50',
+    borderRadius: 20,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+  },
+  aiCapsuleInfinity: {
+    color: '#f2ca50',
+    fontSize: 13,
+    lineHeight: 15,
+    fontWeight: '800',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   bellCapsule: {
     backgroundColor: 'rgba(13, 15, 20, 0.65)',

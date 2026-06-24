@@ -111,16 +111,18 @@ const PACKAGES = [
 
 export default function BalanceScreen() {
   const insets = useSafeAreaInsets();
-  const [balance, setBalance] = useState<number>((globalThis as any).getDiamondBalance?.() || 20);
+  const [balance, setBalance] = useState<number>((globalThis as any).getDiamondBalance?.() ?? 0);
   const [promoCode, setPromoCode] = useState<string>('');
   const [hasShared, setHasShared] = useState<boolean>(false);
   const [showBetaModal, setShowBetaModal] = useState<boolean>(false);
 
   useEffect(() => {
-    const subscription = (globalThis as any).forceDiamondUpdate = () => {
-      setBalance((globalThis as any).getDiamondBalance?.() || 20);
+    setBalance((globalThis as any).getDiamondBalance?.() ?? 0);
+    const prev = (globalThis as any).forceDiamondUpdate;
+    (globalThis as any).forceDiamondUpdate = () => {
+      setBalance((globalThis as any).getDiamondBalance?.() ?? 0);
+      prev?.();
     };
-    
     AsyncStorage.getItem('user').then((data) => {
       if (data) {
         const user = JSON.parse(data);
@@ -130,7 +132,7 @@ export default function BalanceScreen() {
     });
 
     return () => {
-      (globalThis as any).forceDiamondUpdate = subscription;
+      (globalThis as any).forceDiamondUpdate = prev;
     };
   }, []);
 
@@ -145,7 +147,7 @@ export default function BalanceScreen() {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Используй мой промокод ${promoCode} в приложении DiLabs и получи 15 алмазов на ИИ-анализ зубов!`,
+        message: `Используй мой Энерго-код ${promoCode} в приложении DiLabs и получи +50 зарядов ИИ на анализ зубов!`,
       });
       
       if (!hasShared) {
@@ -164,7 +166,7 @@ export default function BalanceScreen() {
           }
         });
         
-        Alert.alert('Бонус получен!', 'Вы получили 1 алмаз за первый шеринг');
+        Alert.alert('Заряд получен!', 'Вы получили +1 заряд ИИ за первый шеринг');
       }
     } catch (error) {
       console.error('Error sharing:', error);
@@ -193,10 +195,10 @@ export default function BalanceScreen() {
         >
           {/* Current Balance Block */}
           <View style={styles.balanceBlock}>
-            <Text style={styles.balanceLabel}>Текущий баланс</Text>
+            <Text style={styles.balanceLabel}>Заряды ИИ</Text>
             <View style={styles.balanceValueContainer}>
+              <Ionicons name="flash" size={28} color="#f2ca50" style={{ marginRight: 6 }} />
               <Text style={styles.balanceValue}>{balance}</Text>
-              <Ionicons name="diamond" size={28} color="#f2ca50" style={{ marginLeft: 8 }} />
             </View>
             <Text style={styles.balanceHelper}>Используйте для ИИ-анализа и ассистента</Text>
           </View>
@@ -232,7 +234,7 @@ export default function BalanceScreen() {
                 <View style={styles.packageHeader}>
                   <Text style={[styles.packageName, pkg.isBasic && styles.packageNameBasic, { color: pkg.isBasic ? pkg.color : pkg.color }]}>{pkg.name}</Text>
                   <Text style={styles.packageDiamonds}>
-                    {pkg.diamonds} алм.{pkg.bonusDiamonds > 0 && ` +${pkg.bonusDiamonds} бонус`}
+                    {pkg.diamonds > 0 ? `⚡ ${pkg.diamonds}${pkg.bonusDiamonds > 0 ? ` +${pkg.bonusDiamonds} бонус` : ''}` : 'Базовый доступ'}
                   </Text>
                 </View>
                 {pkg.description && (
@@ -248,7 +250,7 @@ export default function BalanceScreen() {
 
           {/* Diamond Packages Section */}
           <View style={styles.sectionContainerDiamond}>
-            <Text style={styles.sectionTitleSmall}>Пополнить алмазы</Text>
+            <Text style={styles.sectionTitleSmall}>Пополнить заряды ИИ</Text>
             
             {PACKAGES.filter(pkg => !pkg.isSubscription).map((pkg) => (
               <TouchableOpacity
@@ -266,7 +268,7 @@ export default function BalanceScreen() {
                 </View>
                 <View style={styles.diamondCardRow2}>
                   <Text style={styles.diamondRowDiamonds}>
-                    {pkg.diamonds} алм.{pkg.bonusDiamonds > 0 && ` +${pkg.bonusDiamonds} бонус`}
+                    ⚡ {pkg.diamonds}{pkg.bonusDiamonds > 0 && ` +${pkg.bonusDiamonds} бонус`}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -277,10 +279,10 @@ export default function BalanceScreen() {
           <View style={styles.referralBlock}>
             <Text style={styles.sectionTitle}>Реферальная система</Text>
             <Text style={styles.referralDescription}>
-              Пригласите коллегу! За каждого зарегистрированного доктора по вашему коду вы оба получите по 15 алмазов на счет
+              Поделитесь энергией! За каждого коллегу, зарегистрировавшегося по вашему коду, вы оба получите по +50 зарядов ИИ
             </Text>
             <View style={styles.promoCodeContainer}>
-              <Text style={styles.promoCodeLabel}>Ваш промокод:</Text>
+              <Text style={styles.promoCodeLabel}>Ваш Энерго-код:</Text>
               <View style={styles.promoCodeBox}>
                 <Text style={styles.promoCodeText}>{promoCode}</Text>
                 <TouchableOpacity onPress={handleCopyPromoCode} style={styles.copyButton}>
@@ -310,7 +312,7 @@ export default function BalanceScreen() {
             </View>
             <Text style={styles.modalTitle}>Режим закрытого бета-тестирования</Text>
             <Text style={styles.modalText}>
-              В данный момент покупка тарифов и алмазов недоступна. Все ИИ-функции открыты для тестирования. Если вам нужны дополнительные алмазы, пожалуйста, обратитесь к разработчику.
+              В данный момент покупка тарифов и зарядов ИИ недоступна. Все ИИ-функции открыты для тестирования. Если вам нужны дополнительные заряды, пожалуйста, обратитесь к разработчику.
             </Text>
             <TouchableOpacity
               style={styles.modalButton}

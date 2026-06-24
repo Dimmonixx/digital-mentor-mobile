@@ -759,7 +759,7 @@ export default function ProfileScreen() {
   const onShareCode = async () => {
     try {
       await Share.share({
-        message: `Привет! Добавь меня в экосистеме DiLabs. Мой код связи: ${inviteCode}`,
+        message: `Привет! Присоединяйся к DiLabs. Введи мой Энерго-код ${inviteCode} и получи +50 зарядов ИИ на анализ зубов!`,
       });
     } catch (error) {
       console.log(error);
@@ -839,7 +839,7 @@ export default function ProfileScreen() {
             </Text>
           </View>
 
-          <Text style={styles.networkSubLabel}>Ваш личный код связи</Text>
+          <Text style={styles.networkSubLabel}>Ваш Энерго-код</Text>
           <View style={styles.inviteCodeRow}>
             <Text style={styles.inviteCode}>{inviteCode || user?.inviteCode || '···'}</Text>
             <TouchableOpacity
