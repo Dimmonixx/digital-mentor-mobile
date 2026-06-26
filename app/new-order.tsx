@@ -153,7 +153,6 @@ export default function NewOrderScreen() {
       if (data) {
         const user = JSON.parse(data);
         setUser(user);
-        console.log('Текущий пользователь:', user);
       }
     });
   }, []);
@@ -303,10 +302,11 @@ export default function NewOrderScreen() {
   const [openImplantDropdownId, setOpenImplantDropdownId] = useState<string | null>(null);
   const [blockDetails, setBlockDetails] = useState<Record<string, {
     material?: string;
+    workType?: string;
     isImplant?: boolean;
     fixationType?: 'screw' | 'cement';
-    implantSystems?: Record<number, string>;
-    implantDiameters?: Record<number, string>;
+    implantSystems?: Record<number, string | undefined>;
+    implantDiameters?: Record<number, string | undefined>;
     isPontic?: Record<number, boolean>;
     isExpanded?: boolean;
   }>>({});
@@ -1373,8 +1373,8 @@ export default function NewOrderScreen() {
                                               ...prev,
                                               [blockKey]: {
                                                 ...prev[blockKey],
-                                                implantSystems: { ...(prev[blockKey]?.implantSystems || {}), [toothNum]: undefined },
-                                                implantDiameters: { ...(prev[blockKey]?.implantDiameters || {}), [toothNum]: undefined },
+                                                implantSystems: { ...(prev[blockKey]?.implantSystems ?? {}), [toothNum]: undefined } as Record<number, string | undefined>,
+                                                implantDiameters: { ...(prev[blockKey]?.implantDiameters ?? {}), [toothNum]: undefined } as Record<number, string | undefined>,
                                               }
                                             }));
                                             // Сбрасываем ошибку при очистке

@@ -1,6 +1,17 @@
 import { getFirebaseDB } from '@/constants/firebase';
 import { get, ref, runTransaction } from 'firebase/database';
 
+// Возвращает локальную дату в формате YYYY-MM-DD (по часовому поясу устройства)
+function getLocalDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+const DAILY_LIMIT_DEFAULT = 15;
+
 export async function checkAndDeductDailyLimit(emailKey: string): Promise<boolean> {
   if (!emailKey) {
     console.warn('[aiLimitService] emailKey is empty — allowing request');
@@ -9,8 +20,8 @@ export async function checkAndDeductDailyLimit(emailKey: string): Promise<boolea
   try {
     const db = getFirebaseDB();
     const aiLimitsRef = ref(db, `users/${emailKey}/aiLimits`);
-    const today = new Date().toISOString().split('T')[0];
-    console.log('[aiLimitService] running transaction for:', emailKey, '| today:', today);
+    const today = getLocalDateString();
+    console.log('[aiLimitService] running transaction for:', emailKey, '| today (local):', today);
 
     // Читаем credits отдельно — вне транзакции, чтобы не конфликтовать с _layout
     const creditsSnap = await get(ref(db, `users/${emailKey}/credits`));
@@ -27,14 +38,14 @@ export async function checkAndDeductDailyLimit(emailKey: string): Promise<boolea
       if (!limitsData) {
         return {
           lastAiUsageDate: today,
-          aiDailyLimit: 14,
+          aiDailyLimit: DAILY_LIMIT_DEFAULT - 1, // -1 за текущий запрос
         };
       }
 
       // Новый день — сбрасываем лимит
       if (!limitsData.lastAiUsageDate || limitsData.lastAiUsageDate !== today) {
         limitsData.lastAiUsageDate = today;
-        limitsData.aiDailyLimit = 14;
+        limitsData.aiDailyLimit = DAILY_LIMIT_DEFAULT - 1; // -1 за текущий запрос
         return limitsData;
       }
 

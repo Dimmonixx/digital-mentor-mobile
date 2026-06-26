@@ -198,7 +198,11 @@ export default function BalanceScreen() {
             <Text style={styles.balanceLabel}>Заряды ИИ</Text>
             <View style={styles.balanceValueContainer}>
               <Ionicons name="flash" size={28} color="#f2ca50" style={{ marginRight: 6 }} />
-              <Text style={styles.balanceValue}>{balance}</Text>
+              {balance >= 999000 ? (
+                <Text style={styles.balanceInfinity}>~</Text>
+              ) : (
+                <Text style={styles.balanceValue}>{balance}</Text>
+              )}
             </View>
             <Text style={styles.balanceHelper}>Используйте для ИИ-анализа и ассистента</Text>
           </View>
@@ -398,6 +402,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#f2ca50',
     marginRight: 8,
+  },
+  balanceInfinity: {
+    fontSize: 56,
+    fontWeight: '900',
+    color: '#f2ca50',
+    lineHeight: 58,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   balanceDiamond: {
     fontSize: 32,

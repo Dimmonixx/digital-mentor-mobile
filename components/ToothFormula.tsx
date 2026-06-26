@@ -14,8 +14,8 @@ interface ToothFormulaProps {
   toggleConnection: (connId: string) => void;
   toggleTooth: (num: number) => void;
   toggleToothType: (num: number) => void;
-  topJawScrollRef: React.RefObject<ScrollView>;
-  bottomJawScrollRef: React.RefObject<ScrollView>;
+  topJawScrollRef: React.RefObject<ScrollView | null>;
+  bottomJawScrollRef: React.RefObject<ScrollView | null>;
   styles: any;
 }
 

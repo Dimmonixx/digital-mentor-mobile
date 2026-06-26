@@ -3,9 +3,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+    Alert,
     Animated,
     Dimensions,
     Image,
+    Linking,
     Modal,
     ScrollView,
     StyleSheet,
@@ -18,6 +20,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const DRAWER_WIDTH = Math.min(SCREEN_WIDTH * 0.82, 340);
+
+const SUPPORT_TG = 'https://t.me/di_labs';
+const SUPPORT_TG_DEEP = 'tg://resolve?domain=di_labs';
+const SUPPORT_EMAIL = 'support@dilabs.ru';
 
 interface DrawerMenuProps {
   visible: boolean;
@@ -278,8 +284,25 @@ export default function DrawerMenu({ visible, onClose, onRoleSwitch, unreadAnaly
                 📧 dimmonix@gmail.com{'\n\n'}
                 Ваша обратная связь помогает сделать DiLabs лучше!
               </Text>
-              <TouchableOpacity style={styles.legalCloseBtn} onPress={() => setSupportModalVisible(false)}>
-                <Text style={styles.legalCloseBtnText}>Понятно</Text>
+              <TouchableOpacity
+                style={styles.supportTgBtn}
+                activeOpacity={0.8}
+                onPress={async () => {
+                  try {
+                    const canDeep = await Linking.canOpenURL(SUPPORT_TG_DEEP);
+                    if (canDeep) { await Linking.openURL(SUPPORT_TG_DEEP); return; }
+                    const canWeb = await Linking.canOpenURL(SUPPORT_TG);
+                    if (canWeb) { await Linking.openURL(SUPPORT_TG); return; }
+                    Alert.alert('Telegram не найден', `Не удалось открыть Telegram. Напишите нам на email:\n${SUPPORT_EMAIL}`);
+                  } catch {
+                    Alert.alert('Ошибка', `Не удалось открыть Telegram. Напишите нам на email:\n${SUPPORT_EMAIL}`);
+                  }
+                }}
+              >
+                <Text style={styles.supportTgBtnText}>✈️  Написать в Telegram</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.legalCloseBtn, { marginTop: 8 }]} onPress={() => setSupportModalVisible(false)}>
+                <Text style={styles.legalCloseBtnText}>Закрыть</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -532,5 +555,19 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     textAlign: 'center',
     marginBottom: 20,
+  },
+  supportTgBtn: {
+    backgroundColor: '#f2ca50',
+    borderRadius: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 4,
+  },
+  supportTgBtnText: {
+    color: '#0a0f1d',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

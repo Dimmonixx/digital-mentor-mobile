@@ -199,11 +199,12 @@ const styles = StyleSheet.create({
   },
   aiCapsuleInfinity: {
     color: '#f2ca50',
-    fontSize: 13,
-    lineHeight: 15,
-    fontWeight: '800',
+    fontSize: 15,
+    lineHeight: 16,
+    fontWeight: '900',
     includeFontPadding: false,
     textAlignVertical: 'center',
+    letterSpacing: -0.5,
   },
   bellCapsule: {
     backgroundColor: 'rgba(13, 15, 20, 0.65)',

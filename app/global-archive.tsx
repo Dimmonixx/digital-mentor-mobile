@@ -1060,7 +1060,6 @@ export default function GlobalArchiveScreen() {
       const u = JSON.parse(raw);
       const rawUid: string = u.id || u.uid || u.email || '';
       const uid = normalizeUid(rawUid);
-      console.log('AUTH_UID_DEBUG: rawUid =', rawUid, '| normalizedUid =', uid);
       if (uidRef.current === uid) return;
       uidRef.current = uid;
       setCurrentUser(u);
@@ -1159,7 +1158,6 @@ export default function GlobalArchiveScreen() {
     });
 
     const col = collection(getFirebaseFirestore(), ARCHIVE_COLLECTION);
-    console.log('SUBSCRIBE_DEBUG: mode =', mode, '| uid =', uid);
     const q = mode === 'mine'
       ? query(col, where('userId', '==', uid))
       : query(col, where('sharedWith', 'array-contains', uid));
@@ -1167,11 +1165,7 @@ export default function GlobalArchiveScreen() {
     unsubRef.current = onSnapshot(
       q,
       (snap) => {
-        if (mode === 'incoming') {
-          console.log('SUBSCRIBE_INCOMING: snap.size =', snap.size, '| uid фильтра =', uid);
-          snap.docs.forEach((d) => console.log('SUBSCRIBE_INCOMING doc:', d.id, 'sharedWith =', d.data().sharedWith));
-        }
-        const data = snap.docs
+          const data = snap.docs
           .map((d) => ({ id: d.id, ...d.data() } as ArchiveItem))
           // Владелец не видит мягко удалённые; коллеги видят всегда
           .filter((it) => !(mode === 'mine' && (it as any).deletedByOwner === true))
@@ -1242,8 +1236,6 @@ export default function GlobalArchiveScreen() {
     const newSharedWith = existing.includes(colleagueId) ? existing : [...existing, colleagueId];
     const patchedTarget: ArchiveItem = { ...shareTarget, sharedWith: newSharedWith };
 
-    console.log('SHARE_TRACE [1]: Старт. itemId =', localId, 'colleagueId =', colleagueId);
-
     // ── Шаг 1: мгновенно обновляем UI ────────────────────────────────────
     setShareTarget(patchedTarget);
     setAllItems((prev) =>
@@ -1291,7 +1283,6 @@ export default function GlobalArchiveScreen() {
       const uploadImageIfNeeded = async (docId: string) => {
         if (!localImageUri || localImageUri.startsWith('http') || localImageUri.startsWith('data:')) return;
         try {
-          console.log('BASE64_PROCESSING: Начинаем сжатие фото зуба...');
           const compressed = await ImageManipulator.manipulateAsync(
             localImageUri,
             [{ resize: { width: 250 } }],
@@ -1299,17 +1290,13 @@ export default function GlobalArchiveScreen() {
           );
           if (!compressed.base64) throw new Error('base64 пустой после сжатия');
           const dataUri = `data:image/jpeg;base64,${compressed.base64}`;
-          console.log('BASE64_SUCCESS: Картинка сжата! Длина строки:', dataUri.length, '| ~', Math.round(dataUri.length * 0.75 / 1024), 'KB');
           await updateDoc(doc(getFirebaseFirestore(), ARCHIVE_COLLECTION, docId), { imageUri: dataUri });
         } catch (err) {
-          console.log('BASE64_ERROR:', (err as any)?.message ?? err);
         }
       };
 
-      console.log('BACKGROUND_SYNC: sharedWith =', JSON.stringify(firestorePayload.sharedWith), '| userId =', firestorePayload.userId, '| размер =', JSON.stringify(firestorePayload).length);
       addDoc(collection(getFirebaseFirestore(), ARCHIVE_COLLECTION), firestorePayload)
         .then((docRef) => {
-          console.log('🎉🎉🎉 FIRESTORE_LIVE_SUCCESS: Документ создан! ID:', docRef.id);
           uploadImageIfNeeded(docRef.id);
           // Заменяем local_ id на реальный в обоих кэшах
           const replaceId = async (key: string) => {
@@ -1329,10 +1316,9 @@ export default function GlobalArchiveScreen() {
             prev.map((it) => (it.id === localId ? { ...it, id: docRef.id } : it)),
           );
         })
-        .catch((err) => console.log('BACKGROUND_SYNC_CRITICAL_ERROR:', err?.message ?? err));
+        .catch(() => {});
     } else {
       // Реальный Firestore id — updateDoc с sharedWith + base64 imageUri
-      console.log('SHARE_TRACE [2]: Фоновый updateDoc для id =', localId);
       (async () => {
         const existingImageUri: string =
           (patchedTarget as any).imageUri ||
@@ -1343,7 +1329,6 @@ export default function GlobalArchiveScreen() {
 
         if (existingImageUri && (existingImageUri.startsWith('file://') || existingImageUri.startsWith('content://'))) {
           try {
-            console.log('SHARE_TRACE [2.5]: Сжимаем фото перед updateDoc...');
             const compressed = await ImageManipulator.manipulateAsync(
               existingImageUri,
               [{ resize: { width: 250 } }],
@@ -1351,10 +1336,8 @@ export default function GlobalArchiveScreen() {
             );
             if (compressed.base64) {
               finalImageUri = `data:image/jpeg;base64,${compressed.base64}`;
-              console.log('SHARE_TRACE [2.5 OK]: base64 готов, длина =', finalImageUri.length);
             }
           } catch (e) {
-            console.log('SHARE_TRACE [2.5 ERROR]:', (e as any)?.message ?? e);
             finalImageUri = '';
           }
         }
@@ -1362,9 +1345,7 @@ export default function GlobalArchiveScreen() {
         const patch: any = { sharedWith: arrayUnion(colleagueId) };
         if (finalImageUri && finalImageUri.startsWith('data:')) patch.imageUri = finalImageUri;
 
-        updateDoc(doc(getFirebaseFirestore(), ARCHIVE_COLLECTION, localId), patch)
-          .then(() => console.log('SHARE_TRACE [OK]: updateDoc выполнен, imageUri length =', finalImageUri.length))
-          .catch((err) => console.log('SHARE_TRACE [ERROR]:', err?.message ?? err));
+        updateDoc(doc(getFirebaseFirestore(), ARCHIVE_COLLECTION, localId), patch).catch(() => {});
       })();
     }
   };

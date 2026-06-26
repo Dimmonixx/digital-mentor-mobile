@@ -1,3 +1,4 @@
+import { changeUserPassword } from '@/constants/auth';
 import { LangType, useLanguage } from '@/context/LanguageContext';
 import { useTheme } from '@/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -5,29 +6,99 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
+    ActivityIndicator,
+    Alert,
     Linking,
+    Modal,
     ScrollView, StatusBar, StyleSheet,
-    Switch, Text, TouchableOpacity, View,
+    Switch, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 
-const SUPPORT_TG = 'https://t.me/your_labs_support_username';
-const SUPPORT_EMAIL = 'mailto:support@dilabs.com?subject=DiLabs%20Support';
+const SUPPORT_TG = 'https://t.me/di_labs';
+const SUPPORT_TG_DEEP = 'tg://resolve?domain=di_labs';
+const SUPPORT_EMAIL = 'support@dilabs.ru';
 
 export default function SettingsScreen() {
   const { theme } = useTheme();
   const { t, lang, setLang } = useLanguage();
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState(false);
+
+  const closePasswordModal = () => {
+    setShowPasswordModal(false);
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowCurrent(false);
+    setShowNew(false);
+    setShowConfirm(false);
+    setSuccessMessage(false);
+  };
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      Alert.alert('Ошибка', 'Заполните все поля');
+      return;
+    }
+    if (newPassword.length < 6) {
+      Alert.alert('Ошибка', 'Новый пароль должен содержать не менее 6 символов');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Ошибка', 'Новые пароли не совпадают');
+      return;
+    }
+    if (newPassword === currentPassword) {
+      Alert.alert('Ошибка', 'Новый пароль совпадает с текущим');
+      return;
+    }
+    setPasswordLoading(true);
+    try {
+      await changeUserPassword(currentPassword, newPassword);
+      setSuccessMessage(true);
+      setTimeout(() => closePasswordModal(), 2000);
+    } catch (e: any) {
+      Alert.alert('Ошибка', e.message || 'Не удалось сменить пароль');
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
 
   useEffect(() => {
     AsyncStorage.getItem('@user_push_enabled').then(v => setPushEnabled(v === 'true'));
   }, []);
 
   const handleSupportPress = async () => {
-    const canOpenTG = await Linking.canOpenURL(SUPPORT_TG);
-    if (canOpenTG) {
-      await Linking.openURL(SUPPORT_TG);
-    } else {
-      await Linking.openURL(SUPPORT_EMAIL);
+    try {
+      const canOpenDeep = await Linking.canOpenURL(SUPPORT_TG_DEEP);
+      if (canOpenDeep) {
+        await Linking.openURL(SUPPORT_TG_DEEP);
+        return;
+      }
+      const canOpenWeb = await Linking.canOpenURL(SUPPORT_TG);
+      if (canOpenWeb) {
+        await Linking.openURL(SUPPORT_TG);
+        return;
+      }
+      Alert.alert(
+        'Telegram не найден',
+        `Не удалось открыть Telegram. Вы можете написать нам на email:\n${SUPPORT_EMAIL}`,
+        [{ text: 'OK' }]
+      );
+    } catch {
+      Alert.alert(
+        'Ошибка',
+        `Не удалось открыть Telegram. Напишите нам на email:\n${SUPPORT_EMAIL}`,
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -108,11 +179,13 @@ export default function SettingsScreen() {
         {/* SECURITY */}
         <Text style={[styles.sectionTitle, { color: theme.accent }]}>{t('security')}</Text>
         <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-          <SettingRow
-            icon="lock-closed-outline"
-            label={t('changePassword')}
-            right={<Ionicons name="chevron-forward" size={20} color={theme.textDim} />}
-          />
+          <TouchableOpacity onPress={() => setShowPasswordModal(true)}>
+            <SettingRow
+              icon="lock-closed-outline"
+              label={t('changePassword')}
+              right={<Ionicons name="chevron-forward" size={20} color={theme.textDim} />}
+            />
+          </TouchableOpacity>
         </View>
 
         {/* ABOUT */}
@@ -144,6 +217,105 @@ export default function SettingsScreen() {
         </View>
 
       </ScrollView>
+
+      {/* Модал смены пароля */}
+      <Modal
+        visible={showPasswordModal}
+        transparent
+        animationType="fade"
+        onRequestClose={closePasswordModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            {/* Заголовок */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalIconWrap}>
+                <Ionicons name="lock-closed" size={24} color="#f2ca50" />
+              </View>
+              <Text style={styles.modalTitle}>Сменить пароль</Text>
+              <TouchableOpacity onPress={closePasswordModal} style={styles.modalClose}>
+                <Ionicons name="close" size={22} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Текущий пароль */}
+            <Text style={styles.fieldLabel}>Текущий пароль</Text>
+            <View style={styles.inputWrap}>
+              <TextInput
+                style={styles.input}
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                secureTextEntry={!showCurrent}
+                placeholder="Введите текущий пароль"
+                placeholderTextColor="#4b5563"
+                autoCapitalize="none"
+              />
+              <TouchableOpacity onPress={() => setShowCurrent(v => !v)} style={styles.eyeBtn}>
+                <Ionicons name={showCurrent ? 'eye-off-outline' : 'eye-outline'} size={18} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Новый пароль */}
+            <Text style={styles.fieldLabel}>Новый пароль</Text>
+            <View style={styles.inputWrap}>
+              <TextInput
+                style={styles.input}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                secureTextEntry={!showNew}
+                placeholder="Минимум 6 символов"
+                placeholderTextColor="#4b5563"
+                autoCapitalize="none"
+              />
+              <TouchableOpacity onPress={() => setShowNew(v => !v)} style={styles.eyeBtn}>
+                <Ionicons name={showNew ? 'eye-off-outline' : 'eye-outline'} size={18} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Повторить пароль */}
+            <Text style={styles.fieldLabel}>Повторите новый пароль</Text>
+            <View style={styles.inputWrap}>
+              <TextInput
+                style={styles.input}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry={!showConfirm}
+                placeholder="Повторите новый пароль"
+                placeholderTextColor="#4b5563"
+                autoCapitalize="none"
+              />
+              <TouchableOpacity onPress={() => setShowConfirm(v => !v)} style={styles.eyeBtn}>
+                <Ionicons name={showConfirm ? 'eye-off-outline' : 'eye-outline'} size={18} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Сообщение об успехе */}
+            {successMessage && (
+              <View style={styles.successBanner}>
+                <Text style={styles.successText}>Пароль успешно обновлён! ⚡</Text>
+              </View>
+            )}
+
+            {/* Кнопки */}
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.btnCancel} onPress={closePasswordModal}>
+                <Text style={styles.btnCancelText}>Отмена</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.btnConfirm, (passwordLoading || successMessage) && { opacity: 0.7 }]}
+                onPress={handleChangePassword}
+                disabled={passwordLoading || successMessage}
+              >
+                {passwordLoading
+                  ? <ActivityIndicator size="small" color="#0a0f1d" />
+                  : <Text style={styles.btnConfirmText}>Обновить</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -189,5 +361,121 @@ const styles = StyleSheet.create({
   },
   rowRight: {
     alignItems: 'flex-end',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(5, 8, 18, 0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: '#0d111a',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#f2ca50',
+    padding: 24,
+    width: '100%',
+    shadowColor: '#f2ca50',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalIconWrap: {
+    backgroundColor: 'rgba(242,202,80,0.1)',
+    borderRadius: 10,
+    padding: 8,
+    marginRight: 12,
+  },
+  modalTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#f2ca50',
+    letterSpacing: 0.3,
+  },
+  modalClose: {
+    padding: 4,
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6b7280',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#131720',
+    borderWidth: 1,
+    borderColor: '#1e2535',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 2,
+  },
+  input: {
+    flex: 1,
+    color: '#e8eaf0',
+    fontSize: 15,
+    paddingVertical: 12,
+  },
+  eyeBtn: {
+    padding: 6,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  btnCancel: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1e2535',
+    alignItems: 'center',
+  },
+  btnCancelText: {
+    color: '#6b7280',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  btnConfirm: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 12,
+    backgroundColor: '#f2ca50',
+    alignItems: 'center',
+  },
+  btnConfirmText: {
+    color: '#0a0f1d',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  successBanner: {
+    marginTop: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.35)',
+    alignItems: 'center',
+  },
+  successText: {
+    color: '#4ade80',
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: 0.2,
   },
 });

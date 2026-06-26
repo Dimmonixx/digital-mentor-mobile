@@ -147,7 +147,23 @@ export default function TabLayout() {
     const aiLimitsRef = ref(currentDb, `users/${uid}/aiLimits`);
     const unsub = onValue(aiLimitsRef, (snap) => {
       const val = snap.val();
-      if (val && typeof val.aiDailyLimit === 'number') {
+      if (!val) return;
+
+      // Проверяем смену дня по локальному времени устройства
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+      if (val.lastAiUsageDate && val.lastAiUsageDate !== today) {
+        // Новый день — сбрасываем лимит прямо в RTDB и обновляем UI
+        const resetLimit = 15;
+        set(aiLimitsRef, { lastAiUsageDate: today, aiDailyLimit: resetLimit }).catch(() => {});
+        setAiDailyLimit(resetLimit);
+        aiDailyLimitRef.current = resetLimit;
+        (globalThis as any).forceDiamondUpdate?.();
+        return;
+      }
+
+      if (typeof val.aiDailyLimit === 'number') {
         setAiDailyLimit(val.aiDailyLimit);
         aiDailyLimitRef.current = val.aiDailyLimit;
         (globalThis as any).forceDiamondUpdate?.();

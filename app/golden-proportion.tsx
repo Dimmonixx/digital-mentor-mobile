@@ -1126,7 +1126,6 @@ export default function GoldenProportionScreen() {
               onPress={async () => {
                 // Проверяем баланс алмазов (как в color-analyzer)
                 const currentBalance = (globalThis as any).getDiamondBalance?.() ?? 0;
-                console.log('Current balance before check:', currentBalance);
                 if (currentBalance < 1) {
                   setDiamondsModalVisible(true);
                   return;

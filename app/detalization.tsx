@@ -1,13 +1,16 @@
+import GlobalHeader from '@/components/global-header';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React, { useRef, useState } from 'react';
 import {
     Alert,
     Dimensions,
     Image,
+    ImageBackground,
     Modal,
     PanResponder,
     ScrollView,
@@ -217,6 +220,7 @@ export default function DetalizationScreen() {
 
   const [photoUri, setPhotoUri] = useState<string | null>(paramUri ?? null);
   const [pickingPhoto, setPickingPhoto] = useState(false);
+  const [diamonds, setDiamonds] = useState<number>(() => (globalThis as any).getDiamondBalance?.() ?? 0);
 
   const [brightness,  setBrightness]  = useState(1);
   const [contrast,    setContrast]    = useState(1);
@@ -245,6 +249,17 @@ export default function DetalizationScreen() {
       setPhotoUri(result.assets[0].uri);
     } else if (!photoUri) {
       router.back();
+    }
+  };
+
+  const takePhoto = async () => {
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 1,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setPhotoUri(result.assets[0].uri);
     }
   };
 
@@ -304,43 +319,58 @@ export default function DetalizationScreen() {
 
   if (!photoUri) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#05080f' }}>
+      <ImageBackground
+        source={require('@/assets/images/background.png')}
+        style={{ flex: 1 }}
+        resizeMode="cover"
+      >
         <Stack.Screen options={{ headerShown: false }} />
+        <StatusBar style="light" backgroundColor="#0a0a1a" />
 
-        {/* ── HEADER ── */}
-        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+        {/* ── ГЛОБАЛЬНЫЙ ХЕДЕР ── */}
+        <GlobalHeader diamonds={diamonds} />
+
+        {/* ── СТРОКА НАЗАД + ЗАГОЛОВОК ── */}
+        <View style={styles.subHeader}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={24} color="#f2ca50" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Детализация</Text>
-          <View style={styles.headerBtn} />
+          <Text style={styles.subHeaderTitle}>Оптическая диагностика</Text>
+          <View style={{ width: 40 }} />
         </View>
 
-        {/* ── START MENU ── */}
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 24, paddingBottom: 120 }}>
-          <View style={styles.actions}>
-            <TouchableOpacity style={styles.primaryBtn} onPress={pickPhoto} activeOpacity={0.85}>
+        {/* ── КНОПКИ ── */}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 24, paddingBottom: 120 }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.startActions}>
+            <TouchableOpacity style={styles.startPrimaryBtn} onPress={takePhoto} activeOpacity={0.85}>
               <Ionicons name="camera-outline" size={22} color="#031427" />
-              <Text style={styles.primaryBtnText}>Сфотографировать</Text>
+              <Text style={styles.startPrimaryBtnText}>Сфотографировать</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={pickPhoto} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.startSecondaryBtn} onPress={pickPhoto} activeOpacity={0.85}>
               <Ionicons name="images-outline" size={22} color="#f2ca50" />
-              <Text style={styles.secondaryBtnText}>Из галереи</Text>
+              <Text style={styles.startSecondaryBtnText}>Из галереи</Text>
             </TouchableOpacity>
           </View>
           <TouchableOpacity
-            style={styles.recommendationsBtn}
+            style={styles.startRecommendationsBtn}
             onPress={() => {
-              Alert.alert('Рекомендации для точного результата', 'Фотографируйте работу при естественном освещении. Избегайте бликов и теней. Располагайте камеру перпендикулярно поверхности работы.');
+              Alert.alert(
+                'Рекомендации для точного результата',
+                'Фотографируйте работу при естественном освещении.\n\nИзбегайте бликов и теней.\n\nРасполагайте камеру перпендикулярно поверхности работы.'
+              );
             }}
             activeOpacity={0.85}
           >
-            <Text style={styles.recommendationsBtnText}>
+            <Text style={styles.startRecommendationsBtnText}>
               💡 Рекомендации для точного результата
             </Text>
           </TouchableOpacity>
         </ScrollView>
-      </View>
+      </ImageBackground>
     );
   }
 
@@ -353,7 +383,7 @@ export default function DetalizationScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
           <Ionicons name="arrow-back" size={24} color="#f2ca50" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Детализация</Text>
+        <Text style={styles.headerTitle}>Оптическая диагностика</Text>
         <TouchableOpacity
           onPress={() => setShowMarkers(!showMarkers)}
           style={[styles.headerBtn, showMarkers && styles.headerBtnActive]}
@@ -378,8 +408,7 @@ export default function DetalizationScreen() {
           source={{ uri: photoUri }}
           style={[
             { width: SCREEN_WIDTH, height: imageHeight, resizeMode: 'cover' },
-            // @ts-ignore — CSS filter supported on Expo web and recent RN
-            showBefore ? {} : { filter: filterString },
+            showBefore ? {} : { filter: filterString } as any,
           ]}
         />
 
@@ -428,9 +457,8 @@ export default function DetalizationScreen() {
                 position: 'absolute',
                 left: -(magnifier.x * 2.5 - 90),
                 top: -(magnifier.y * 2.5 - 90),
-                // @ts-ignore
                 filter: filterString,
-              }}
+              } as any}
             />
           </View>
         )}
@@ -722,5 +750,71 @@ const styles = StyleSheet.create({
   modalBtnConfirm: {
     flex: 1, padding: 12, borderRadius: 8,
     backgroundColor: '#f2ca50', alignItems: 'center',
+  },
+  subHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  backBtn: {
+    width: 40,
+    alignItems: 'flex-start',
+  },
+  subHeaderTitle: {
+    flex: 1,
+    textAlign: 'center',
+    color: '#f2ca50',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  startActions: {
+    gap: 12,
+  },
+  startPrimaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#f2ca50',
+    paddingVertical: 16,
+    borderRadius: 14,
+  },
+  startPrimaryBtnText: {
+    color: '#031427',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  startSecondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#0a1628',
+    paddingVertical: 16,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#f2ca50',
+  },
+  startSecondaryBtnText: {
+    color: '#f2ca50',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  startRecommendationsBtn: {
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#f2ca5060',
+    borderRadius: 20,
+    backgroundColor: 'transparent',
+    marginTop: 40,
+  },
+  startRecommendationsBtnText: {
+    color: '#f2ca50',
+    fontSize: 13,
+    opacity: 0.7,
+    textAlign: 'center',
   },
 });

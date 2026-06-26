@@ -111,6 +111,18 @@ export const updateProfile = async (_user: any, _profile: any) => {
   return Promise.resolve();
 };
 
+export const changeUserPassword = async (currentPassword: string, newPassword: string): Promise<void> => {
+  const user = await getCurrentUser();
+  if (!user?.email) throw new Error('Не авторизован');
+  const db = getDB();
+  const emailKey = emailToKey(user.email);
+  const snap = await get(ref(db, `users/${emailKey}`));
+  if (!snap.exists()) throw new Error('Пользователь не найден');
+  const userData = snap.val();
+  if (userData.passwordHash !== simpleHash(currentPassword)) throw new Error('Текущий пароль введён неверно');
+  await set(ref(db, `users/${emailKey}/passwordHash`), simpleHash(newPassword));
+};
+
 export const isCurrentUserAdmin = async (): Promise<boolean> => {
   const user = await getCurrentUser();
   return user?.isAdmin === true || user?.email === 'dimmonix@gmail.com';

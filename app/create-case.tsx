@@ -7,18 +7,18 @@ import { router } from 'expo-router';
 import { ref, set } from 'firebase/database';
 import React, { useState } from 'react';
 import {
-  Dimensions,
-  Image,
-  ImageBackground,
-  Modal,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Dimensions,
+    Image,
+    ImageBackground,
+    Modal,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -55,22 +55,12 @@ export default function CreateCaseScreen() {
   };
 
   const handlePublish = async () => {
-    console.log('[CreateCase] publish pressed', {
-      descriptionLength: description.trim().length,
-      photosLength: photos.length,
-      isRiddle,
-      riddleAnswer,
-      isAnonymous,
-    });
-
     if (!description.trim()) {
-      console.log('[CreateCase] validation failed: empty description');
       setOverlay({ title: 'Ошибка', message: 'Пожалуйста, добавьте описание кейса', icon: 'alert-circle-outline' });
       return;
     }
 
     if (photos.length === 0) {
-      console.log('[CreateCase] validation failed: no media selected');
       setOverlay({ title: 'Ошибка публикации', message: 'Пожалуйста, загрузите хотя бы одну фотографию клинического случая!', icon: 'alert-circle-outline' });
       return;
     }
