@@ -56,6 +56,7 @@ export default function HomeScreen() {
   const { theme } = useTheme();
   const { t } = useLanguage();
   const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<{ firstName?: string; lastName?: string; patronymic?: string } | null>(null);
   const [isAppReady, setIsAppReady] = useState(false);
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const scrollAnim = useRef(new Animated.Value(0)).current;
@@ -232,6 +233,15 @@ export default function HomeScreen() {
     AsyncStorage.getItem('user').then(data => {
       if (data) {
         setUser(JSON.parse(data));
+      }
+    });
+    AsyncStorage.getItem('userProfile').then(data => {
+      if (data) {
+        try {
+          setProfile(JSON.parse(data));
+        } catch (e) {
+          console.log('Ошибка парсинга профиля:', e);
+        }
       }
     });
   }, []);
@@ -705,7 +715,15 @@ export default function HomeScreen() {
                   textAlign: 'center',
                 }}
               >
-                {user?.name ? user.name.split(' ').slice(0, 2).join(' ') : 'уважаемый гость'}!
+                {(() => {
+                  const fullName = [profile?.lastName, profile?.firstName, profile?.patronymic]
+                    .filter(Boolean)
+                    .join(' ')
+                    .trim();
+                  if (fullName) return fullName;
+                  if (user?.name) return user.name;
+                  return 'уважаемый гость';
+                })()}!
               </Animated.Text>
             </LinearGradient>
           </View>
