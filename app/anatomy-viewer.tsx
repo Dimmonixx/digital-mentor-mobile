@@ -5,6 +5,7 @@ import { Asset } from 'expo-asset';
 import React, { useEffect, useState } from 'react';
 import { StatusBar, StyleSheet, Text, View } from 'react-native';
 import * as THREE from 'three';
+// @ts-ignore three/examples/jsm/loaders/OBJLoader has no type declarations in this setup
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 
 
@@ -36,7 +37,7 @@ export default function AnatomyViewerScreen() {
         const loader = new OBJLoader();
         loader.load(
           objAsset.localUri || objAsset.uri,
-          (obj) => {
+          (obj: any) => {
             // Применяем единый стоматологический материал
             obj.traverse((child: any) => {
               if (child.isMesh) {
@@ -55,7 +56,7 @@ export default function AnatomyViewerScreen() {
             setIsLoading(false);
           },
           undefined,
-          (error) => {
+          (error: any) => {
             console.error("Loader error:", error);
             setIsLoading(false);
           }

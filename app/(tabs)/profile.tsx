@@ -45,6 +45,7 @@ const PRESET_AVATARS = [
 interface ProfileData {
   firstName: string;
   lastName: string;
+  patronymic: string;
   position: string;
   laboratory: string;
   city: string;
@@ -81,7 +82,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { theme, themeType } = useTheme();
+  const { theme } = useTheme();
   const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
@@ -92,6 +93,7 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<ProfileData>({
     firstName: '',
     lastName: '',
+    patronymic: '',
     position: t('posDentist'),
     laboratory: '',
     city: '',
@@ -721,7 +723,7 @@ export default function ProfileScreen() {
   };
 
   const getDisplayName = () => {
-    const fromProfile = [profile.lastName, profile.firstName].filter(Boolean).join(' ').trim();
+    const fromProfile = [profile.lastName, profile.firstName, profile.patronymic].filter(Boolean).join(' ').trim();
     if (fromProfile) return fromProfile;
     if (user?.name) return user.name;
     return 'Пользователь';
@@ -773,7 +775,7 @@ export default function ProfileScreen() {
       resizeMode="cover"
     >
       <View style={styles.containerInner}>
-      <StatusBar barStyle={themeType === 'dark' ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       
       <ScrollView
         style={styles.scrollView}

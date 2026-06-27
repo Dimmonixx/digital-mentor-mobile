@@ -1,4 +1,5 @@
 import BottomTabBar from '@/components/BottomTabBar';
+import { GoldenProportionData } from '@/types/archive';
 import { saveToArchive } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
