@@ -43,7 +43,6 @@ app-example
 /android
 
 # API keys and config
-constants/config.ts
 .env
 .env.local
 .env.production
