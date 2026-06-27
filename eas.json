@@ -12,7 +12,13 @@
       "distribution": "internal"
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.dilabs.ru",
+        "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "dcjlijijhn",
+        "EXPO_PUBLIC_CLOUDINARY_API_KEY": "796742813866127",
+        "EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET": "dm_upload"
+      }
     }
   },
   "submit": {
