@@ -1,7 +1,4 @@
 import { emailToKey } from '@/constants/auth';
-import {
-    API_BASE_URL
-} from '@/constants/config';
 import { getFirebaseDB, getFirebaseFirestore } from '@/constants/firebase';
 import { executeWithAiLimit } from '@/services/aiRequestService';
 import { saveToArchive } from '@/utils/saveToArchive';
@@ -16,20 +13,23 @@ import { ref as dbRef, get } from 'firebase/database';
 import { arrayUnion, doc, updateDoc } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    Image,
-    ImageBackground,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Image,
+  ImageBackground,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DraggableZones, { Zone } from '../../components/DraggableZones';
+import {
+  API_BASE_URL
+} from '../../constants/config';
 
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
 const COLOR_ANALYSIS_PRICE = 1;
