@@ -1,4 +1,4 @@
-import { getFirebaseFirestore } from '@/constants/firebase';
+﻿import { getFirebaseFirestore } from '@/constants/firebase';
 import { ArchiveItem, ArchiveItemData, ArchiveItemType } from '@/types/archive';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -6,6 +6,41 @@ import { addDoc, collection } from 'firebase/firestore';
 
 export const ARCHIVE_COLLECTION = 'archives';
 export const LOCAL_ARCHIVE_KEY = 'local_archive_mine';
+
+export const UPLOAD_MEDIA_URL = 'http://62.238.13.160:8000/archive/upload-media';
+
+export async function uploadMediaToServer(uri: string): Promise<string | null> {
+  try {
+    const compressed = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 1200 } }],
+      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
+    );
+    const compressedUri = compressed.uri;
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: compressedUri,
+      name: 'photo.jpg',
+      type: 'image/jpeg',
+    } as any);
+
+    const response = await fetch(UPLOAD_MEDIA_URL, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      console.log('UPLOAD_MEDIA_ERROR:', response.status, text);
+      return null;
+    }
+    const data = await response.json();
+    return data.url || null;
+  } catch (e) {
+    console.log('UPLOAD_MEDIA_EXCEPTION:', e);
+    return null;
+  }
+}
 
 export async function saveToArchive(
   type: ArchiveItemType,
@@ -25,6 +60,21 @@ export async function saveToArchive(
 
     const createdAt = Date.now();
 
+    // Загружаем фото на сервер вместо base64
+    const rawImageUri: string = (data as any).imageUri || '';
+    let firestoreImageUri = '';
+    if (rawImageUri.startsWith('file://') || rawImageUri.startsWith('content://')) {
+      console.log('ARCHIVE_UPLOAD: Загружаем фото на сервер...');
+      firestoreImageUri = await uploadMediaToServer(rawImageUri);
+      if (firestoreImageUri) {
+        console.log('ARCHIVE_UPLOAD_SUCCESS:', firestoreImageUri);
+      } else {
+        console.log('ARCHIVE_UPLOAD_FAILED: сохраняем без изображения');
+      }
+    } else if (rawImageUri.startsWith('http://') || rawImageUri.startsWith('https://')) {
+      firestoreImageUri = rawImageUri;
+    }
+
     const payload = {
       userId,
       patientName,
@@ -34,7 +84,7 @@ export async function saveToArchive(
       data,
     };
 
-    // ── Локальный резерв (мгновенно, с оригинальным file:// путём) ──────────
+    // ── Локальный резерв (мгновенно, с URL изображения) ──────────
     const localRaw = await AsyncStorage.getItem(LOCAL_ARCHIVE_KEY);
     const localList: ArchiveItem[] = localRaw ? JSON.parse(localRaw) : [];
     const localId = `local_${createdAt}_${Math.random().toString(36).slice(2)}`;
@@ -42,29 +92,7 @@ export async function saveToArchive(
     await AsyncStorage.setItem(LOCAL_ARCHIVE_KEY, JSON.stringify(localList));
     console.log('ARCHIVE_DEBUG: saved to local cache, total local items =', localList.length);
 
-    // ── Сжимаем imageUri в base64 для Firestore ────────────────────────────
-    const rawImageUri: string = (data as any).imageUri || '';
-    let firestoreImageUri = '';
-    if (rawImageUri.startsWith('file://') || rawImageUri.startsWith('content://')) {
-      try {
-        console.log('ARCHIVE_BASE64: Сжимаем фото для Firestore...');
-        const compressed = await ImageManipulator.manipulateAsync(
-          rawImageUri,
-          [{ resize: { width: 250 } }],
-          { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true },
-        );
-        if (compressed.base64) {
-          firestoreImageUri = `data:image/jpeg;base64,${compressed.base64}`;
-          console.log('ARCHIVE_BASE64_SUCCESS: длина строки =', firestoreImageUri.length, '| ~', Math.round(firestoreImageUri.length * 0.75 / 1024), 'KB');
-        }
-      } catch (imgErr) {
-        console.log('ARCHIVE_BASE64_ERROR:', (imgErr as any)?.message ?? imgErr);
-      }
-    } else {
-      firestoreImageUri = rawImageUri;
-    }
-
-    // Payload для Firestore — imageUri заменён на base64 (или пустую строку)
+    // Payload для Firestore — imageUri заменён на URL сервера (или пустую строку)
     const firestoreData = { ...(data as any), imageUri: firestoreImageUri };
     const firestorePayload = { ...payload, data: firestoreData, imageUri: firestoreImageUri };
 
@@ -72,9 +100,9 @@ export async function saveToArchive(
     const doc = await addDoc(collection(getFirebaseFirestore(), ARCHIVE_COLLECTION), firestorePayload);
     console.log('ARCHIVE_DEBUG: saved to Firestore, docId =', doc.id);
 
-    // Обновляем локальный id на реальный Firestore id
+    // Обновляем локальный id на реальный Firestore id и URL картинки
     const updatedList = localList.map((it) =>
-      it.id === localId ? { ...it, id: doc.id } : it,
+      it.id === localId ? { ...it, id: doc.id, data: firestoreData, imageUri: firestoreImageUri } : it,
     );
     await AsyncStorage.setItem(LOCAL_ARCHIVE_KEY, JSON.stringify(updatedList));
 
@@ -84,3 +112,4 @@ export async function saveToArchive(
     return null;
   }
 }
+

@@ -701,22 +701,16 @@ const reset = useCallback(() => {
     try {
       const docRef = doc(getFirebaseFirestore(), 'archives', shareArchiveId);
 
-      // Сжимаем imageUri в base64 для получателя
+      // Загружаем фото на сервер вместо base64 для получателя
       let finalImageUri = '';
       const localUri: string = selectedImage ?? '';
       if (localUri && (localUri.startsWith('file://') || localUri.startsWith('content://'))) {
-        try {
-          const compressed = await ImageManipulator.manipulateAsync(
-            localUri,
-            [{ resize: { width: 250 } }],
-            { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true },
-          );
-          if (compressed.base64) {
-            finalImageUri = `data:image/jpeg;base64,${compressed.base64}`;
-          }
-        } catch (imgErr) {
-          console.log('[shareAnalysis] base64 error:', imgErr);
+        finalImageUri = await uploadMediaToServer(localUri);
+        if (!finalImageUri) {
+          console.log('[shareAnalysis] upload failed');
         }
+      } else if (localUri.startsWith('http://') || localUri.startsWith('https://')) {
+        finalImageUri = localUri;
       }
 
       const patch: any = { sharedWith: arrayUnion(colleagueId) };
