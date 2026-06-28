@@ -420,6 +420,40 @@ export default function OrderDetailsScreen() {
               textAlign: 'left',
             }}>{order?.technicianName || order?.techName || "Не указан"}</Text>
           </View>
+
+          {/* Кнопка перехода в личный чат с коллегой */}
+          {user?.role && (user?.role === 'doctor' ? order?.technicianId : order?.doctorId) && (
+            <TouchableOpacity
+              onPress={() => {
+                const isDoctor = user.role === 'doctor';
+                const partnerId = isDoctor ? order.technicianId : order.doctorId;
+                const partnerName = isDoctor ? (order.technicianName || order.techName || 'Коллега') : (order.doctorName || 'Коллега');
+                const partnerRole = isDoctor ? 'technician' : 'doctor';
+                router.push({
+                  pathname: '/partner-chat',
+                  params: { partnerId, partnerName, partnerRole },
+                } as any);
+              }}
+              style={{
+                marginTop: 16,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: 'rgba(242,202,80,0.1)',
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: '#f2ca50',
+                paddingVertical: 12,
+                gap: 8,
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="chatbubbles-outline" size={20} color="#f2ca50" />
+              <Text style={{ color: '#f2ca50', fontSize: 15, fontWeight: '600' }}>
+                Чат с коллегой
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Даты */}
