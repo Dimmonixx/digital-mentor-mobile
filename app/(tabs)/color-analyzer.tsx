@@ -1,10 +1,8 @@
 import { getFirebaseFirestore } from '@/constants/firebase';
-import { executeWithAiLimit } from '@/services/aiRequestService';
-import { saveToArchive } from '@/utils/saveToArchive';
+import { saveToArchive, uploadMediaToServer } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
-import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -67,88 +65,9 @@ const saveCachedAnalysis = async (imageUri: string, result: VitaAnalysis): Promi
   }
 };
 
-const VITA_ORDER: string[] = [
-  'BL1', 'BL2', 'BL3', 'BL4',
-  'A1', 'B1', 'A2', 'B2',
-  'C1', 'D2', 'A3', 'D3',
-  'B3', 'A3.5', 'C2', 'D4',
-  'B4', 'A4', 'C3', 'C4'
-];
-
-// Массив эталонов VITA в пространстве CIELAB (L, a, b)
-const VITA_LAB_STANDARDS = {
-  'BL1': { L: 85.0, a: -0.5, b: 2.5 },
-  'BL2': { L: 82.5, a: -0.2, b: 3.5 },
-  'BL3': { L: 80.0, a: 0.1, b: 5.0 },
-  'BL4': { L: 77.5, a: 0.3, b: 7.0 },
-  'A1': { L: 72.3, a: 1.1, b: 13.5 },
-  'A2': { L: 70.5, a: 2.1, b: 15.2 },
-  'A3': { L: 67.8, a: 3.2, b: 17.5 },
-  'A3.5': { L: 64.2, a: 4.1, b: 19.8 },
-  'A4': { L: 60.1, a: 4.8, b: 21.0 },
-  'B1': { L: 73.1, a: 0.5, b: 14.8 },
-  'B2': { L: 70.8, a: 1.2, b: 16.5 },
-  'B3': { L: 67.1, a: 2.3, b: 19.1 },
-  'B4': { L: 63.5, a: 3.1, b: 21.5 },
-  'C1': { L: 70.2, a: 0.2, b: 11.8 },
-  'C2': { L: 66.5, a: 0.9, b: 13.5 },
-  'C3': { L: 62.8, a: 1.4, b: 14.8 },
-  'C4': { L: 59.2, a: 1.8, b: 16.1 },
-  'D2': { L: 69.5, a: 0.8, b: 13.1 },
-  'D3': { L: 65.8, a: 1.5, b: 15.2 },
-  'D4': { L: 62.1, a: 2.1, b: 16.8 }
-};
-
-// Вспомогательные функции для конвертации цветов
-const rgbToXyz = (r: number, g: number, b: number) => {
-  // Нормализация RGB значений
-  const rNorm = r / 255;
-  const gNorm = g / 255;
-  const bNorm = b / 255;
-  
-  // Коррекция гаммы
-  const rLinear = rNorm > 0.04045 ? Math.pow((rNorm + 0.055) / 1.055, 2.4) : rNorm / 12.92;
-  const gLinear = gNorm > 0.04045 ? Math.pow((gNorm + 0.055) / 1.055, 2.4) : gNorm / 12.92;
-  const bLinear = bNorm > 0.04045 ? Math.pow((bNorm + 0.055) / 1.055, 2.4) : bNorm / 12.92;
-  
-  // Конверсия в XYZ
-  const x = rLinear * 0.4124564 + gLinear * 0.3575761 + bLinear * 0.1804375;
-  const y = rLinear * 0.2126729 + gLinear * 0.7151522 + bLinear * 0.0721750;
-  const z = rLinear * 0.0193339 + gLinear * 0.1191920 + bLinear * 0.9503041;
-  
-  return { x, y, z };
-};
-
-const xyzToLab = (x: number, y: number, z: number) => {
-  // Нормализация относительно D65
-  const xNorm = x / 0.95047;
-  const yNorm = y / 1.00000;
-  const zNorm = z / 1.08883;
-  
-  // Коррекция для значений < 0.008856
-  const fx = xNorm > 0.008856 ? Math.cbrt(xNorm) : (7.787 * xNorm + 16) / 116;
-  const fy = yNorm > 0.008856 ? Math.cbrt(yNorm) : (7.787 * yNorm + 16) / 116;
-  const fz = zNorm > 0.008856 ? Math.cbrt(zNorm) : (7.787 * zNorm + 16) / 116;
-  
-  // Конверсия в LAB
-  const L = 116 * fy - 16;
-  const a = 500 * (fx - fy);
-  const b = 200 * (fy - fz);
-  
-  return { L, a, b };
-};
-
-const deltaE = (lab1: { L: number; a: number; b: number }, lab2: { L: number; a: number; b: number }) => {
-  const dL = lab1.L - lab2.L;
-  const da = lab1.a - lab2.a;
-  const db = lab1.b - lab2.b;
-  return Math.sqrt(dL * dL + da * da + db * db);
-};
-
-
 interface VitaAnalysis {
   primary_range: string;
-  confidence: string;
+  confidence: string | number;
   photo_quality: string;
   neck: string;
   body: string;
@@ -188,10 +107,6 @@ const getMainShade = (result: any): string => {
   const raw = result?.primary_range || (result?.zones?.cervical ?? '');
   return raw.split('(')[0].split('—')[0].split('-')[0]
             .split('/')[0].trim();
-};
-
-const getCropY = (jaw: 'upper' | 'lower') => {
-  return jaw === 'upper' ? 0.35 : 0.52;
 };
 
 const PHOTO_TIPS_STEPS = [
@@ -422,101 +337,69 @@ export default function ColorAnalyzerScreen() {
 }, [jaw]);
 
   
-  const calculateToothShade = async (
-  imageUri: string,
-  jaw: 'upper' | 'lower',
-  zones: Zone[],
-  containerSize: { width: number; height: number }
-): Promise<string> => {
-  try {
-    // Сначала узнаем реальные ширину и высоту картинки
-    const imageInfo = await ImageManipulator.manipulateAsync(imageUri, [], { format: ImageManipulator.SaveFormat.JPEG });
-    const { width: imgWidth, height: imgHeight } = imageInfo;
+  const analyzeColorWithServer = async (
+    imageUri: string,
+    zones: Zone[],
+  ): Promise<VitaAnalysis | null> => {
+    try {
+      // Загружаем фото на сервер, чтобы получить публичный URL
+      let imageUrl = imageUri;
+      if (imageUri.startsWith('file://') || imageUri.startsWith('content://')) {
+        imageUrl = await uploadMediaToServer(imageUri) ?? '';
+        if (!imageUrl) {
+          throw new Error('Не удалось загрузить изображение на сервер');
+        }
+      }
 
-    // Используем координаты зоны 'cervical' для анализа
-    const cervicalZone = zones.find(z => z.id === 'cervical');
-    const cropXRatio = cervicalZone ? cervicalZone.x + cervicalZone.width * 0.4 : 0.42;
-    const cropYRatio = cervicalZone ? cervicalZone.y + cervicalZone.height * 0.3 : getCropY(jaw);
-    const cropWidthRatio = cervicalZone ? cervicalZone.width * 0.3 : 0.16;
-    const cropHeightRatio = cervicalZone ? cervicalZone.height * 0.4 : 0.12;
+      // Центр зоны cervical как координата анализа (относительные 0..1)
+      const cervicalZone = zones.find(z => z.id === 'cervical');
+      let x = 0.5;
+      let y = 0.5;
+      if (cervicalZone) {
+        x = Math.max(0, Math.min(1, cervicalZone.x + cervicalZone.width / 2));
+        y = Math.max(0, Math.min(1, cervicalZone.y + cervicalZone.height / 2));
+      }
 
-    const cropX = Math.round(imgWidth * cropXRatio);
-    const cropY = Math.round(imgHeight * cropYRatio);
-    const cropWidth = Math.round(imgWidth * cropWidthRatio);
-    const cropHeight = Math.round(imgHeight * cropHeightRatio);
+      const response = await fetch('http://62.238.13.160:8000/analysis/color', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_url: imageUrl, x, y, zone: '11' }),
+      });
 
-    const manipulated = await ImageManipulator.manipulateAsync(
-      imageUri,
-      [
-        {
-          crop: {
-            originX: cropX,
-            originY: cropY,
-            width: cropWidth,
-            height: cropHeight,
-          },
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.detail || `Ошибка сервера ${response.status}`);
+      }
+
+      return {
+        primary_range: data.matched_shade || '',
+        confidence: typeof data.delta_e === 'number' ? data.delta_e : 0,
+        photo_quality: data.description || '',
+        neck: data.neck || '',
+        body: data.body || '',
+        edge: data.edge || '',
+        effects: data.effects || '',
+        features: data.features || '',
+        secondary_subtones: '',
+        zones: {
+          cervical: data.neck || '',
+          body: data.body || '',
+          incisal: data.edge || '',
         },
-        { resize: { width: 10, height: 10 } },
-      ],
-      { format: ImageManipulator.SaveFormat.JPEG, base64: true }
-    );
-
-    // Получаем base64 для анализа пикселей
-    const base64 = manipulated.base64;
-    if (!base64) {
-      throw new Error('Не удалось получить base64 изображение');
+        layering_recipe: {
+          body: '',
+          enamel_incisal: '',
+          internal_effects: '',
+        },
+      };
+    } catch (e) {
+      console.error('Ошибка серверного анализа цвета:', e);
+      const message = e instanceof Error ? e.message : 'Ошибка анализа';
+      setError(message);
+      return null;
     }
-    
-    // Анализ пикселей (упрощенный подход для React Native)
-    const pixels: { L: number; a: number; b: number }[] = [];
-    
-    // Для анализа будем использовать эмуляцию пиксельных данных
-    // В реальном приложении здесь нужен Canvas API или библиотека для работы с изображениями
-    for (let i = 0; i < 100; i++) { // 10x10 пикселей
-      // Эмуляция RGB значений (в реальности нужно извлекать из изображения)
-      const r = Math.random() * 255;
-      const g = Math.random() * 255;
-      const b = Math.random() * 255;
-      
-      // Конвертация в LAB
-      const xyz = rgbToXyz(r, g, b);
-      const lab = xyzToLab(xyz.x, xyz.y, xyz.z);
-      
-      // Фильтрация бликов и теней (ужесточенные пороги)
-      if (lab.L >= 40 && lab.L <= 78) {
-        pixels.push(lab);
-      }
-    }
-
-    if (pixels.length === 0) {
-      return 'A2'; // Значение по умолчанию
-    }
-    
-    // Расчет среднего LAB
-    const avgL = pixels.reduce((sum, p) => sum + p.L, 0) / pixels.length;
-    const avgA = pixels.reduce((sum, p) => sum + p.a, 0) / pixels.length;
-    const avgB = pixels.reduce((sum, p) => sum + p.b, 0) / pixels.length;
-    const avgLab = { L: avgL, a: avgA, b: avgB };
-    
-    // Поиск ближайшего оттенка VITA
-    let minDistance = Infinity;
-    let closestShade = 'A2';
-    
-    for (const [shade, lab] of Object.entries(VITA_LAB_STANDARDS)) {
-      const distance = deltaE(avgLab, lab);
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestShade = shade;
-      }
-    }
-
-    return closestShade;
-    
-  } catch (error) {
-    console.error('Ошибка при расчете оттенка:', error);
-    return 'A2'; // Значение по умолчанию при ошибке
-  }
-};
+  };
 
 const reset = useCallback(() => {
     setSelectedImage(null);
@@ -545,23 +428,8 @@ const reset = useCallback(() => {
         }
       }
 
-      // Сначала выполняем математический расчет оттенка
-      const calculatedShade = await calculateToothShade(
-  selectedImage!,
-  jaw || 'upper',
-  zones,
-  containerSize
-);
-
-      // Затем отправляем в Claude с математическим ориентиром (с проверкой дневного лимита)
-      // Читаем email свежо из AsyncStorage — защита от stale closure
-      const rawUser = await AsyncStorage.getItem('user');
-      const userObj = rawUser ? JSON.parse(rawUser) : null;
-      const userEmail = userObj?.email || '';
-      const analysis = await executeWithAiLimit(
-        userEmail,
-        () => analyzeWithClaude(selectedImage!, mime, calculatedShade)
-      );
+      // Серверный анализ цвета по шкале VITA
+      const analysis = await analyzeColorWithServer(selectedImage!, zones);
       if (!analysis) {
         setLoading(false);
         return;
