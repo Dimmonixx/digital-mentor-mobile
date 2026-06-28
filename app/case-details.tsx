@@ -9,8 +9,7 @@ import {
     ClinicalCase,
     deleteCaseById,
     isOwnCase,
-    registerAiLike,
-    registerCorrectRiddle
+    registerAiLike
 } from '@/data/cases';
 import { getUserIdentity } from '@/utils/getUserIdentity';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -171,10 +170,11 @@ const RiddleBlock = ({
   onReward: () => void;
 }) => {
   const [picked, setPicked] = useState<string | null>(null);
-  const [rewarded, setRewarded] = useState(false);
+  const [isCorrect, setIsCorrect] = useState(false);
+  const [correctShade, setCorrectShade] = useState<string | null>(null);
   if (!riddle) return null;
 
-  const submitServerVote = async (label: string, isCorrect: boolean) => {
+  const submitServerRiddle = async (label: string) => {
     let userId = '';
     try {
       const rawUser = await AsyncStorage.getItem('user');
@@ -187,43 +187,45 @@ const RiddleBlock = ({
     if (!userId || !caseId) return;
 
     try {
-      const response = await fetch('http://62.238.13.160:8000/case-club/rate', {
+      const response = await fetch('http://62.238.13.160:8000/case-club/riddle/solve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           case_id: caseId,
           user_id: userId,
-          rating: isCorrect ? 5 : 1,
-          shade_guess: label,
+          selected_shade: label,
         }),
       });
 
       if (response.status === 400) {
-        Alert.alert('Вы уже голосовали', 'В этом кейсе можно проголосовать только один раз');
+        Alert.alert('Уже решено', 'Вы уже отправляли ответ на эту загадку.');
+        setCorrectShade(riddle.correct);
+        setIsCorrect(picked === riddle.correct);
         return;
       }
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        console.warn('[CaseDetails] vote error:', data.detail || response.status);
+        Alert.alert('Ошибка', data.detail || `Не удалось проверить ответ (${response.status})`);
+        return;
+      }
+
+      const data = await response.json();
+      setIsCorrect(Boolean(data.correct));
+      setCorrectShade(data.correct_shade || null);
+      if (data.correct) {
+        onReward();
       }
     } catch (e) {
-      console.warn('[CaseDetails] vote request failed:', e);
+      console.warn('[CaseDetails] riddle request failed:', e);
+      Alert.alert('Ошибка', 'Не удалось связаться с сервером. Проверьте подключение.');
     }
   };
 
   const onPick = async (label: string) => {
     if (picked != null) return;
     setPicked(label);
-    const isCorrect = label === riddle.correct;
-    submitServerVote(label, isCorrect);
-    if (isCorrect && !rewarded) {
-      setRewarded(true);
-      await (globalThis as any).spendDiamonds?.(-1); // начисляем +1 💎
-      (globalThis as any).forceDiamondUpdate?.();
-      registerCorrectRiddle();
-      onReward();
-    }
+    await submitServerRiddle(label);
   };
 
   return (
@@ -247,17 +249,27 @@ const RiddleBlock = ({
             selected={picked === opt.label}
             revealed={picked != null}
             percent={opt.percent}
-            correct={opt.label === riddle.correct}
+            correct={correctShade ? opt.label === correctShade : opt.label === riddle.correct}
             onPress={() => onPick(opt.label)}
           />
         ))}
       </View>
       {picked != null && (
-        <Text style={[styles.riddleResult, picked !== riddle.correct && styles.riddleResultWrong]}>
-          {picked === riddle.correct
-            ? `Верно! Вам начислен +1 заряд ИИ. Большинство коллег выбрали ${riddle.correct}.`
-            : `Правильный ответ — ${riddle.correct}. Вы выбрали ${picked}.`}
-        </Text>
+        <View style={[styles.riddleVerdictCard, isCorrect && styles.riddleVerdictCardCorrect]}>
+          <Ionicons
+            name={isCorrect ? 'checkmark-circle' : 'close-circle'}
+            size={28}
+            color={isCorrect ? '#f2ca50' : '#d32f2f'}
+          />
+          <Text style={[styles.riddleVerdictTitle, isCorrect && styles.riddleVerdictTitleCorrect]}>
+            {isCorrect ? 'ВЕРНО' : 'НЕВЕРНО'}
+          </Text>
+          <Text style={styles.riddleVerdictText}>
+            {isCorrect
+              ? `Правильный ответ — ${correctShade}. Вам начислен +1 заряд ИИ.`
+              : `Правильный ответ — ${correctShade}. Вы выбрали ${picked}.`}
+          </Text>
+        </View>
       )}
     </View>
   );
@@ -926,8 +938,34 @@ const styles = StyleSheet.create({
   hexContent: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 1 },
   hexLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 0.3 },
   hexPercent: { fontSize: 9, fontWeight: '700', color: '#ffffff' },
-  riddleResult: { fontSize: 13, fontWeight: '600', color: '#7CFC8A', marginTop: 16, textAlign: 'center' },
-  riddleResultWrong: { color: '#ff9e9e' },
+  riddleVerdictCard: {
+    backgroundColor: 'rgba(10, 16, 30, 0.92)',
+    borderRadius: 16,
+    padding: 18,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(211, 47, 47, 0.6)',
+    alignItems: 'center',
+    gap: 8,
+  },
+  riddleVerdictCardCorrect: {
+    borderColor: 'rgba(242, 202, 80, 0.6)',
+  },
+  riddleVerdictTitle: {
+    color: '#ff9e9e',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  riddleVerdictTitleCorrect: {
+    color: '#f2ca50',
+  },
+  riddleVerdictText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
 
   /* Comments */
   commentRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 12 },
