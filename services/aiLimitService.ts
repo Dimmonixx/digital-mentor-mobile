@@ -1,68 +1,26 @@
-import { getFirebaseDB } from '@/constants/firebase';
-import { get, ref, runTransaction } from 'firebase/database';
+const API_BASE_URL = 'http://62.238.13.160:8000';
 
-// Возвращает локальную дату в формате YYYY-MM-DD (по часовому поясу устройства)
-function getLocalDateString(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-const DAILY_LIMIT_DEFAULT = 15;
-
-export async function checkAndDeductDailyLimit(emailKey: string): Promise<boolean> {
-  if (!emailKey) {
-    console.warn('[aiLimitService] emailKey is empty — allowing request');
+export async function checkAndDeductDailyLimit(email: string): Promise<boolean> {
+  if (!email) {
+    console.warn('[aiLimitService] email is empty — allowing request');
     return true;
   }
   try {
-    const db = getFirebaseDB();
-    const aiLimitsRef = ref(db, `users/${emailKey}/aiLimits`);
-    const today = getLocalDateString();
-    console.log('[aiLimitService] running transaction for:', emailKey, '| today (local):', today);
-
-    // Читаем credits отдельно — вне транзакции, чтобы не конфликтовать с _layout
-    const creditsSnap = await get(ref(db, `users/${emailKey}/credits`));
-    const credits = creditsSnap.val() ?? 0;
-    if (credits > 50000) {
-      console.log('[aiLimitService] admin user — unlimited');
-      return true;
-    }
-
-    const result = await runTransaction(aiLimitsRef, (limitsData) => {
-      console.log('[aiLimitService] transaction limitsData:', JSON.stringify(limitsData));
-
-      // Первый запуск или null — инициализируем
-      if (!limitsData) {
-        return {
-          lastAiUsageDate: today,
-          aiDailyLimit: DAILY_LIMIT_DEFAULT - 1, // -1 за текущий запрос
-        };
-      }
-
-      // Новый день — сбрасываем лимит
-      if (!limitsData.lastAiUsageDate || limitsData.lastAiUsageDate !== today) {
-        limitsData.lastAiUsageDate = today;
-        limitsData.aiDailyLimit = DAILY_LIMIT_DEFAULT - 1; // -1 за текущий запрос
-        return limitsData;
-      }
-
-      // Лимит исчерпан — abort
-      if (limitsData.aiDailyLimit === undefined || limitsData.aiDailyLimit <= 0) {
-        console.log('[aiLimitService] limit exhausted for:', emailKey);
-        return undefined;
-      }
-
-      // Списываем 1 запрос
-      limitsData.aiDailyLimit -= 1;
-      console.log('[aiLimitService] deducted 1, remaining:', limitsData.aiDailyLimit);
-      return limitsData;
+    const response = await fetch(`${API_BASE_URL}/ai/verify-and-use`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim() }),
     });
 
-    console.log('[aiLimitService] committed:', result.committed);
-    return result.committed;
+    const data = await response.json().catch(() => ({}));
+    console.log('[aiLimitService] server response:', data);
+
+    if (!response.ok) {
+      console.log('[aiLimitService] server denied AI request:', data.detail || response.status);
+      return false;
+    }
+
+    return data.status === 'allowed';
   } catch (e) {
     console.error('[aiLimitService] checkAndDeductDailyLimit error:', e);
     return false;

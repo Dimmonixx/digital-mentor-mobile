@@ -1,4 +1,3 @@
-import { emailToKey } from '@/constants/auth';
 import { API_BASE_URL } from '@/constants/config';
 import { executeWithAiLimit } from '@/services/aiRequestService';
 import { Ionicons } from '@expo/vector-icons';
@@ -178,10 +177,10 @@ export default function MorphologyScreen() {
   const analyzeImage = async (imageUri: string) => {
     const rawUser = await AsyncStorage.getItem('user');
     const userObj = rawUser ? JSON.parse(rawUser) : null;
-    const emailKey = userObj?.email ? emailToKey(userObj.email) : '';
+    const userEmail = userObj?.email || '';
 
     setLoading(true);
-    const success = await executeWithAiLimit(emailKey, async () => {
+    const success = await executeWithAiLimit(userEmail, async () => {
       try {
         const morphPrompt = `Ты — система компьютерного зрения для зуботехнических CAD/CAM систем. Проведи анализ геометрии поверхности зуба.
 
@@ -244,10 +243,10 @@ export default function MorphologyScreen() {
     if (!image || !selectedPoint || !imageLayout) return;
     const rawUser = await AsyncStorage.getItem('user');
     const userObj = rawUser ? JSON.parse(rawUser) : null;
-    const emailKey = userObj?.email ? emailToKey(userObj.email) : '';
+    const userEmail = userObj?.email || '';
 
     setLoading(true);
-    const success = await executeWithAiLimit(emailKey, async () => {
+    const success = await executeWithAiLimit(userEmail, async () => {
       try {
         const imageInfo = await ImageManipulator.manipulateAsync(
           image, [], { format: ImageManipulator.SaveFormat.JPEG, compress: 0.6 }

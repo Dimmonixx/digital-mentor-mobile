@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Redirect, Tabs } from 'expo-router';
 
 import { getFirebaseDB, getFirebaseFirestore } from '@/constants/firebase';
-import { query as dbQuery, equalTo, onValue, orderByChild, ref, set } from 'firebase/database';
+import { query as dbQuery, equalTo, onValue, orderByChild, ref } from 'firebase/database';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -137,84 +137,6 @@ export default function TabLayout() {
     });
   }, []);
 
-  // Подписка лимитов ИИ из RTDB
-  useEffect(() => {
-    if (!user) return;
-    const email: string = (user as any)?.email || '';
-    const uid: string = email ? emailToKey(email) : ((user as any)?.uid || (user as any)?.id || '');
-    if (!uid) return;
-    const currentDb = getFirebaseDB();
-    const aiLimitsRef = ref(currentDb, `users/${uid}/aiLimits`);
-    const unsub = onValue(aiLimitsRef, (snap) => {
-      const val = snap.val();
-      if (!val) return;
-
-      // Проверяем смену дня по локальному времени устройства
-      const now = new Date();
-      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-      if (val.lastAiUsageDate && val.lastAiUsageDate !== today) {
-        // Новый день — сбрасываем лимит прямо в RTDB и обновляем UI
-        const resetLimit = 15;
-        set(aiLimitsRef, { lastAiUsageDate: today, aiDailyLimit: resetLimit }).catch(() => {});
-        setAiDailyLimit(resetLimit);
-        aiDailyLimitRef.current = resetLimit;
-        (globalThis as any).forceDiamondUpdate?.();
-        return;
-      }
-
-      if (typeof val.aiDailyLimit === 'number') {
-        setAiDailyLimit(val.aiDailyLimit);
-        aiDailyLimitRef.current = val.aiDailyLimit;
-        (globalThis as any).forceDiamondUpdate?.();
-      }
-    });
-    return () => unsub();
-  }, [user]);
-
-  // Подписка баланса алмазов из RTDB — единственный источник истины
-  useEffect(() => {
-    if (!user) {
-      console.log('[Auth Debug] _layout: no user, skipping balance listener');
-      return;
-    }
-    const email: string = (user as any)?.email || '';
-    const uid: string = email ? emailToKey(email) : ((user as any)?.uid || (user as any)?.id || '');
-    console.log('[Auth Debug] _layout: formatted balance path key:', uid);
-    if (!uid) return;
-    const currentDb = getFirebaseDB();
-    const diamondRef = ref(currentDb, `users/${uid}/diamondBalance`);
-    console.log('[Auth Debug] _layout: subscribing to', `users/${uid}/diamondBalance`);
-    const unsub = onValue(diamondRef, (snap) => {
-      const val = snap.val();
-      console.log('[Auth Debug] _layout: raw diamondBalance snapshot:', val);
-      // Admins get infinite diamonds — check by email or isAdmin flag
-      const adminCheck = (user as any)?.isAdmin === true || (user as any)?.email === 'dimmonix@gmail.com';
-      if (adminCheck) {
-        setDiamondBalance(999999);
-        diamondBalanceRef.current = 999999;
-        setIsAdmin(true);
-        console.log('💎 ADMIN: unlimited diamonds');
-        return;
-      }
-      if (val !== null && val !== undefined) {
-        setDiamondBalance(val);
-        diamondBalanceRef.current = val;
-        (globalThis as any).forceDiamondUpdate?.();
-        console.log('💎 RTDB_BALANCE: Баланс из RTDB =', val, '| путь: users/' + uid + '/diamondBalance');
-      } else {
-        // Поля нет — инициализируем значением из кэша или 20
-        const initial = diamondBalanceRef.current ?? 20;
-        set(diamondRef, initial);
-        console.log('💎 RTDB_BALANCE: Поле не найдено, записываем начальный баланс =', initial, '| путь: users/' + uid + '/diamondBalance');
-      }
-      console.log('💎 СИНХРОНИЗАЦИЯ: Алмазы переведены на Firebase RTDB для', uid);
-    }, (error) => {
-      console.error('[Firebase Error Check] _layout balance:', error);
-    });
-    return () => unsub();
-  }, [user]);
-
   // Сохраняем баланс в AsyncStorage при каждом изменении
   useEffect(() => {
     if (!user) return;
@@ -225,7 +147,7 @@ export default function TabLayout() {
   useEffect(() => {
     (globalThis as any).getDiamondBalance = () => diamondBalanceRef.current;
     (globalThis as any).getAiDailyLimit = () => aiDailyLimitRef.current;
-    (globalThis as any).spendDiamonds = (amount: number) => {
+    (globalThis as any).spendDiamonds = async (amount: number) => {
       // Admin never spends diamonds
       if (isAdmin) return true;
       if (diamondBalanceRef.current < amount) return false;
@@ -236,16 +158,37 @@ export default function TabLayout() {
       setDiamondBalance(newBalance);
       diamondBalanceRef.current = newBalance;
 
-      // 2. Пишем в RTDB фоново
-      AsyncStorage.getItem('user').then((raw) => {
-        if (!raw) return;
-        const u = JSON.parse(raw);
-        const uid: string = u?.email ? emailToKey(u.email) : (u?.uid || u?.id || '');
-        if (!uid) return;
-        const currentDb = getFirebaseDB();
-        set(ref(currentDb, `users/${uid}/diamondBalance`), newBalance)
-          .catch((e) => console.log('💎 RTDB_SPEND_ERROR:', e));
-      });
+      // 2. Для реального списания (положительный amount) ходим на backend
+      if (amount > 0) {
+        const raw = await AsyncStorage.getItem('user');
+        if (raw) {
+          const u = JSON.parse(raw);
+          const userEmail = u?.email || '';
+          if (userEmail) {
+            try {
+              const response = await fetch('http://62.238.13.160:8000/balance/spend', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: userEmail, amount }),
+              });
+              if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                console.log('💎 BALANCE_SPEND_ERROR:', data.detail || response.status);
+                // Откатываем локальный стейт, если сервер отказал
+                setDiamondBalance(diamondBalanceRef.current + amount);
+                diamondBalanceRef.current += amount;
+                return false;
+              }
+            } catch (e) {
+              console.log('💎 BALANCE_SPEND_FETCH_ERROR:', e);
+              // Откатываем локальный стейт при сетевой ошибке
+              setDiamondBalance(diamondBalanceRef.current + amount);
+              diamondBalanceRef.current += amount;
+              return false;
+            }
+          }
+        }
+      }
 
       return true;
     };

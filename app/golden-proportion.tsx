@@ -1133,7 +1133,7 @@ export default function GoldenProportionScreen() {
                 }
 
                 // Списываем 1 алмаз (как в color-analyzer)
-                const didSpend = (globalThis as any).spendDiamonds?.(1);
+                const didSpend = await (globalThis as any).spendDiamonds?.(1);
                 if (!didSpend) {
                   setDiamondsModalVisible(true);
                   return;

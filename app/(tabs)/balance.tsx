@@ -154,7 +154,7 @@ export default function BalanceScreen() {
         setHasShared(true);
         const newBalance = balance + 1;
         setBalance(newBalance);
-        (globalThis as any).spendDiamonds?.(-1);
+        await (globalThis as any).spendDiamonds?.(-1);
         (globalThis as any).forceDiamondUpdate?.();
         
         // Save hasShared to AsyncStorage

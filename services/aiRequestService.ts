@@ -1,11 +1,11 @@
 import { checkAndDeductDailyLimit } from './aiLimitService';
 
 export async function executeWithAiLimit<T>(
-  emailKey: string,
+  email: string,
   aiTask: () => Promise<T>
 ): Promise<T | null> {
   try {
-    const allowed = await checkAndDeductDailyLimit(emailKey);
+    const allowed = await checkAndDeductDailyLimit(email);
     if (!allowed) {
       (globalThis as any).showAiLimitAlert?.();
       return null;

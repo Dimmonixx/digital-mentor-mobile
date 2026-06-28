@@ -1,5 +1,4 @@
 import CustomAlert from '@/components/CustomAlert';
-import { emailToKey } from '@/constants/auth';
 import { ANTHROPIC_API_KEY } from '@/constants/config';
 import { useLanguage } from '@/context/LanguageContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -386,11 +385,11 @@ export default function WorkAnalysisScreen() {
     try {
       const rawUser = await AsyncStorage.getItem('user');
       const userObj = rawUser ? JSON.parse(rawUser) : null;
-      const emailKey = userObj?.email ? emailToKey(userObj.email) : '';
+      const userEmail = userObj?.email || '';
 
       const teeth = selectedTeeth.length > 0 ? selectedTeeth.join(', ') : 'не указаны';
       const result = await executeWithAiLimit(
-        emailKey,
+        userEmail,
         () => analyzeWithClaude(
           imageBase64,
           imageMime,

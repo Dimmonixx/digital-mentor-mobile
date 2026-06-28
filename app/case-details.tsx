@@ -172,12 +172,12 @@ const RiddleBlock = ({
   const [rewarded, setRewarded] = useState(false);
   if (!riddle) return null;
 
-  const onPick = (label: string) => {
+  const onPick = async (label: string) => {
     if (picked != null) return;
     setPicked(label);
     if (label === riddle.correct && !rewarded) {
       setRewarded(true);
-      (globalThis as any).spendDiamonds?.(-1); // начисляем +1 💎
+      await (globalThis as any).spendDiamonds?.(-1); // начисляем +1 💎
       (globalThis as any).forceDiamondUpdate?.();
       registerCorrectRiddle();
       onReward();
@@ -226,8 +226,8 @@ const AiReviewBlock = ({ review, onSpent }: { review: string; onSpent: () => voi
   const [revealed, setRevealed] = useState(false);
   const [liked, setLiked] = useState(false);
 
-  const runReview = () => {
-    const ok = (globalThis as any).spendDiamonds?.(AI_REVIEW_COST);
+  const runReview = async () => {
+    const ok = await (globalThis as any).spendDiamonds?.(AI_REVIEW_COST);
     if (!ok) {
       Alert.alert('Низкий заряд ИИ', `Для AI-разбора нужно ${AI_REVIEW_COST} заряда. Пополните заряды в «Станции зарядки».`);
       return;

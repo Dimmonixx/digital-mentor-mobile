@@ -1,5 +1,4 @@
-import { emailToKey } from '@/constants/auth';
-import { getFirebaseDB, getFirebaseFirestore } from '@/constants/firebase';
+import { getFirebaseFirestore } from '@/constants/firebase';
 import { executeWithAiLimit } from '@/services/aiRequestService';
 import { saveToArchive } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -558,9 +557,9 @@ const reset = useCallback(() => {
       // Читаем email свежо из AsyncStorage — защита от stale closure
       const rawUser = await AsyncStorage.getItem('user');
       const userObj = rawUser ? JSON.parse(rawUser) : null;
-      const emailKey = userObj?.email ? emailToKey(userObj.email) : '';
+      const userEmail = userObj?.email || '';
       const analysis = await executeWithAiLimit(
-        emailKey,
+        userEmail,
         () => analyzeWithClaude(selectedImage!, mime, calculatedShade)
       );
       if (!analysis) {

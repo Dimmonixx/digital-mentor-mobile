@@ -1,5 +1,4 @@
 import GlobalHeader from '@/components/global-header';
-import { emailToKey } from '@/constants/auth';
 import { API_BASE_URL } from '@/constants/config';
 import { getFirebaseDB } from '@/constants/firebase';
 import { executeWithAiLimit } from '@/services/aiRequestService';
@@ -307,9 +306,9 @@ export default function ChatScreen() {
       if (aiAssistantEnabled) {
         const rawUser = await AsyncStorage.getItem('user');
         const userObj = rawUser ? JSON.parse(rawUser) : null;
-        const emailKey = userObj?.email ? emailToKey(userObj.email) : '';
+        const userEmail = userObj?.email || '';
         setAiThinking(true);
-        const aiReply = await executeWithAiLimit(emailKey, () => getClaudeResponse(text, messages));
+        const aiReply = await executeWithAiLimit(userEmail, () => getClaudeResponse(text, messages));
         setAiThinking(false);
         if (aiReply) {
           await push(messagesRef, {
