@@ -162,9 +162,11 @@ const HexButton = ({
 };
 
 const RiddleBlock = ({
+  caseId,
   riddle,
   onReward,
 }: {
+  caseId: string;
   riddle: ClinicalCase['riddle'];
   onReward: () => void;
 }) => {
@@ -172,10 +174,50 @@ const RiddleBlock = ({
   const [rewarded, setRewarded] = useState(false);
   if (!riddle) return null;
 
+  const submitServerVote = async (label: string, isCorrect: boolean) => {
+    let userId = '';
+    try {
+      const rawUser = await AsyncStorage.getItem('user');
+      if (rawUser) {
+        const u = JSON.parse(rawUser);
+        userId = u.id || u.email || '';
+      }
+    } catch {}
+
+    if (!userId || !caseId) return;
+
+    try {
+      const response = await fetch('http://62.238.13.160:8000/case-club/rate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          case_id: caseId,
+          user_id: userId,
+          rating: isCorrect ? 5 : 1,
+          shade_guess: label,
+        }),
+      });
+
+      if (response.status === 400) {
+        Alert.alert('Вы уже голосовали', 'В этом кейсе можно проголосовать только один раз');
+        return;
+      }
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        console.warn('[CaseDetails] vote error:', data.detail || response.status);
+      }
+    } catch (e) {
+      console.warn('[CaseDetails] vote request failed:', e);
+    }
+  };
+
   const onPick = async (label: string) => {
     if (picked != null) return;
     setPicked(label);
-    if (label === riddle.correct && !rewarded) {
+    const isCorrect = label === riddle.correct;
+    submitServerVote(label, isCorrect);
+    if (isCorrect && !rewarded) {
       setRewarded(true);
       await (globalThis as any).spendDiamonds?.(-1); // начисляем +1 💎
       (globalThis as any).forceDiamondUpdate?.();
@@ -612,7 +654,7 @@ export default function CaseDetailsScreen() {
         <AiReviewBlock review={item.aiReview} onSpent={refreshDiamonds} />
 
         {/* Riddle */}
-        {item.riddle && <RiddleBlock riddle={item.riddle} onReward={refreshDiamonds} />}
+        {item.riddle && <RiddleBlock caseId={id} riddle={item.riddle} onReward={refreshDiamonds} />}
 
         {/* Comment input — inside scroll */}
         <View style={styles.commentInputRow}>

@@ -109,6 +109,8 @@ export default function ProfileScreen() {
     registrationDate: '',
   });
 
+  const [mastery, setMastery] = useState<{ score: number; level: string; total_cases: number } | null>(null);
+
   const [inviteCode, setInviteCode] = useState<string>('');
   const [partnerCode, setPartnerCode] = useState<string>('');
   const [linkingLoading, setLinkingLoading] = useState(false);
@@ -267,6 +269,7 @@ export default function ProfileScreen() {
 
     loadProfile();
     loadStatistics();
+    loadMastery();
     loadInviteCode();
 
     const unsubscribePartners = loadProfilePartners();
@@ -396,6 +399,25 @@ export default function ProfileScreen() {
       });
     } catch (error) {
       console.log("=== Статистика: ошибка загрузки ===", (error as any)?.message);
+    }
+  };
+
+  const loadMastery = async () => {
+    try {
+      const storedUser = await AsyncStorage.getItem('user');
+      const currentUser = storedUser ? JSON.parse(storedUser) : null;
+      const userId = currentUser?.uid || user?.uid || currentUser?.id || user?.id;
+      const role = currentUser?.role || user?.role;
+      if (!userId || role !== 'technician') return;
+
+      const response = await fetch(`http://62.238.13.160:8000/technician/${userId}/mastery`);
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data && typeof data.score === 'number') {
+        setMastery(data);
+      }
+    } catch (error) {
+      console.log('=== Mastery: ошибка загрузки ===', (error as any)?.message);
     }
   };
 
@@ -831,6 +853,23 @@ export default function ProfileScreen() {
             <Text style={styles.statLabel}>Анализов цвета</Text>
           </View>
         </View>
+
+        {/* Mastery Index */}
+        {mastery && (
+          <View style={styles.masteryBlock}>
+            <View style={styles.masteryHeader}>
+              <Ionicons name="trophy-outline" size={18} color={GOLD} />
+              <Text style={styles.masteryTitle}>ИНДЕКС МАСТЕРСТВА</Text>
+            </View>
+            <View style={styles.masteryBody}>
+              <View style={styles.masteryLevelWrap}>
+                <Text style={styles.masteryLevel}>{mastery.level}</Text>
+                <Text style={styles.masteryScore}>{mastery.score} XP</Text>
+              </View>
+              <Text style={styles.masteryCases}>{mastery.total_cases} кейсов</Text>
+            </View>
+          </View>
+        )}
 
         {/* 3. DiLabs network */}
         <View style={styles.networkBlock}>
@@ -1355,6 +1394,51 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(255,255,255,0.55)',
     textAlign: 'center',
+    fontWeight: '500',
+  },
+  masteryBlock: {
+    backgroundColor: 'rgba(10, 16, 30, 0.92)',
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.45)',
+  },
+  masteryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  masteryTitle: {
+    color: GOLD,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  masteryBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  masteryLevelWrap: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 10,
+  },
+  masteryLevel: {
+    color: GOLD,
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  masteryScore: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  masteryCases: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 13,
     fontWeight: '500',
   },
   networkBlock: {

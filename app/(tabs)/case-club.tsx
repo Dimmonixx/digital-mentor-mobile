@@ -41,6 +41,35 @@ function toArray<T>(val: any): T[] {
   return [];
 }
 
+function mapBackendCases(raw: any): any[] {
+  if (!raw || typeof raw !== 'object') return [];
+  return Object.entries(raw).map(([id, c]: [string, any]) => ({
+    id,
+    authorId: c.authorId || '',
+    author: c.authorId ? 'Коллега' : 'Аноним',
+    role: 'technician',
+    description: c.title || '',
+    fullDescription: c.description || '',
+    media: c.imageUrl ? [{ uri: c.imageUrl, stage: 'Обложка' }] : [],
+    coverIndex: 0,
+    rating: c.rating || 0,
+    totalVotes: c.totalVotes || 0,
+    createdAt: c.createdAt || 0,
+    riddle: c.correctShade
+      ? {
+          question: 'Угадайте оттенок VITA',
+          options: [
+            { label: 'A1', percent: 25 },
+            { label: 'A2', percent: 25 },
+            { label: 'A3', percent: 25 },
+            { label: 'B1', percent: 25 },
+          ],
+          correct: c.correctShade,
+        }
+      : undefined,
+  }));
+}
+
 function validUri(uri?: string): string | undefined {
   if (!uri) return undefined;
   if (uri.startsWith('https://') || uri.startsWith('data:')) return uri;
@@ -98,7 +127,8 @@ const PostCard = ({
   onLike: (id: string) => void;
   onDislike: (id: string) => void;
 }) => {
-  const isOwn = !!currentEmail && post.authorEmail === currentEmail;
+  const isOwn = (!!currentEmail && (post.authorEmail === currentEmail || post.authorId === currentEmail)) ||
+    (!!currentUserId && post.authorId === currentUserId);
   const isTech = post.role === 'Техник' || post.role === 'technician' || post.role === 'Зубной техник';
   const roleLabel = isTech ? 'Зубной техник' : 'Врач';
 
@@ -245,11 +275,11 @@ export default function CaseClubScreen() {
   );
 
   useEffect(() => {
-    const postsRef = ref(getFirebaseDB(), 'case_club_posts');
+    const postsRef = ref(getFirebaseDB(), 'case_club');
     const unsub = onValue(postsRef, (snapshot) => {
       const raw = snapshot.exists() ? snapshot.val() : null;
-      const arr: any[] = toArray(raw).filter((p: any) => p?.id && p?.description);
-      const sorted = arr.sort((a, b) => Number(b.id) - Number(a.id));
+      const arr = mapBackendCases(raw).filter((p: any) => p?.id && (p?.description || p?.fullDescription));
+      const sorted = arr.sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
       setPosts(sorted);
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(sorted)).catch(() => {});
     });
@@ -263,7 +293,7 @@ export default function CaseClubScreen() {
       {
         text: 'Удалить', style: 'destructive', onPress: async () => {
           try {
-            await remove(ref(getFirebaseDB(), `case_club_posts/${id}`));
+            await remove(ref(getFirebaseDB(), `case_club/${id}`));
           } catch (e) {
             console.warn('[CaseClub] Ошибка удаления:', e);
             setPosts(prev => prev.filter(p => p.id !== id));
@@ -275,7 +305,7 @@ export default function CaseClubScreen() {
 
   const deletePhoto = useCallback(async (postId: string) => {
     try {
-      await set(ref(getFirebaseDB(), `case_club_posts/${postId}/media`), []);
+      await set(ref(getFirebaseDB(), `case_club/${postId}/media`), []);
     } catch (e) {
       console.warn('[CaseClub] Ошибка удаления фото:', e);
     }
@@ -283,7 +313,7 @@ export default function CaseClubScreen() {
 
   const handleLike = useCallback(async (postId: string) => {
     if (!currentUserId) return;
-    const likeRef = ref(getFirebaseDB(), `case_club_posts/${postId}/likedBy/${currentUserId}`);
+    const likeRef = ref(getFirebaseDB(), `case_club/${postId}/likedBy/${currentUserId}`);
     const post = posts.find(p => p.id === postId);
     const alreadyLiked = post?.likedBy?.[currentUserId];
     try {
@@ -291,7 +321,7 @@ export default function CaseClubScreen() {
         await remove(likeRef);
       } else {
         await set(likeRef, true);
-        await remove(ref(getFirebaseDB(), `case_club_posts/${postId}/dislikedBy/${currentUserId}`));
+        await remove(ref(getFirebaseDB(), `case_club/${postId}/dislikedBy/${currentUserId}`));
       }
     } catch (e) {
       console.warn('[CaseClub] Ошибка лайка:', e);
@@ -300,7 +330,7 @@ export default function CaseClubScreen() {
 
   const handleDislike = useCallback(async (postId: string) => {
     if (!currentUserId) return;
-    const dislikeRef = ref(getFirebaseDB(), `case_club_posts/${postId}/dislikedBy/${currentUserId}`);
+    const dislikeRef = ref(getFirebaseDB(), `case_club/${postId}/dislikedBy/${currentUserId}`);
     const post = posts.find(p => p.id === postId);
     const alreadyDisliked = post?.dislikedBy?.[currentUserId];
     try {
@@ -308,7 +338,7 @@ export default function CaseClubScreen() {
         await remove(dislikeRef);
       } else {
         await set(dislikeRef, true);
-        await remove(ref(getFirebaseDB(), `case_club_posts/${postId}/likedBy/${currentUserId}`));
+        await remove(ref(getFirebaseDB(), `case_club/${postId}/likedBy/${currentUserId}`));
       }
     } catch (e) {
       console.warn('[CaseClub] Ошибка дизлайка:', e);

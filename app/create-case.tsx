@@ -1,10 +1,9 @@
-import { getFirebaseDB } from '@/constants/firebase';
-import { addCase } from '@/data/cases';
+import { uploadMediaToServer } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { ref, set } from 'firebase/database';
 import React, { useState } from 'react';
 import {
     Dimensions,
@@ -54,6 +53,28 @@ export default function CreateCaseScreen() {
     }
   };
 
+  const uploadBase64Photo = async (base64Uri: string): Promise<string | null> => {
+    try {
+      const match = base64Uri.match(/^data:image\/(\w+);base64,(.*)$/);
+      if (!match) return null;
+      const ext = match[1] === 'png' ? 'png' : 'jpg';
+      const base64 = match[2];
+      const fs = FileSystem as any;
+      const tempUri = `${fs.cacheDirectory}case_upload_${Date.now()}.${ext}`;
+      await fs.writeAsStringAsync(tempUri, base64, {
+        encoding: fs.EncodingType?.Base64 || 'base64',
+      });
+      const url = await uploadMediaToServer(tempUri);
+      try {
+        await fs.deleteAsync(tempUri, { idempotent: true });
+      } catch {}
+      return url;
+    } catch (e) {
+      console.error('[CreateCase] uploadBase64Photo error:', e);
+      return null;
+    }
+  };
+
   const handlePublish = async () => {
     if (!description.trim()) {
       setOverlay({ title: 'Ошибка', message: 'Пожалуйста, добавьте описание кейса', icon: 'alert-circle-outline' });
@@ -65,96 +86,55 @@ export default function CreateCaseScreen() {
       return;
     }
 
-    const safeDescription = description.trim();
-    const safeMedia = photos.map((uri, i) => ({ uri, stage: `Фото ${i + 1}` }));
-    const safeCoverIndex = Math.min(coverIndex, photos.length - 1);
-
-    const newCase = {
-      id: Date.now().toString(),
-      author: isAnonymous ? 'Анонимный коллега' : 'Пользователь',
-      role: 'Врач' as const,
-      avatar: '',
-      tags: [],
-      description: safeDescription.slice(0, 100),
-      fullDescription: safeDescription,
-      media: safeMedia,
-      coverIndex: safeCoverIndex,
-      commentsList: [],
-      aiReview: 'Кейс опубликован. Ожидайте AI-анализ.',
-      activity: 0,
-      anonymous: isAnonymous,
-    };
-
-    if (isRiddle && riddleAnswer) {
-      Object.assign(newCase, {
-        riddle: {
-          question: 'Угадайте оттенок VITA',
-          options: [
-            { label: 'A1', percent: 20 },
-            { label: 'A2', percent: 30 },
-            { label: 'A3', percent: 30 },
-            { label: 'B1', percent: 20 },
-          ],
-          correct: riddleAnswer ?? '',
-        },
-      });
+    const coverUri = photos[coverIndex] ?? photos[0];
+    const imageUrl = await uploadBase64Photo(coverUri);
+    if (!imageUrl) {
+      setOverlay({ title: 'Ошибка', message: 'Не удалось загрузить фото на сервер', icon: 'alert-circle-outline' });
+      return;
     }
 
-    let authorName = '';
-    let authorRole: 'doctor' | 'technician' = 'doctor';
     let authorId = '';
     let authorEmail = '';
-    let avatarPresetId: number | null = null;
-    let avatarUrl: string = '';
     try {
-      const [rawUser, rawProfile] = await Promise.all([
-        AsyncStorage.getItem('user'),
-        AsyncStorage.getItem('userProfile'),
-      ]);
+      const rawUser = await AsyncStorage.getItem('user');
       if (rawUser) {
         const u = JSON.parse(rawUser);
-        if (u.name) authorName = u.name;
-        if (u.role) authorRole = u.role;
         if (u.id) authorId = u.id;
         if (u.email) authorEmail = u.email;
       }
-      if (rawProfile) {
-        const p = JSON.parse(rawProfile);
-        if (p.avatarPresetId) avatarPresetId = p.avatarPresetId;
-        if (p.avatarType === 'custom' && p.avatarUrl) avatarUrl = p.avatarUrl;
-      }
     } catch {}
 
-    const roleValue = authorRole === 'technician' ? 'Техник' : 'Врач';
-    newCase.author = isAnonymous ? 'Анонимный коллега' : (authorName || 'Пользователь');
-    newCase.avatar = isAnonymous ? '' : (avatarUrl || '');
-    (newCase as any).avatarPresetId = isAnonymous ? null : avatarPresetId;
-    (newCase as any).isOwn = !isAnonymous;
-    (newCase as any).role = roleValue;
-    (newCase as any).authorId = authorId;
-    (newCase as any).authorEmail = authorEmail;
+    const userId = authorId || authorEmail;
 
-    console.log('[CreateCase] newCase prepared', newCase);
-
-    // Фото уже в base64 — загрузка в Storage не нужна
-
-    console.log('[CreateCase] Сохранение в Firebase + AsyncStorage...');
     try {
-      // Записываем только этот пост в его узел — не трогаем остальные
-      await set(ref(getFirebaseDB(), `case_club_posts/${newCase.id}`), newCase);
-      // Обновляем локальный кэш: читаем существующее, заменяем/добавляем этот пост
-      const existing = await AsyncStorage.getItem('@global_case_club_posts');
-      const posts: any[] = existing ? JSON.parse(existing) : [];
-      const updated = [newCase, ...posts.filter((p: any) => p.id !== newCase.id)];
-      await AsyncStorage.setItem('@global_case_club_posts', JSON.stringify(updated));
-      console.log('[CreateCase] Сохранено. id:', newCase.id);
-    } catch (err) {
-      console.error('[CreateCase] Ошибка записи:', err);
-    }
+      const response = await fetch('http://62.238.13.160:8000/case-club/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          author_id: userId,
+          title: description.trim().slice(0, 100),
+          description: description.trim(),
+          image_url: imageUrl,
+          correct_shade: isRiddle && riddleAnswer ? riddleAnswer : '',
+        }),
+      });
 
-    addCase(newCase);
-    console.log('[CreateCase] Мгновенный возврат в ленту');
-    router.replace('/(tabs)/case-club' as any);
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setOverlay({ title: 'Ошибка', message: data.detail || `Ошибка сервера ${response.status}`, icon: 'alert-circle-outline' });
+        return;
+      }
+
+      setOverlay({ title: 'Опубликовано', message: 'Кейс отправлен в Кейс-Клуб', icon: 'checkmark-circle-outline' });
+      setTimeout(() => {
+        setOverlay(null);
+        router.replace('/(tabs)/case-club' as any);
+      }, 1200);
+    } catch (e) {
+      console.error('[CreateCase] publish error:', e);
+      setOverlay({ title: 'Ошибка', message: 'Не удалось опубликовать кейс. Проверьте соединение.', icon: 'alert-circle-outline' });
+    }
   };
 
   return (
