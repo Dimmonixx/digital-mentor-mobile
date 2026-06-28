@@ -2,9 +2,10 @@ import CustomAlert from '@/components/CustomAlert';
 import { ANTHROPIC_API_KEY } from '@/constants/config';
 import { useLanguage } from '@/context/LanguageContext';
 import { useTheme } from '@/context/ThemeContext';
-import { executeWithAiLimit } from '@/services/aiRequestService';
+import { uploadMediaToServer } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import LottieView from 'lottie-react-native';
@@ -14,11 +15,11 @@ import {
     Image,
     ImageBackground,
     Modal,
-    Platform,
     SafeAreaView,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View
 } from 'react-native';
@@ -51,6 +52,15 @@ const ANALYSIS_TYPES = [
   "Просто похвастаться 😎",
   "Найти косяки",
   "Финальная проверка перед сдачей"
+];
+
+const CONSTRUCTION_TYPES = [
+  "Коронка",
+  "Винир",
+  "Мостовидный протез",
+  "Абатмент",
+  "Вкладка",
+  "Накладка",
 ];
 
 const UPPER_TEETH = ["18","17","16","15","14","13","12","11",
@@ -257,6 +267,15 @@ export default function WorkAnalysisScreen() {
   const [alertTitle, setAlertTitle] = useState<string>('');
   const [alertMessage, setAlertMessage] = useState<string>('');
   const [diamondBalance, setDiamondBalance] = useState<number>((globalThis as any).getDiamondBalance?.() ?? 0);
+  const [constructionType, setConstructionType] = useState<string>('Коронка');
+  const [critiqueResult, setCritiqueResult] = useState<{ critique_id: string; status: string; rating: number } | null>(null);
+  const [expertModalVisible, setExpertModalVisible] = useState<boolean>(false);
+  const [colorScore, setColorScore] = useState<number>(8);
+  const [anatomyScore, setAnatomyScore] = useState<number>(8);
+  const [marginScore, setMarginScore] = useState<number>(8);
+  const [expertComment, setExpertComment] = useState<string>('');
+  const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
+
   const analysisTypeKey = ANALYSIS_TYPE_KEYS[analysisType] || 'general';
   const analysisPrice = ANALYSIS_PRICES[analysisTypeKey];
   const analysisButtonTitle = ANALYSIS_BUTTON_TITLES[analysisTypeKey];
@@ -364,55 +383,132 @@ export default function WorkAnalysisScreen() {
     }
   };
 
-  const analyzeWork = async () => {
-    if (!image || !imageBase64) {
+  const uploadWorkImage = async (uri: string): Promise<string | null> => {
+    if (uri.startsWith('file://') || uri.startsWith('content://')) {
+      return await uploadMediaToServer(uri);
+    }
+    try {
+      const match = uri.match(/^data:image\/(\w+);base64,(.*)$/);
+      if (!match) return null;
+      const ext = match[1] === 'png' ? 'png' : 'jpg';
+      const base64 = match[2];
+      const fs = FileSystem as any;
+      const tempUri = `${fs.cacheDirectory}work_upload_${Date.now()}.${ext}`;
+      await fs.writeAsStringAsync(tempUri, base64, {
+        encoding: fs.EncodingType?.Base64 || 'base64',
+      });
+      const url = await uploadMediaToServer(tempUri);
+      try {
+        await fs.deleteAsync(tempUri, { idempotent: true });
+      } catch {}
+      return url;
+    } catch (e) {
+      console.error('[WorkAnalysis] uploadWorkImage error:', e);
+      return null;
+    }
+  };
+
+  const submitWork = async () => {
+    if (!image) {
       setAlertTitle('Ошибка');
       setAlertMessage('Пожалуйста, загрузите фото работы');
       setAlertVisible(true);
       return;
     }
 
-    if (!ANTHROPIC_API_KEY?.trim()) {
-      setAlertTitle('Ошибка');
-      setAlertMessage('Добавьте ANTHROPIC_API_KEY в constants/config.ts');
-      setAlertVisible(true);
-      return;
-    }
-
     setIsLoading(true);
-    setAnalysisResult(null);
+    setCritiqueResult(null);
 
     try {
-      const rawUser = await AsyncStorage.getItem('user');
-      const userObj = rawUser ? JSON.parse(rawUser) : null;
-      const userEmail = userObj?.email || '';
-
-      const teeth = selectedTeeth.length > 0 ? selectedTeeth.join(', ') : 'не указаны';
-      const result = await executeWithAiLimit(
-        userEmail,
-        () => analyzeWithClaude(
-          imageBase64,
-          imageMime,
-          selectedShade,
-          workStage,
-          analysisType,
-          teeth,
-          notes || 'нет',
-        )
-      );
-      if (!result) {
+      const imageUrl = await uploadWorkImage(image);
+      if (!imageUrl) {
+        setAlertTitle('Ошибка');
+        setAlertMessage('Не удалось загрузить фото на сервер');
+        setAlertVisible(true);
         setIsLoading(false);
         return;
       }
-      setAnalysisResult(result);
+
+      const rawUser = await AsyncStorage.getItem('user');
+      const userObj = rawUser ? JSON.parse(rawUser) : null;
+      const technicianId = userObj?.id || userObj?.email || '';
+      const caseId = selectedTeeth.length > 0 ? selectedTeeth.join('-') : `work-${Date.now()}`;
+
+      const response = await fetch('http://62.238.13.160:8000/analysis/work/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          technician_id: technicianId,
+          case_id: caseId,
+          work_image_url: imageUrl,
+          construction_type: constructionType,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setAlertTitle('Ошибка');
+        setAlertMessage(data.detail || `Ошибка сервера ${response.status}`);
+        setAlertVisible(true);
+        setIsLoading(false);
+        return;
+      }
+
+      setCritiqueResult({
+        critique_id: data.critique_id || '',
+        status: 'pending',
+        rating: 0,
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Не удалось выполнить анализ';
+      const message = error instanceof Error ? error.message : 'Не удалось отправить работу';
       setAlertTitle('Ошибка');
       setAlertMessage(message);
       setAlertVisible(true);
       console.error(error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const submitExpertEvaluation = async () => {
+    if (!critiqueResult?.critique_id) return;
+    setIsEvaluating(true);
+    try {
+      const rawUser = await AsyncStorage.getItem('user');
+      const userObj = rawUser ? JSON.parse(rawUser) : null;
+      const expertId = userObj?.id || userObj?.email || '';
+
+      const response = await fetch('http://62.238.13.160:8000/analysis/work/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          critique_id: critiqueResult.critique_id,
+          expert_id: expertId,
+          color_score: colorScore,
+          anatomy_score: anatomyScore,
+          margin_score: marginScore,
+          comment: expertComment.trim(),
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setAlertTitle('Ошибка');
+        setAlertMessage(data.detail || `Ошибка сервера ${response.status}`);
+        setAlertVisible(true);
+        setIsEvaluating(false);
+        return;
+      }
+
+      setCritiqueResult(prev => prev ? { ...prev, status: data.status || 'reviewed', rating: data.rating || 0 } : null);
+      setExpertModalVisible(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось отправить оценку';
+      setAlertTitle('Ошибка');
+      setAlertMessage(message);
+      setAlertVisible(true);
+    } finally {
+      setIsEvaluating(false);
     }
   };
 
@@ -429,134 +525,54 @@ export default function WorkAnalysisScreen() {
     }
   };
 
-  const renderAnalysisResult = () => {
-    if (!analysisResult) return null;
+  const renderCritiqueResult = () => {
+    if (!critiqueResult) return null;
 
-    const parsed = parseAnalysisResult(analysisResult);
-
-    if (!parsed) {
-      return (
-        <View style={styles.resultContainer}>
-          <Text style={styles.errorText}>Не удалось распарсить результат анализа</Text>
-        </View>
-      );
-    }
-
-    const getStatusColor = (status: string) => {
-      if (status === 'КРИТИЧНО') return '#d32f2f';
-      if (status === 'ВАЖНО') return '#f2ca50';
-      if (status === 'НОРМА') return '#4caf50';
-      if (status === 'НЕ ПРИМЕНИМО') return '#757575';
-      return '#f2ca50';
-    };
-
-    const getLevelColor = (level: string) => {
-      if (level === 'КРИТИЧЕСКИЙ') return '#d32f2f';
-      if (level === 'ЖЕСТКИЙ') return '#ff9800';
-      if (level === 'РЕКОМЕНДАЦИЯ') return '#f2ca50';
-      if (level === 'НЕ ОБЯЗАТЕЛЬНО') return '#757575';
-      return '#f2ca50';
-    };
+    const isReviewed = critiqueResult.status === 'reviewed';
 
     return (
-      <View style={styles.resultContainer} onLayout={(e) => setResultsY(e.nativeEvent.layout.y)}>
-        {/* Order Match */}
-        {parsed.orderMatch?.text && parsed.orderMatch.text !== '' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>📋 СООТВЕТСТВИЕ ЗАКАЗУ</Text>
-            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(parsed.orderMatch?.status || '') }]}>
-              <Text style={styles.statusBadgeText}>{parsed.orderMatch?.status || ''}</Text>
+      <View style={styles.resultContainer}>
+        <View style={styles.critiqueCard}>
+          <View style={styles.critiqueHeader}>
+            <Ionicons name="scan-outline" size={22} color="#f2ca50" />
+            <Text style={styles.critiqueTitle}>РАБОТА НА РАЗБОРЕ</Text>
+          </View>
+          <Text style={styles.critiqueId}>ID: {critiqueResult.critique_id}</Text>
+          <View style={[styles.critiqueStatusBadge, isReviewed && styles.critiqueStatusBadgeReviewed]}>
+            <Text style={styles.critiqueStatusText}>
+              {isReviewed ? 'РАЗОБРАНО' : 'ОЖИДАЕТ ЭКСПЕРТА'}
+            </Text>
+          </View>
+          {isReviewed && (
+            <View style={styles.ratingBlock}>
+              <Text style={styles.ratingValue}>{critiqueResult.rating.toFixed(1)}</Text>
+              <Text style={styles.ratingLabel}>средний балл</Text>
             </View>
-            <Text style={styles.cardText}>{parsed.orderMatch?.text || ''}</Text>
-          </View>
-        )}
-
-        {/* Anatomy */}
-        {parsed.anatomy && (parsed.anatomy.neck || parsed.anatomy.body || parsed.anatomy.edge) && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>🦷 АНАТОМИЯ</Text>
-            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(parsed.anatomy?.status || '') }]}>
-              <Text style={styles.statusBadgeText}>{parsed.anatomy?.status || ''}</Text>
-            </View>
-            {parsed.anatomy?.neck && parsed.anatomy.neck !== '' && (
-              <View style={styles.subsection}>
-                <Text style={styles.subsectionTitle}>Пришеечная треть</Text>
-                <Text style={styles.cardText}>{parsed.anatomy?.neck || ''}</Text>
-              </View>
-            )}
-            {parsed.anatomy?.body && parsed.anatomy.body !== '' && (
-              <View style={styles.subsection}>
-                <Text style={styles.subsectionTitle}>Экватор и средняя треть</Text>
-                <Text style={styles.cardText}>{parsed.anatomy?.body || ''}</Text>
-              </View>
-            )}
-            {parsed.anatomy?.edge && parsed.anatomy.edge !== '' && (
-              <View style={styles.subsection}>
-                <Text style={styles.subsectionTitle}>Режущий край</Text>
-                <Text style={styles.cardText}>{parsed.anatomy?.edge || ''}</Text>
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* Optics */}
-        {parsed.optics?.text && parsed.optics.text !== '' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>✨ ОПТИКА</Text>
-            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(parsed.optics?.status || '') }]}>
-              <Text style={styles.statusBadgeText}>{parsed.optics?.status || ''}</Text>
-            </View>
-            <Text style={styles.cardText}>{parsed.optics?.text || ''}</Text>
-          </View>
-        )}
-
-        {/* Gum Analysis */}
-        {parsed.gumAnalysis?.text && parsed.gumAnalysis.text !== '' && parsed.gumAnalysis?.status !== 'НЕ ПРИМЕНИМО' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>🌹 РОЗОВАЯ ЭСТЕТИКА</Text>
-            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(parsed.gumAnalysis?.status || '') }]}>
-              <Text style={styles.statusBadgeText}>{parsed.gumAnalysis?.status || ''}</Text>
-            </View>
-            <Text style={styles.cardText}>{parsed.gumAnalysis?.text || ''}</Text>
-          </View>
-        )}
-
-        {/* Technical Checklist */}
-        {parsed.technicalChecklist && parsed.technicalChecklist.length > 0 && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>🔧 ТЕХНИЧЕСКИЙ ЧЕК-ЛИСТ</Text>
-            {parsed.technicalChecklist.map((item: any, index: number) => (
-              <View key={index} style={styles.checklistItem}>
-                <View style={[styles.checklistBadge, { backgroundColor: getLevelColor(item.level || '') }]}>
-                  <Text style={styles.checklistBadgeText}>{item.level || ''}</Text>
-                </View>
-                <Text style={styles.checklistText}>{item.criterion || ''}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Final Verdict */}
-        <View style={styles.verdictCard}>
-          <Text style={styles.verdictTitle}>🎓 ВЕРДИКТ СЕНСЕЯ</Text>
-          <Text style={styles.verdictText}>{parsed.finalVerdict || ''}</Text>
+          )}
+          <TouchableOpacity
+            style={styles.expertBtn}
+            onPress={() => setExpertModalVisible(true)}
+          >
+            <Text style={styles.expertBtnText}>Оценить как эксперт</Text>
+          </TouchableOpacity>
         </View>
-
-        <TouchableOpacity
-          style={[styles.clearButton, { marginBottom: Platform.OS === 'ios' ? 30 : 20 }]}
-          onPress={() => {
-            setAnalysisResult(null);
-            setImage(null);
-            setImageBase64(null);
-            setSelectedTeeth([]);
-            setNotes('');
-          }}
-        >
-          <Text style={styles.clearButtonText}>Очистить и начать заново</Text>
-        </TouchableOpacity>
       </View>
     );
   };
+
+  const renderScoreSelector = (value: number, onSelect: (v: number) => void) => (
+    <View style={styles.scoreRow}>
+      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((s) => (
+        <TouchableOpacity
+          key={s}
+          style={[styles.scoreBtn, value === s && styles.scoreBtnActive]}
+          onPress={() => onSelect(s)}
+        >
+          <Text style={[styles.scoreBtnText, value === s && styles.scoreBtnTextActive]}>{s}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -791,22 +807,22 @@ export default function WorkAnalysisScreen() {
             </View>
           </View>
 
-          {/* Блок: Тип анализа */}
+          {/* Блок: Тип конструкции */}
           <View style={styles.parameterBlock}>
-            <Text style={styles.parameterBlockLabel}>Тип анализа</Text>
+            <Text style={styles.parameterBlockLabel}>Тип конструкции</Text>
             <View style={styles.pickerContainer}>
-              {ANALYSIS_TYPES.map(type => (
+              {CONSTRUCTION_TYPES.map(type => (
                 <TouchableOpacity
                   key={type}
                   style={[
                     styles.pickerItemCompact,
-                    analysisType === type && styles.pickerItemSelected
+                    constructionType === type && styles.pickerItemSelected
                   ]}
-                  onPress={() => setAnalysisType(type)}
+                  onPress={() => setConstructionType(type)}
                 >
                   <Text style={[
                     styles.pickerTextCompact,
-                    analysisType === type && styles.pickerTextSelected
+                    constructionType === type && styles.pickerTextSelected
                   ]}>{type}</Text>
                 </TouchableOpacity>
               ))}
@@ -817,7 +833,7 @@ export default function WorkAnalysisScreen() {
             {/* Кнопка запуска */}
             <TouchableOpacity
               style={[styles.analyzeButton, isLoading && styles.analyzeButtonDisabled]}
-              onPress={analyzeWork}
+              onPress={submitWork}
               disabled={isLoading}
             >
               {isLoading ? (
@@ -834,16 +850,15 @@ export default function WorkAnalysisScreen() {
                 </View>
               ) : (
                 <View style={styles.buttonContent}>
-                  <Ionicons name="sparkles" size={20} color="#0a0f1d" />
-                  <Ionicons name="diamond" size={14} color="#0a0f1d" />
+                  <Ionicons name="cloud-upload-outline" size={20} color="#0a0f1d" />
                   <Text style={styles.analyzeButtonText} numberOfLines={1} adjustsFontSizeToFit>
-                    {`Запустить ${analysisButtonTitle} (${dynamicCost})`}
+                    Отправить на экспертный разбор
                   </Text>
                 </View>
               )}
             </TouchableOpacity>
 
-            {renderAnalysisResult()}
+            {renderCritiqueResult()}
           </>
         )}
       </ScrollView>
@@ -867,6 +882,53 @@ export default function WorkAnalysisScreen() {
             <Ionicons name="close" size={32} color="#f2ca50" />
           </TouchableOpacity>
         </TouchableOpacity>
+      </Modal>
+
+      <Modal
+        visible={expertModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setExpertModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.expertModalContent}>
+            <View style={styles.expertModalHeader}>
+              <Text style={styles.expertModalTitle}>Экспертная оценка</Text>
+              <TouchableOpacity onPress={() => setExpertModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#f2ca50" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.scoreLabel}>Цвет</Text>
+              {renderScoreSelector(colorScore, setColorScore)}
+
+              <Text style={styles.scoreLabel}>Анатомия и морфология</Text>
+              {renderScoreSelector(anatomyScore, setAnatomyScore)}
+
+              <Text style={styles.scoreLabel}>Прилегание и маргинальный край</Text>
+              {renderScoreSelector(marginScore, setMarginScore)}
+
+              <TextInput
+                style={styles.expertCommentInput}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+                placeholder="Комментарий эксперта..."
+                placeholderTextColor="rgba(255,255,255,0.4)"
+                value={expertComment}
+                onChangeText={setExpertComment}
+              />
+
+              <TouchableOpacity
+                style={[styles.expertSubmitBtn, isEvaluating && styles.expertSubmitBtnDisabled]}
+                onPress={submitExpertEvaluation}
+                disabled={isEvaluating}
+              >
+                <Text style={styles.expertSubmitBtnText}>Отправить оценку</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
 
       <CustomAlert
@@ -1475,5 +1537,156 @@ const styles = StyleSheet.create({
   textAreaPlaceholder: {
     fontSize: 14,
     color: '#f2ca5050',
+  },
+  critiqueCard: {
+    backgroundColor: 'rgba(10, 16, 30, 0.92)',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.45)',
+  },
+  critiqueHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  critiqueTitle: {
+    color: '#f2ca50',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  critiqueId: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  critiqueStatusBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(242, 202, 80, 0.15)',
+    borderWidth: 1,
+    borderColor: '#f2ca50',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 12,
+  },
+  critiqueStatusBadgeReviewed: {
+    backgroundColor: '#f2ca50',
+  },
+  critiqueStatusText: {
+    color: '#f2ca50',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  ratingBlock: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    marginBottom: 12,
+  },
+  ratingValue: {
+    color: '#f2ca50',
+    fontSize: 32,
+    fontWeight: '800',
+  },
+  ratingLabel: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  expertBtn: {
+    backgroundColor: 'rgba(242, 202, 80, 0.15)',
+    borderWidth: 1,
+    borderColor: '#f2ca50',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  expertBtnText: {
+    color: '#f2ca50',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  expertModalContent: {
+    backgroundColor: '#0a0f1d',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#f2ca50',
+    margin: 20,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  expertModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  expertModalTitle: {
+    color: '#f2ca50',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  scoreLabel: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  scoreBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreBtnActive: {
+    backgroundColor: '#f2ca50',
+    borderColor: '#f2ca50',
+  },
+  scoreBtnText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  scoreBtnTextActive: {
+    color: '#0a0f1d',
+  },
+  expertCommentInput: {
+    height: 90,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.4)',
+    borderRadius: 12,
+    padding: 12,
+    color: '#ffffff',
+    fontSize: 14,
+    marginTop: 16,
+    textAlignVertical: 'top',
+  },
+  expertSubmitBtn: {
+    backgroundColor: '#f2ca50',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  expertSubmitBtnDisabled: {
+    opacity: 0.5,
+  },
+  expertSubmitBtnText: {
+    color: '#0a0f1d',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
