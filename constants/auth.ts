@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApp, getApps, initializeApp } from 'firebase/app';
-import { get, getDatabase, push, ref, set } from 'firebase/database';
+import { getDatabase, ref, set } from 'firebase/database';
+
+const API_BASE_URL = 'http://62.238.13.160:8000';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtqDDa5X8ZWvxIIbZD_P0LdeSMbk7juc",
@@ -12,7 +14,6 @@ const firebaseConfig = {
   appId: "1:937962102520:web:3ea7d6529804c4fef5a50d"
 };
 
-// Ensure app is initialized before using database
 const getApp_ = () => {
   if (getApps().length === 0) {
     return initializeApp(firebaseConfig);
@@ -20,49 +21,69 @@ const getApp_ = () => {
   return getApp();
 };
 
-// Lazy getter — never call getDatabase at module top level
 const getDB = () => getDatabase(getApp_());
 
 export const emailToKey = (email: string): string =>
-  email.trim().toLowerCase().replace(/\./g, '_').replace(/@/g, '_at_');
+  email.trim().toLowerCase().replace(/\./g, '_').replace(/@/g, '_');
 
-const simpleHash = (str: string) => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash) + str.charCodeAt(i);
-    hash |= 0;
+const _handleResponse = async (response: Response) => {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.detail || data.message || 'Ошибка сервера');
   }
-  return Math.abs(hash).toString(36);
+  return data;
 };
 
-export const registerUser = async (email: string, password: string, name: string, role: 'doctor' | 'technician') => {
-  const db = getDB();
+export const registerUser = async (
+  email: string,
+  password: string,
+  name: string,
+  role: 'doctor' | 'technician'
+) => {
   const emailKey = emailToKey(email);
-  console.log('REGISTER: saving with key:', emailKey, '| email:', email);
-  const userRef = ref(db, `users/${emailKey}`);
-  const snap = await get(userRef);
-  if (snap.exists()) throw new Error('Пользователь уже существует');
-  const uid = push(ref(db, 'users')).key!;
-  const userData = { uid, email, name, role, passwordHash: simpleHash(password), createdAt: Date.now() };
-  await set(userRef, userData);
-  // Never store passwordHash in AsyncStorage
-  const { passwordHash: _ph, ...safeUserData } = userData;
-  await AsyncStorage.setItem('user', JSON.stringify(safeUserData));
-  return safeUserData;
+  console.log('REGISTER: via backend for email:', email, 'key:', emailKey);
+
+  const response = await fetch(`${API_BASE_URL}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email.trim(), password, name, role }),
+  });
+
+  const data = await _handleResponse(response);
+  const userData = {
+    id: emailKey,
+    uid: emailKey,
+    emailKey,
+    email: data.user.email,
+    name: data.user.name,
+    role: data.user.role,
+    createdAt: Date.now(),
+  };
+  await AsyncStorage.setItem('user', JSON.stringify(userData));
+  return userData;
 };
 
 export const loginUser = async (email: string, password: string) => {
-  const db = getDB();
   const emailKey = emailToKey(email);
-  console.log('LOGIN: searching for key:', emailKey, '| email:', email);
-  const snap = await get(ref(db, `users/${emailKey}`));
-  if (!snap.exists()) throw new Error('Пользователь не найден');
-  const userData = snap.val();
-  if (userData.passwordHash !== simpleHash(password)) throw new Error('Неверный пароль');
-  // Never store passwordHash in AsyncStorage
-  const { passwordHash: _ph, password: _pw, ...safeUserData } = userData;
-  await AsyncStorage.setItem('user', JSON.stringify(safeUserData));
-  return safeUserData;
+  console.log('LOGIN: via backend for email:', email, 'key:', emailKey);
+
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email.trim(), password }),
+  });
+
+  const data = await _handleResponse(response);
+  const userData = {
+    id: emailKey,
+    uid: emailKey,
+    emailKey,
+    email: data.user.email,
+    name: data.user.name,
+    role: data.user.role,
+  };
+  await AsyncStorage.setItem('user', JSON.stringify(userData));
+  return userData;
 };
 
 export const logoutUser = async () => {
@@ -111,16 +132,8 @@ export const updateProfile = async (_user: any, _profile: any) => {
   return Promise.resolve();
 };
 
-export const changeUserPassword = async (currentPassword: string, newPassword: string): Promise<void> => {
-  const user = await getCurrentUser();
-  if (!user?.email) throw new Error('Не авторизован');
-  const db = getDB();
-  const emailKey = emailToKey(user.email);
-  const snap = await get(ref(db, `users/${emailKey}`));
-  if (!snap.exists()) throw new Error('Пользователь не найден');
-  const userData = snap.val();
-  if (userData.passwordHash !== simpleHash(currentPassword)) throw new Error('Текущий пароль введён неверно');
-  await set(ref(db, `users/${emailKey}/passwordHash`), simpleHash(newPassword));
+export const changeUserPassword = async (_currentPassword: string, _newPassword: string): Promise<void> => {
+  throw new Error('Смена пароля через приложение временно отключена. Обратитесь к администратору.');
 };
 
 export const isCurrentUserAdmin = async (): Promise<boolean> => {

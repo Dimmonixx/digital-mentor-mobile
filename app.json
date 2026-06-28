@@ -62,6 +62,14 @@
       "eas": {
         "projectId": "146c1800-3dc3-4fc2-a357-2ecc27020ce6"
       }
+    },
+    "cli": {
+      "appExtensions": {
+        "bundleOnSubmit": true
+      }
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0
     }
   }
 }

@@ -1,11 +1,8 @@
-import { emailToKey, loginUser, registerUser } from '@/constants/auth';
-import { getFirebaseDB } from '@/constants/firebase';
-import emailjs from '@emailjs/react-native';
+import { loginUser, registerUser } from '@/constants/auth';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { child, get, ref, set, update } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     Alert,
@@ -131,34 +128,12 @@ export default function AuthScreen() {
     setError('');
 
     try {
-      const emailKey = emailToKey(email);
-      const currentDb = getFirebaseDB();
-
-      const usersRef = ref(currentDb, 'users');
-      const snapshot = await get(child(usersRef, emailKey));
-      if (snapshot.exists()) {
-        setError('Пользователь уже существует');
-        return;
-      }
-
       const registered = await registerUser(email.trim(), password, `${surname} ${name}`, role);
-      const dbKey = emailKey;
-
       const userData = {
-        id: dbKey,
-        uid: registered.uid,
-        emailKey,
-        name: `${surname} ${name}`,
-        email,
-        role,
-        createdAt: Date.now(),
-      };
-      await set(ref(currentDb, 'users/' + dbKey), userData);
-
-      // Also save to profile with separate fields
-      const profileData = {
+        ...registered,
         firstName: name,
         lastName: surname,
+        fullName: `${surname} ${name}`,
         position: role === 'doctor' ? 'Стоматолог' : 'Зубной техник',
         laboratory: '',
         city: '',
@@ -168,8 +143,6 @@ export default function AuthScreen() {
         avatarUrl: '',
         avatarPresetId: 1,
       };
-      await set(ref(currentDb, 'users/' + dbKey + '/profile'), profileData);
-
       await AsyncStorage.setItem('user', JSON.stringify(userData));
       router.replace('/(tabs)');
     } catch (error: any) {
@@ -190,54 +163,8 @@ export default function AuthScreen() {
       setForgotError('Введите корректный email');
       return;
     }
-    setForgotLoading(true);
-    try {
-      const emailKey = emailToKey(forgotEmail);
-      const currentDb = getFirebaseDB();
-      const snap = await get(ref(currentDb, `users/${emailKey}`));
-      if (!snap.exists()) {
-        setForgotError('Пользователь с таким email не найден');
-        return;
-      }
-      const userData = snap.val();
-
-      // Generate temporary password
-      const tempPassword = Math.random().toString(36).slice(-8) +
-        Math.random().toString(36).slice(-4).toUpperCase();
-
-      // Save hashed temp password to Firebase
-      const hashFn = (s: string) => {
-        let h = 0;
-        for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; }
-        return Math.abs(h).toString(36);
-      };
-      await update(ref(currentDb, `users/${emailKey}`), {
-        passwordHash: hashFn(tempPassword),
-        tempPasswordAt: Date.now(),
-      });
-
-      // Send email via EmailJS
-      emailjs.init({
-        publicKey: '9grZ46AJQQvviLerO',
-        blockHeadless: false,
-      });
-      await emailjs.send(
-        'service_rm1eimw',
-        'template_pkoxiqr',
-        {
-          to_email: forgotEmail.trim(),
-          to_name: userData.name || forgotEmail.split('@')[0],
-          temp_password: tempPassword,
-        }
-      );
-
-      setForgotSent(true);
-    } catch (e: any) {
-      console.error('Forgot password error:', e);
-      setForgotError('Ошибка отправки. Попробуйте позже');
-    } finally {
-      setForgotLoading(false);
-    }
+    // Forgot password now requires a backend endpoint to avoid client-side password hashing.
+    setForgotError('Восстановление пароля временно отключено. Обратитесь к администратору.');
   };
 
   const handleLogin = async () => {
@@ -263,25 +190,9 @@ export default function AuthScreen() {
     setError('');
 
     try {
-      const emailKey = emailToKey(email);
-      const currentDb = getFirebaseDB();
-
       const userData = await loginUser(email.trim(), password);
       console.log('[Auth Debug] Login user:', userData);
-
-      let snapshot = await get(ref(currentDb, 'users/' + emailKey));
-      console.log('[Auth Debug] Login RTDB snapshot:', snapshot.val());
-
-      if (!snapshot.exists()) {
-        setError('Пользователь не найден');
-        return;
-      }
-
-      const dbUser = snapshot.val();
-      dbUser.id = emailKey;
-      dbUser.uid = userData.uid;
-      dbUser.emailKey = emailKey;
-      await AsyncStorage.setItem('user', JSON.stringify(dbUser));
+      await AsyncStorage.setItem('user', JSON.stringify(userData));
       router.replace('/(tabs)');
     } catch (error: any) {
       console.log('Login error:', error.message);
