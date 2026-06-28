@@ -150,7 +150,12 @@ export default function TabLayout() {
     (globalThis as any).spendDiamonds = async (amount: number) => {
       // Admin never spends diamonds
       if (isAdmin) return true;
-      if (diamondBalanceRef.current < amount) return false;
+
+      const isEarn = amount < 0;
+      const changeAmount = Math.abs(amount);
+
+      // Для списания: проверяем достаточность баланса
+      if (!isEarn && diamondBalanceRef.current < amount) return false;
 
       const newBalance = diamondBalanceRef.current - amount;
 
@@ -158,34 +163,35 @@ export default function TabLayout() {
       setDiamondBalance(newBalance);
       diamondBalanceRef.current = newBalance;
 
-      // 2. Для реального списания (положительный amount) ходим на backend
-      if (amount > 0) {
-        const raw = await AsyncStorage.getItem('user');
-        if (raw) {
-          const u = JSON.parse(raw);
-          const userEmail = u?.email || '';
-          if (userEmail) {
-            try {
-              const response = await fetch('http://62.238.13.160:8000/balance/spend', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: userEmail, amount }),
-              });
-              if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                console.log('💎 BALANCE_SPEND_ERROR:', data.detail || response.status);
-                // Откатываем локальный стейт, если сервер отказал
-                setDiamondBalance(diamondBalanceRef.current + amount);
-                diamondBalanceRef.current += amount;
-                return false;
-              }
-            } catch (e) {
-              console.log('💎 BALANCE_SPEND_FETCH_ERROR:', e);
-              // Откатываем локальный стейт при сетевой ошибке
+      // 2. Ходим на backend
+      const raw = await AsyncStorage.getItem('user');
+      if (raw) {
+        const u = JSON.parse(raw);
+        const userEmail = u?.email || '';
+        if (userEmail) {
+          const endpoint = isEarn ? 'http://62.238.13.160:8000/balance/earn' : 'http://62.238.13.160:8000/balance/spend';
+          const logLabel = isEarn ? 'BALANCE_EARN_ERROR' : 'BALANCE_SPEND_ERROR';
+          const fetchLabel = isEarn ? 'BALANCE_EARN_FETCH_ERROR' : 'BALANCE_SPEND_FETCH_ERROR';
+          try {
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: userEmail, amount: changeAmount }),
+            });
+            if (!response.ok) {
+              const data = await response.json().catch(() => ({}));
+              console.log(`💎 ${logLabel}:`, data.detail || response.status);
+              // Откатываем локальный стейт, если сервер отказал
               setDiamondBalance(diamondBalanceRef.current + amount);
               diamondBalanceRef.current += amount;
               return false;
             }
+          } catch (e) {
+            console.log(`💎 ${fetchLabel}:`, e);
+            // Откатываем локальный стейт при сетевой ошибке
+            setDiamondBalance(diamondBalanceRef.current + amount);
+            diamondBalanceRef.current += amount;
+            return false;
           }
         }
       }
