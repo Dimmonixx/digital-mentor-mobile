@@ -2,7 +2,6 @@
   "expo": {
     "name": "DiLabs",
     "slug": "digital-mentor-mobile",
-    "owner": "dimmonix",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -66,10 +65,7 @@
       "reactCompiler": true
     },
     "extra": {
-      "router": {},
-      "eas": {
-        "projectId": "146c1800-3dc3-4fc2-a357-2ecc27020ce6"
-      }
+      "router": {}
     },
     "cli": {
       "appExtensions": {
