@@ -29,7 +29,8 @@
         "READ_MEDIA_IMAGES"
       ],
       "navigationBarColor": "#0a0a1a",
-      "navigationBarStyle": "dark"
+      "navigationBarStyle": "dark",
+      "usesCleartextTraffic": true
     },
     "web": {
       "output": "static",
