@@ -8,13 +8,16 @@ import { Alert } from 'react-native';
 export const ARCHIVE_COLLECTION = 'archives';
 export const LOCAL_ARCHIVE_KEY = 'local_archive_mine';
 
-const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dcjlijijhn';
+const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dydfwmtpi';
 const CLOUDINARY_UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'dm_upload';
 const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 
 export async function uploadMediaToServer(uri: string): Promise<string | null> {
-  console.log('CLOUDINARY_CONFIG: cloud=', CLOUDINARY_CLOUD_NAME, 'preset=', CLOUDINARY_UPLOAD_PRESET);
-  console.log('CLOUDINARY_CONFIG: url=', CLOUDINARY_UPLOAD_URL);
+  const runtimeCloud = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || '(fallback:dydfwmtpi)';
+  const runtimePreset = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || '(fallback:dm_upload)';
+  const runtimeUrl = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
+  console.log('CLOUDINARY_CONFIG: cloud=', runtimeCloud, 'preset=', runtimePreset);
+  console.log('CLOUDINARY_CONFIG: url=', runtimeUrl);
   try {
     const compressed = await ImageManipulator.manipulateAsync(
       uri,

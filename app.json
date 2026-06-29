@@ -65,7 +65,10 @@
       "reactCompiler": true
     },
     "extra": {
-      "router": {}
+      "router": {},
+      "eas": {
+        "projectId": "794d0acb-b60b-4f5c-8ef8-18242d2f6e0f"
+      }
     },
     "cli": {
       "appExtensions": {
@@ -74,6 +77,7 @@
     },
     "updates": {
       "fallbackToCacheTimeout": 0
-    }
+    },
+    "owner": "artem12355"
   }
 }

@@ -15,8 +15,7 @@
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "http://62.238.13.160:8000",
-        "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "dcjlijijhn",
-        "EXPO_PUBLIC_CLOUDINARY_API_KEY": "796742813866127",
+        "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "dydfwmtpi",
         "EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET": "dm_upload"
       }
     },
@@ -24,8 +23,7 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "http://62.238.13.160:8000",
-        "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "dcjlijijhn",
-        "EXPO_PUBLIC_CLOUDINARY_API_KEY": "796742813866127",
+        "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "dydfwmtpi",
         "EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET": "dm_upload"
       }
     }
