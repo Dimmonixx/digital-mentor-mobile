@@ -16,11 +16,17 @@ export async function uploadMediaToServer(uri: string): Promise<string | null> {
       [{ resize: { width: 1200 } }],
       { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
     );
-    const compressedUri = compressed.uri;
+    // Android требует явного file:// префикса
+    const rawUri = compressed.uri;
+    const photoUri = rawUri.startsWith('file://') || rawUri.startsWith('content://')
+      ? rawUri
+      : `file://${rawUri}`;
+
+    console.log('UPLOAD_MEDIA: uri =', photoUri);
 
     const formData = new FormData();
     formData.append('file', {
-      uri: compressedUri,
+      uri: photoUri,
       name: 'photo.jpg',
       type: 'image/jpeg',
     } as any);
@@ -29,15 +35,24 @@ export async function uploadMediaToServer(uri: string): Promise<string | null> {
       method: 'POST',
       body: formData,
     });
+
+    const responseText = await response.text().catch(() => '');
+    console.log('UPLOAD_MEDIA_RESPONSE:', response.status, responseText);
+
     if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      console.log('UPLOAD_MEDIA_ERROR:', response.status, text);
+      console.error('UPLOAD_MEDIA_ERROR:', response.status, responseText);
       return null;
     }
-    const data = await response.json();
-    return data.url || null;
+
+    try {
+      const data = JSON.parse(responseText);
+      return data.url || null;
+    } catch {
+      console.error('UPLOAD_MEDIA_JSON_PARSE_ERROR:', responseText);
+      return null;
+    }
   } catch (e) {
-    console.log('UPLOAD_MEDIA_EXCEPTION:', e);
+    console.error('UPLOAD_MEDIA_EXCEPTION:', e);
     return null;
   }
 }
@@ -65,7 +80,7 @@ export async function saveToArchive(
     let firestoreImageUri = '';
     if (rawImageUri.startsWith('file://') || rawImageUri.startsWith('content://')) {
       console.log('ARCHIVE_UPLOAD: Загружаем фото на сервер...');
-      firestoreImageUri = await uploadMediaToServer(rawImageUri);
+      firestoreImageUri = (await uploadMediaToServer(rawImageUri)) ?? '';
       if (firestoreImageUri) {
         console.log('ARCHIVE_UPLOAD_SUCCESS:', firestoreImageUri);
       } else {
