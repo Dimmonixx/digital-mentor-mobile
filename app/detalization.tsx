@@ -233,7 +233,9 @@ export default function DetalizationScreen() {
   const [pendingMarker, setPendingMarker] = useState<{ x: number; y: number } | null>(null);
   const [markerLabel,   setMarkerLabel]   = useState('');
   const [magnifier, setMagnifier] = useState<{ x: number; y: number } | null>(null);
-  const [activeTab, setActiveTab] = useState<'sliders' | 'modes' | 'presets'>('sliders');
+  const [activeTab, setActiveTab] = useState<'sliders' | 'modes' | 'presets' | 'analysis'>('sliders');
+  const [opticalResult, setOpticalResult] = useState<any>(null);
+  const [opticalLoading, setOpticalLoading] = useState(false);
 
   const filterString = buildFilter(brightness, contrast, saturation, sharpness, viewMode);
   const imageHeight  = SCREEN_WIDTH * 0.75;
@@ -287,6 +289,49 @@ export default function DetalizationScreen() {
     } catch (e) {
       console.error(e);
       Alert.alert('Ошибка', String(e));
+    }
+  };
+
+  const runOpticalAnalysis = async () => {
+    if (!photoUri) {
+      Alert.alert('Ошибка', 'Сначала загрузите фото');
+      return;
+    }
+    setOpticalLoading(true);
+    setOpticalResult(null);
+    try {
+      const imageUrl = await uploadMediaToServer(photoUri);
+      if (!imageUrl) {
+        Alert.alert('Ошибка', 'Не удалось загрузить фото');
+        return;
+      }
+      const rawUser = await AsyncStorage.getItem('user');
+      const user = rawUser ? JSON.parse(rawUser) : null;
+      const userId = user?.id || user?.email || 'unknown';
+      const response = await fetch('http://62.238.13.160:8000/analysis/optical', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          image_url: imageUrl,
+          parameters: {
+            texture: 'natural',
+            transparency: 'high',
+            macro_relief: 'pronounced',
+          },
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        Alert.alert('Ошибка', data.detail || 'Не удалось выполнить анализ');
+        return;
+      }
+      setOpticalResult(data);
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Ошибка', 'Не удалось связаться с сервером');
+    } finally {
+      setOpticalLoading(false);
     }
   };
 
@@ -470,6 +515,7 @@ export default function DetalizationScreen() {
           { key: 'sliders', label: 'Коррекция' },
           { key: 'modes',   label: 'Режимы'    },
           { key: 'presets', label: 'Пресеты'   },
+          { key: 'analysis', label: 'Анализ'   },
         ] as const).map(tab => (
           <TouchableOpacity
             key={tab.key}
@@ -563,6 +609,40 @@ export default function DetalizationScreen() {
                 <Ionicons name="flash-outline" size={16} color={preset.color + '80'} />
               </TouchableOpacity>
             ))}
+          </View>
+        )}
+
+        {activeTab === 'analysis' && (
+          <View style={{ gap: 16 }}>
+            <TouchableOpacity
+              onPress={runOpticalAnalysis}
+              disabled={opticalLoading || !photoUri}
+              style={[
+                styles.analyzeBtn,
+                (!photoUri || opticalLoading) && styles.analyzeBtnDisabled,
+              ]}
+            >
+              <Ionicons name="scan-outline" size={22} color="#031427" />
+              <Text style={styles.analyzeBtnText}>
+                {opticalLoading ? 'Анализ...' : 'Отправить на оптический анализ'}
+              </Text>
+            </TouchableOpacity>
+
+            {opticalResult?.results && (
+              <View style={styles.opticalResultCard}>
+                <View style={styles.opticalResultHeader}>
+                  <Ionicons name="eye-outline" size={22} color="#f2ca50" />
+                  <Text style={styles.opticalResultTitle}>РЕЗУЛЬТАТЫ ОПТИКИ</Text>
+                </View>
+                <Text style={styles.opticalResultSummary}>{opticalResult.summary}</Text>
+                {Object.entries(opticalResult.results as Record<string, any>).map(([key, value]) => (
+                  <View key={key} style={styles.opticalMetricBlock}>
+                    <Text style={styles.opticalMetricName}>{value.verdict}</Text>
+                    <Text style={styles.opticalMetricValue}>Балл: {value.score}/10</Text>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
         )}
 
@@ -816,5 +896,63 @@ const styles = StyleSheet.create({
     fontSize: 13,
     opacity: 0.7,
     textAlign: 'center',
+  },
+  analyzeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#f2ca50',
+    paddingVertical: 16,
+    borderRadius: 14,
+  },
+  analyzeBtnDisabled: {
+    opacity: 0.5,
+  },
+  analyzeBtnText: {
+    color: '#031427',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  opticalResultCard: {
+    backgroundColor: 'rgba(10, 16, 30, 0.92)',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.45)',
+    gap: 12,
+  },
+  opticalResultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  opticalResultTitle: {
+    color: '#f2ca50',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  opticalResultSummary: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  opticalMetricBlock: {
+    backgroundColor: 'rgba(242, 202, 80, 0.1)',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.25)',
+  },
+  opticalMetricName: {
+    color: '#f2ca50',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  opticalMetricValue: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 13,
+    marginTop: 4,
   },
 });

@@ -1,6 +1,4 @@
 import BottomTabBar from '@/components/BottomTabBar';
-import { GoldenProportionData } from '@/types/archive';
-import { saveToArchive } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
@@ -11,6 +9,7 @@ import {
 } from 'expo-screen-orientation';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   GestureResponderEvent,
   Image,
@@ -112,6 +111,8 @@ export default function GoldenProportionScreen() {
     goldenSymmetry: string;
   };
   const [aiReport, setAiReport] = useState<AiReport | null>(null);
+  const [smileResult, setSmileResult] = useState<any>(null);
+  const [smileLoading, setSmileLoading] = useState(false);
 
   // Ориентация экрана (landscape/panorama mode)
   const [isLandscape, setIsLandscape] = useState(false);
@@ -538,6 +539,48 @@ export default function GoldenProportionScreen() {
     return { widthHeight, zenith, goldenSymmetry };
   };
 
+  const runSmileDesign = async () => {
+    if (!photo) {
+      Alert.alert('Ошибка', 'Сначала загрузите фото');
+      return;
+    }
+    setSmileLoading(true);
+    setSmileResult(null);
+    try {
+      const imageUrl = await uploadMediaToServer(photo);
+      if (!imageUrl) {
+        Alert.alert('Ошибка', 'Не удалось загрузить фото');
+        return;
+      }
+      const rawUser = await AsyncStorage.getItem('user');
+      const u = rawUser ? JSON.parse(rawUser) : null;
+      const userId = u?.id || u?.email || 'unknown';
+      const designType = method === 'golden' ? 'виниры' : method === 'red' ? 'коронки' : 'виниры';
+      const response = await fetch('http://62.238.13.160:8000/analysis/smile-design', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          image_url: imageUrl,
+          tooth_count: 6,
+          design_type: designType,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        Alert.alert('Ошибка', data.detail || 'Не удалось выполнить проектирование');
+        return;
+      }
+      setSmileResult(data);
+      setShowResults(true);
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Ошибка', 'Не удалось связаться с сервером');
+    } finally {
+      setSmileLoading(false);
+    }
+  };
+
   // Управление видимостью сетки в панорамном режиме
   const showGridTemporarily = () => {
     // Отменяем предыдущий таймер
@@ -630,7 +673,7 @@ export default function GoldenProportionScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Ionicons name="arrow-back" size={24} color="#f2ca50" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>DSD Анализ</Text>
+          <Text style={styles.headerTitle}>Проектирование улыбки</Text>
           <TouchableOpacity
             style={styles.infoBtn}
             onPress={() => setInfoVisible(true)}
@@ -1123,55 +1166,15 @@ export default function GoldenProportionScreen() {
           {/* ── КНОПКА АНАЛИЗА ── */}
           {photo && (
             <TouchableOpacity
-              style={styles.analyzeBtn}
-              onPress={async () => {
-                // Проверяем баланс алмазов (как в color-analyzer)
-                const currentBalance = (globalThis as any).getDiamondBalance?.() ?? 0;
-                if (currentBalance < 1) {
-                  setDiamondsModalVisible(true);
-                  return;
-                }
-
-                // Списываем 1 алмаз (как в color-analyzer)
-                const didSpend = await (globalThis as any).spendDiamonds?.(1);
-                if (!didSpend) {
-                  setDiamondsModalVisible(true);
-                  return;
-                }
-                setDiamonds(currentBalance - 1);
-
-                // Генерируем Архитектурный паспорт улыбки
-                const report = generateAIReport(MOCK_RESULTS);
-                setAiReport(report);
-                setShowResults(true);
-                calibrateScaleFromAI();
-                saveToArchive(
-                  'golden_proportion',
-                  'Анализ пропорций',
-                  {
-                    imageUri: photo,
-                    angle: rotationDeg,
-                    linesCoordinates: {
-                      vertical: vLinesRaw.current.slice(),
-                      horizontal: hLinesRaw.current.slice(),
-                    },
-                    lineAngles: vLineAnglesRef.current.slice(),
-                    method,
-                    segment: selectedSegment,
-                    calculations: Object.fromEntries(
-                      MOCK_RESULTS.map(r => [
-                        r.label,
-                        { factMm: r.factMm, deviationPct: r.deviationPct, diffMm: r.diffMm },
-                      ])
-                    ),
-                    aiReport: report,
-                  } as GoldenProportionData,
-                );
-              }}
+              style={[styles.analyzeBtn, smileLoading && styles.analyzeBtnDisabled]}
+              onPress={runSmileDesign}
+              disabled={smileLoading}
               activeOpacity={0.85}
             >
               <Ionicons name="git-network" size={26} color="#031427" />
-              <Text style={styles.analyzeBtnText}>Анализ пропорций</Text>
+              <Text style={styles.analyzeBtnText}>
+                {smileLoading ? 'Проектирование...' : 'Проектировать улыбку'}
+              </Text>
             </TouchableOpacity>
           )}
 
@@ -1213,6 +1216,30 @@ export default function GoldenProportionScreen() {
                       <Text style={styles.passportText}>{aiReport.goldenSymmetry.replace(/^[📐📉⚖️]\s*/, '')}</Text>
                     </View>
                   </View>
+                </View>
+              )}
+
+              {smileResult && (
+                <View style={styles.smileResultCard}>
+                  <View style={styles.smileResultHeader}>
+                    <Ionicons name="git-network-outline" size={22} color="#f2ca50" />
+                    <Text style={styles.smileResultTitle}>ПРОЕКТИРОВАНИЕ УЛЫБКИ</Text>
+                  </View>
+                  <Text style={styles.smileResultSummary}>{smileResult.summary}</Text>
+                  <View style={styles.smileProportionsBlock}>
+                    <Text style={styles.smileProportionsTitle}>Золотые пропорции</Text>
+                    <Text style={styles.smileProportionsText}>
+                      Центральный: {smileResult.proportions?.central_width} · Латеральный: {smileResult.proportions?.lateral_width} · Клык: {smileResult.proportions?.canine_width}
+                    </Text>
+                  </View>
+                  <Text style={styles.smileMarkupTitle}>Разметка ({smileResult.markup?.length || 0} зубов):</Text>
+                  {(smileResult.markup || []).slice(0, 6).map((m: any, idx: number) => (
+                    <View key={idx} style={styles.smileMarkupRow}>
+                      <Text style={styles.smileMarkupIndex}>{idx + 1}.</Text>
+                      <Text style={styles.smileMarkupLabel}>{m.label}</Text>
+                      <Text style={styles.smileMarkupWidth}>{m.recommended_width} мм</Text>
+                    </View>
+                  ))}
                 </View>
               )}
 
@@ -2793,5 +2820,72 @@ const styles = StyleSheet.create({
   },
   toolbarSegmentBtnTextActive: {
     color: '#031427',
+  },
+  smileResultCard: {
+    backgroundColor: 'rgba(10, 16, 30, 0.92)',
+    borderRadius: 16,
+    padding: 18,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.45)',
+    gap: 12,
+  },
+  smileResultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  smileResultTitle: {
+    color: '#f2ca50',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  smileResultSummary: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  smileProportionsBlock: {
+    backgroundColor: 'rgba(242, 202, 80, 0.1)',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.25)',
+  },
+  smileProportionsTitle: {
+    color: '#f2ca50',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  smileProportionsText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 13,
+  },
+  smileMarkupTitle: {
+    color: '#f2ca50',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  smileMarkupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  smileMarkupIndex: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 13,
+    width: 20,
+  },
+  smileMarkupLabel: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 13,
+    flex: 1,
+  },
+  smileMarkupWidth: {
+    color: '#f2ca50',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

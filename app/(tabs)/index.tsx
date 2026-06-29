@@ -57,6 +57,7 @@ export default function HomeScreen() {
   const { t } = useLanguage();
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<{ firstName?: string; lastName?: string; patronymic?: string } | null>(null);
+  const [serverProfile, setServerProfile] = useState<{ name?: string; role?: string; diamonds?: number; mastery?: { score: number; level: string } } | null>(null);
   const [isAppReady, setIsAppReady] = useState(false);
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const scrollAnim = useRef(new Animated.Value(0)).current;
@@ -80,7 +81,7 @@ export default function HomeScreen() {
     { id: 'techmap', label: 'Оптическая\nдиагностика', icon: 'layers-outline', active: true, route: '/detalization', col: 1, row: 2 },
     { id: 'etalon', label: 'Эталонный замер', icon: 'options-outline', active: false },
     { id: 'detail', label: 'Детализация', icon: 'list-outline', active: false },
-    { id: 'golden', label: 'DSD\nАнализ', icon: 'git-network-outline', active: true, route: '/golden-proportion' },
+    { id: 'golden', label: 'Проектирование\nулыбки', icon: 'git-network-outline', active: true, route: '/golden-proportion' },
     { id: 'ceramics', label: 'Визуализатор масс', icon: 'book-outline', active: false },
   ];
 
@@ -93,7 +94,7 @@ export default function HomeScreen() {
     { id: 'premium', label: 'Анатомия зубов', icon: 'diamond-outline', active: false, col: 0, row: 3, route: '/(tabs)/balance' },
     { id: 'etalon', label: 'Эталонный замер', icon: 'options-outline', active: false },
     { id: 'detail', label: 'Детализация', icon: 'list-outline', active: false },
-    { id: 'golden', label: 'DSD\nАнализ', icon: 'git-network-outline', active: true, route: '/golden-proportion' },
+    { id: 'golden', label: 'Проектирование\nулыбки', icon: 'git-network-outline', active: true, route: '/golden-proportion' },
     { id: 'ceramics', label: 'Гид по керамике', icon: 'book-outline', active: false },
   ];
 
@@ -245,6 +246,20 @@ export default function HomeScreen() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const userId = user.id || user.email;
+    if (!userId) return;
+    fetch(`http://62.238.13.160:8000/user/${encodeURIComponent(userId)}/profile`)
+      .then(res => res.json())
+      .then(data => {
+        if (data?.status === 'success') {
+          setServerProfile(data);
+        }
+      })
+      .catch(e => console.log('Ошибка загрузки профиля:', e));
+  }, [user]);
 
   useEffect(() => {
     // Check if welcome screen was already shown
@@ -716,6 +731,7 @@ export default function HomeScreen() {
                 }}
               >
                 {(() => {
+                  if (serverProfile?.name) return serverProfile.name;
                   const fullName = [profile?.lastName, profile?.firstName, profile?.patronymic]
                     .filter(Boolean)
                     .join(' ')
