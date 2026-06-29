@@ -9,8 +9,9 @@
       "distribution": "internal"
     },
     "preview": {
-      "autoIncrement": true,
-      "buildType": "apk",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "http://62.238.13.160:8000",
         "EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME": "dcjlijijhn",
