@@ -23,8 +23,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.dilabs.mentor",
-      "versionCode": 1,
+      "package": "com.krivonosov.dilabs",
+      "versionCode": 2,
       "permissions": [
         "READ_MEDIA_IMAGES"
       ],
