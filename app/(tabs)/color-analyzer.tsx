@@ -3,6 +3,7 @@ import { saveToArchive, uploadMediaToServer } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -24,9 +25,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DraggableZones, { Zone } from '../../components/DraggableZones';
-import {
-  API_BASE_URL
-} from '../../constants/config';
+import { ANTHROPIC_API_KEY } from '../../constants/config';
 
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
 const COLOR_ANALYSIS_PRICE = 1;
@@ -154,8 +153,8 @@ function parseVitaJson(raw: string): VitaAnalysis | null {
   return null;
 }
 
-async function analyzeWithClaude(imageUri: string, mediaType: 'image/jpeg' | 'image/png', calculatedShade: string): Promise<VitaAnalysis> {
-  console.log('Математически рассчитанный оттенок:', calculatedShade);
+async function analyzeWithClaude(base64: string, mediaType: 'image/jpeg' | 'image/png', calculatedShade: string): Promise<VitaAnalysis> {
+  console.log('CLAUDE: Математически рассчитанный оттенок:', calculatedShade);
   
   const vitaPrompt = `
 Ты — профессиональный стоматологический колорист и эксперт по шкале VITA Classic и VITA Bleachguide с огромным опытом работы в зуботехнической лаборатории. 
@@ -216,42 +215,55 @@ A5 (виртуальный эталон) = экстремальный, «нек�
 ### ТРЕБОВАНИЕ К ПОЛЮ layering_recipe:
 Поле layering_recipe должно быть заполнено строго с точки зрения зубного техника, который будет послойно наносить керамическую массу на каркас. Опирайся на выявленный primary_range и особенности зон зуба. Никакой воды, только четкие технологические ориентиры цветов.`;
   
-  const VALID_API_KEY_FROM_CONFIG = process.env.EXPO_PUBLIC_API_BRIDGE_KEY ?? '';
-  const formData = new FormData();
-  formData.append('image', {
-    uri: imageUri,
-    name: mediaType === 'image/png' ? 'tooth.png' : 'tooth.jpg',
-    type: mediaType,
-  } as any);
-  formData.append('vita_shade', calculatedShade);
-  formData.append('work_stage', 'Анализ цвета VITA');
-  formData.append('analysis_type', 'Проверить цвет и оттенок');
-  formData.append('comment', vitaPrompt);
-  formData.append('teeth', 'не указаны');
+  console.log('CLAUDE: отправка в Anthropic API, base64 length =', base64.length);
 
-  console.log('Отправка запроса на анализ цвета. API-ключ настроен:', !!VALID_API_KEY_FROM_CONFIG);
-
-  const res = await fetch(`${API_BASE_URL}/analyze-work`, {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
-      'x-api-key': VALID_API_KEY_FROM_CONFIG,
+      'Content-Type': 'application/json',
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
     },
-    body: formData,
+    body: JSON.stringify({
+      model: CLAUDE_MODEL,
+      max_tokens: 2000,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mediaType,
+                data: base64,
+              },
+            },
+            {
+              type: 'text',
+              text: vitaPrompt,
+            },
+          ],
+        },
+      ],
+    }),
   });
 
   const data = (await res.json()) as {
     error?: { message?: string };
-    result?: string;
-    text?: string;
     content?: Array<{ type: string; text?: string }>;
   };
 
+  console.log('CLAUDE: response status =', res.status);
+
   if (!res.ok) {
     const msg = data.error?.message ?? `HTTP ${res.status}`;
+    console.error('CLAUDE_ERROR:', msg);
     throw new Error(msg);
   }
 
-  const text = data.result ?? data.text ?? data.content?.find((c) => c.type === 'text' && c.text)?.text?.trim() ?? '';
+  const text = data.content?.find((c) => c.type === 'text' && c.text)?.text?.trim() ?? '';
+  console.log('CLAUDE: raw response (first 200):', text.slice(0, 200));
   const parsed = parseVitaJson(text);
   if (!parsed) {
     throw new Error('Не удалось разобрать ответ модели. Попробуйте другое фото.');
@@ -427,8 +439,22 @@ const reset = useCallback(() => {
         }
       }
 
-      // Серверный анализ цвета по шкале VITA
-      const analysis = await analyzeColorWithServer(selectedImage!, zones);
+      // Шаг 1: математический анализ цвета — получаем calculatedShade как подсказку для Claude
+      const mathResult = await analyzeColorWithServer(selectedImage!, zones);
+      const calculatedShade = mathResult?.primary_range || 'A2';
+      console.log('HYBRID: math shade =', calculatedShade);
+
+      // Шаг 2: сжимаем изображение для передачи в Claude
+      const compressed = await ImageManipulator.manipulateAsync(
+        selectedImage!,
+        [{ resize: { width: 1024 } }],
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+      const compressedBase64 = compressed.base64!;
+      console.log('HYBRID: compressed base64 length =', compressedBase64.length);
+
+      // Шаг 3: Claude визуально анализирует зуб, используя calculatedShade как подсказку
+      const analysis = await analyzeWithClaude(compressedBase64, 'image/jpeg', calculatedShade);
       if (!analysis) {
         setLoading(false);
         return;
