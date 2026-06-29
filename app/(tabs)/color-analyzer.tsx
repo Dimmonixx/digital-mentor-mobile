@@ -234,7 +234,6 @@ A5 (виртуальный эталон) = экстремальный, «нек�
   const res = await fetch(`${API_BASE_URL}/analyze-work`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'multipart/form-data',
       'x-api-key': VALID_API_KEY_FROM_CONFIG,
     },
     body: formData,
