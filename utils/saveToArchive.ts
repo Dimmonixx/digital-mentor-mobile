@@ -3,6 +3,7 @@ import { ArchiveItem, ArchiveItemData, ArchiveItemType } from '@/types/archive';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { addDoc, collection } from 'firebase/firestore';
+import { Alert } from 'react-native';
 
 export const ARCHIVE_COLLECTION = 'archives';
 export const LOCAL_ARCHIVE_KEY = 'local_archive_mine';
@@ -12,6 +13,8 @@ const CLOUDINARY_UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESE
 const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 
 export async function uploadMediaToServer(uri: string): Promise<string | null> {
+  console.log('CLOUDINARY_CONFIG: cloud=', CLOUDINARY_CLOUD_NAME, 'preset=', CLOUDINARY_UPLOAD_PRESET);
+  console.log('CLOUDINARY_CONFIG: url=', CLOUDINARY_UPLOAD_URL);
   try {
     const compressed = await ImageManipulator.manipulateAsync(
       uri,
@@ -23,7 +26,7 @@ export async function uploadMediaToServer(uri: string): Promise<string | null> {
       ? rawUri
       : `file://${rawUri}`;
 
-    console.log('CLOUDINARY_UPLOAD: uri =', photoUri);
+    console.log('CLOUDINARY_UPLOAD: photoUri =', photoUri);
 
     const formData = new FormData();
     formData.append('file', {
@@ -33,16 +36,20 @@ export async function uploadMediaToServer(uri: string): Promise<string | null> {
     } as any);
     formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
 
+    console.log('CLOUDINARY_UPLOAD: sending to', CLOUDINARY_UPLOAD_URL);
+
     const response = await fetch(CLOUDINARY_UPLOAD_URL, {
       method: 'POST',
       body: formData,
     });
 
     const responseText = await response.text().catch(() => '');
-    console.log('CLOUDINARY_RESPONSE:', response.status, responseText.slice(0, 200));
+    console.log('CLOUDINARY_RESPONSE:', response.status, responseText.slice(0, 400));
 
     if (!response.ok) {
-      console.error('CLOUDINARY_ERROR:', response.status, responseText);
+      const errMsg = `Cloudinary ${response.status}: ${responseText.slice(0, 200)}`;
+      console.error('CLOUDINARY_ERROR:', errMsg);
+      Alert.alert('Ошибка загрузки фото', errMsg);
       return null;
     }
 
@@ -51,11 +58,15 @@ export async function uploadMediaToServer(uri: string): Promise<string | null> {
       console.log('CLOUDINARY_SUCCESS: url =', data.secure_url);
       return data.secure_url || null;
     } catch {
-      console.error('CLOUDINARY_JSON_PARSE_ERROR:', responseText);
+      const errMsg = `Ошибка разбора ответа Cloudinary: ${responseText.slice(0, 200)}`;
+      console.error('CLOUDINARY_JSON_PARSE_ERROR:', errMsg);
+      Alert.alert('Ошибка загрузки фото', errMsg);
       return null;
     }
-  } catch (e) {
-    console.error('CLOUDINARY_EXCEPTION:', e);
+  } catch (e: any) {
+    const errMsg = e?.message || String(e);
+    console.error('CLOUDINARY_EXCEPTION:', errMsg);
+    Alert.alert('Ошибка загрузки фото', `Исключение: ${errMsg}`);
     return null;
   }
 }
