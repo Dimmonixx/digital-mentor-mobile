@@ -608,8 +608,8 @@ export default function HomeScreen() {
         <Animated.View style={{ opacity: fadeAnim }}>
           <View style={styles.cardsContainer}>
             {(() => {
-              const items = user?.role === 'doctor' ? DOCTOR_ITEMS : TECHNICIAN_ITEMS;
-              const isDoctor = user?.role === 'doctor';
+              const items = TECHNICIAN_ITEMS; // TODO: restore role-based items after grid test
+              const isDoctor = false; // TODO: restore user?.role === 'doctor' after grid test
               return (
                 <View style={styles.hexGridContainer}>
                   <InvertedTrapezoidButton />
