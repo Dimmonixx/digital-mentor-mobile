@@ -7,7 +7,9 @@ import { addDoc, collection } from 'firebase/firestore';
 export const ARCHIVE_COLLECTION = 'archives';
 export const LOCAL_ARCHIVE_KEY = 'local_archive_mine';
 
-export const UPLOAD_MEDIA_URL = 'http://62.238.13.160:8000/archive/upload-media';
+const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dcjlijijhn';
+const CLOUDINARY_UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'dm_upload';
+const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 
 export async function uploadMediaToServer(uri: string): Promise<string | null> {
   try {
@@ -16,13 +18,12 @@ export async function uploadMediaToServer(uri: string): Promise<string | null> {
       [{ resize: { width: 1200 } }],
       { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
     );
-    // Android требует явного file:// префикса
     const rawUri = compressed.uri;
     const photoUri = rawUri.startsWith('file://') || rawUri.startsWith('content://')
       ? rawUri
       : `file://${rawUri}`;
 
-    console.log('UPLOAD_MEDIA: uri =', photoUri);
+    console.log('CLOUDINARY_UPLOAD: uri =', photoUri);
 
     const formData = new FormData();
     formData.append('file', {
@@ -30,29 +31,31 @@ export async function uploadMediaToServer(uri: string): Promise<string | null> {
       name: 'photo.jpg',
       type: 'image/jpeg',
     } as any);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
 
-    const response = await fetch(UPLOAD_MEDIA_URL, {
+    const response = await fetch(CLOUDINARY_UPLOAD_URL, {
       method: 'POST',
       body: formData,
     });
 
     const responseText = await response.text().catch(() => '');
-    console.log('UPLOAD_MEDIA_RESPONSE:', response.status, responseText);
+    console.log('CLOUDINARY_RESPONSE:', response.status, responseText.slice(0, 200));
 
     if (!response.ok) {
-      console.error('UPLOAD_MEDIA_ERROR:', response.status, responseText);
+      console.error('CLOUDINARY_ERROR:', response.status, responseText);
       return null;
     }
 
     try {
       const data = JSON.parse(responseText);
-      return data.url || null;
+      console.log('CLOUDINARY_SUCCESS: url =', data.secure_url);
+      return data.secure_url || null;
     } catch {
-      console.error('UPLOAD_MEDIA_JSON_PARSE_ERROR:', responseText);
+      console.error('CLOUDINARY_JSON_PARSE_ERROR:', responseText);
       return null;
     }
   } catch (e) {
-    console.error('UPLOAD_MEDIA_EXCEPTION:', e);
+    console.error('CLOUDINARY_EXCEPTION:', e);
     return null;
   }
 }
