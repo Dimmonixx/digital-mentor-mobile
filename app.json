@@ -29,8 +29,7 @@
         "READ_MEDIA_IMAGES"
       ],
       "navigationBarColor": "#0a0a1a",
-      "navigationBarStyle": "dark",
-      "usesCleartextTraffic": true
+      "navigationBarStyle": "dark"
     },
     "web": {
       "output": "static",
@@ -52,7 +51,15 @@
       ],
       "@react-native-community/datetimepicker",
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
