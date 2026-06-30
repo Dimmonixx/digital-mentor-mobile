@@ -880,7 +880,7 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* 2. Statistics */}
+        {/* 2. Statistics — временно скрыто
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{statistics.ordersCount}</Text>
@@ -891,8 +891,9 @@ export default function ProfileScreen() {
             <Text style={styles.statLabel}>Анализов цвета</Text>
           </View>
         </View>
+        */}
 
-        {/* Mastery Index */}
+        {/* Mastery Index — временно скрыто
         {mastery && (
           <View style={styles.masteryBlock}>
             <View style={styles.masteryHeader}>
@@ -908,6 +909,7 @@ export default function ProfileScreen() {
             </View>
           </View>
         )}
+        */}
 
         {/* 3. DiLabs network */}
         <View style={styles.networkBlock}>
@@ -1066,7 +1068,7 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        {/* 4. Professional data + save (accordion) */}
+        {/* 4. Professional data + save (accordion) — временно скрыто
         <View style={styles.blockCard}>
           <TouchableOpacity
             style={styles.profDataHeader}
@@ -1129,6 +1131,7 @@ export default function ProfileScreen() {
             </View>
           )}
         </View>
+        */}
 
         {/* 5. Footer logout */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
