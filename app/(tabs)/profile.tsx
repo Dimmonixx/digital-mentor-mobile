@@ -457,12 +457,25 @@ export default function ProfileScreen() {
       const userId = user?.uid || user?.id;
       const userName = user?.name;
       const userRole = user?.role;
-      if (!userId || !userName || !userRole) return;
+      console.log('[Link] userId:', userId, 'userName:', userName, 'userRole:', userRole);
+      if (!userId || !userName || !userRole) {
+        console.log('[Link] ABORT: missing userId/userName/userRole');
+        return;
+      }
 
-      // Query for user with the entered invite code
-      const usersRef = dbRef(getFirebaseDB(), 'users');
-      const snapshot = await get(usersRef);
-      const allUsers = snapshot.val();
+      // STEP 1: читаем всех users по inviteCode
+      let allUsers: any = null;
+      try {
+        const usersRef = dbRef(getFirebaseDB(), 'users');
+        console.log('[Link] STEP 1: get users...');
+        const snapshot = await get(usersRef);
+        allUsers = snapshot.val();
+        console.log('[Link] STEP 1 OK: got', allUsers ? Object.keys(allUsers).length : 0, 'users');
+      } catch (e: any) {
+        console.log('[Link] STEP 1 ERROR code:', e?.code, 'message:', e?.message);
+        showFeedback('Ошибка', `Чтение users: ${e?.message}`, 'error');
+        return;
+      }
 
       if (!allUsers) {
         showFeedback('Ошибка', 'Пользователь с таким кодом не найден', 'error');
@@ -482,46 +495,63 @@ export default function ProfileScreen() {
         return;
       }
 
-      const targetUserRole = targetUser.role;
+      const targetUserRole = targetUser?.profile?.role || targetUser?.role;
+      console.log('[Link] targetUser uid:', targetUser.uid, 'targetUserRole:', targetUserRole);
 
       if (userRole === targetUserRole) {
         showFeedback('Ошибка', 'Нельзя связать пользователей с одинаковой ролью', 'error');
         return;
       }
 
-      // Check if request already exists
-      const requestsRef = dbRef(getFirebaseDB(), 'connection_requests');
-      const requestsSnapshot = await get(requestsRef);
-      if (requestsSnapshot.exists()) {
-        const requestsData = requestsSnapshot.val() as Record<string, any>;
-        for (const [key, req] of Object.entries(requestsData)) {
-          if (req && ((req.from === userId && req.to === targetUser.uid) || (req.from === targetUser.uid && req.to === userId))) {
-            if (req.status === 'pending') {
-              showFeedback('Уже отправлено', 'Запрос уже отправлен или ожидает подтверждения', 'error', 'Ок');
-              return;
+      // STEP 2: проверяем дубли в connection_requests
+      try {
+        const requestsRef = dbRef(getFirebaseDB(), 'connection_requests');
+        console.log('[Link] STEP 2: get connection_requests...');
+        const requestsSnapshot = await get(requestsRef);
+        console.log('[Link] STEP 2 OK: exists=', requestsSnapshot.exists());
+        if (requestsSnapshot.exists()) {
+          const requestsData = requestsSnapshot.val() as Record<string, any>;
+          for (const [key, req] of Object.entries(requestsData)) {
+            if (req && ((req.from === userId && req.to === targetUser.uid) || (req.from === targetUser.uid && req.to === userId))) {
+              if (req.status === 'pending') {
+                showFeedback('Уже отправлено', 'Запрос уже отправлен или ожидает подтверждения', 'error', 'Ок');
+                return;
+              }
             }
           }
         }
+      } catch (e: any) {
+        console.log('[Link] STEP 2 ERROR code:', e?.code, 'message:', e?.message);
+        showFeedback('Ошибка', `Чтение connection_requests: ${e?.message}`, 'error');
+        return;
       }
 
-      // Create connection request
-      const requestId = `${userId}_${targetUser.uid}_${Date.now()}`;
-      const requestRef = dbRef(getFirebaseDB(), `connection_requests/${requestId}`);
-      await set(requestRef, {
-        from: userId,
-        to: targetUser.uid,
-        status: 'pending',
-        senderName: userName,
-        senderRole: userRole === 'doctor' ? 'Врач' : 'Техник',
-        createdAt: Date.now(),
-      });
+      // STEP 3: записываем запрос
+      try {
+        const requestId = `${userId}_${targetUser.uid}_${Date.now()}`;
+        const requestRef = dbRef(getFirebaseDB(), `connection_requests/${requestId}`);
+        console.log('[Link] STEP 3: set connection_requests/', requestId);
+        await set(requestRef, {
+          from: userId,
+          to: targetUser.uid,
+          status: 'pending',
+          senderName: userName,
+          senderRole: userRole === 'doctor' ? 'Врач' : 'Техник',
+          createdAt: Date.now(),
+        });
+        console.log('[Link] STEP 3 OK');
+      } catch (e: any) {
+        console.log('[Link] STEP 3 ERROR code:', e?.code, 'message:', e?.message);
+        showFeedback('Ошибка', `Запись запроса: ${e?.message}`, 'error');
+        return;
+      }
 
       setPartnerCode('');
       setToast({ visible: true, message: 'Успешно. Запрос на связь отправлен' });
       setTimeout(() => setToast({ visible: false, message: '' }), 2500);
-      console.log("=== Запрос на связь отправлен ===");
+      console.log('[Link] === Запрос на связь отправлен ===');
     } catch (error) {
-      console.log("=== Отправка запроса: ошибка ===", (error as any)?.message);
+      console.log('[Link] UNEXPECTED ERROR:', (error as any)?.code, (error as any)?.message);
       showFeedback('Ошибка', 'Не удалось отправить запрос', 'error');
     } finally {
       setLinkingLoading(false);
