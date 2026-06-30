@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { onValue, ref } from 'firebase/database';
+import { get, onValue, ref } from 'firebase/database';
 import { useEffect, useState } from 'react';
 import { getCurrentUser } from '../constants/auth';
 import { getFirebaseDB } from '../constants/firebase';
@@ -35,6 +35,7 @@ export const useAuth = () => {
             try {
               const snap = await get(userRef);
               console.log('[Auth Debug] Initial get snapshot:', snap.val());
+              console.log('DEBUG useAuth firebase data:', JSON.stringify(snap.val()));
               if (snap.exists()) {
                 const fresh = snap.val();
                 const merged = { ...parsed, ...fresh };

@@ -83,6 +83,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, loading } = useAuth();
+  console.log('DEBUG profile user:', JSON.stringify(user));
   const { theme } = useTheme();
   const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
