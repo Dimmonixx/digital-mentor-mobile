@@ -38,7 +38,7 @@ export const useAuth = () => {
               console.log('DEBUG useAuth firebase data:', JSON.stringify(snap.val()));
               if (snap.exists()) {
                 const fresh = snap.val();
-                const merged = { ...parsed, ...fresh };
+                const merged = { ...parsed, ...fresh, role: fresh?.profile?.role || fresh?.role || parsed?.role };
                 console.log('[Auth Debug] Merged user:', merged);
                 setUser(merged);
                 setRole(merged.role);
@@ -59,7 +59,7 @@ export const useAuth = () => {
               console.log('[Auth Debug] Live update snapshot:', snap.val());
               if (snap.exists()) {
                 const fresh = snap.val();
-                const merged = { ...parsed, ...fresh };
+                const merged = { ...parsed, ...fresh, role: fresh?.profile?.role || fresh?.role || parsed?.role };
                 setUser(merged);
                 setRole(merged.role);
                 AsyncStorage.setItem('user', JSON.stringify(merged)).catch(() => {});
