@@ -81,10 +81,11 @@ type FeedbackType = 'success' | 'error';
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  if (loading) return <ActivityIndicator size="large" color="#f2ca50" style={{flex: 1, backgroundColor: '#000'}} />;
   const { theme } = useTheme();
   const { t } = useLanguage();
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<'upload' | 'preset'>('upload');
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
@@ -715,7 +716,7 @@ export default function ProfileScreen() {
 
   const handleSave = async () => {
     try {
-      setLoading(true);
+      setSaving(true);
       const userId = user?.id;
       if (!userId) return;
 
@@ -726,7 +727,7 @@ export default function ProfileScreen() {
       console.error('Error saving profile:', error);
       showFeedback('Ошибка', 'Не удалось сохранить профиль', 'error');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -1080,12 +1081,12 @@ export default function ProfileScreen() {
               </View>
 
               <TouchableOpacity
-                style={[styles.saveButton, loading && styles.buttonDisabled]}
+                style={[styles.saveButton, saving && styles.buttonDisabled]}
                 onPress={handleSave}
-                disabled={loading}
+                disabled={saving}
               >
                 <Text style={styles.saveButtonText}>
-                  {loading ? 'Сохранение...' : 'Сохранить профиль'}
+                  {saving ? 'Сохранение...' : 'Сохранить профиль'}
                 </Text>
               </TouchableOpacity>
             </View>
