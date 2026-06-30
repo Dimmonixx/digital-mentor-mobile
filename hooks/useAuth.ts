@@ -45,14 +45,19 @@ export const useAuth = () => {
               } else {
                 console.log('[Auth Debug] Snapshot does not exist at', `users/${targetDbKey}`);
               }
+              setLoading(false);
             }, (error) => {
               console.error('[Firebase Error Check]:', error);
+              setLoading(false);
             });
+          } else {
+            setLoading(false);
           }
+        } else {
+          setLoading(false);
         }
       } catch (error) {
         console.error('Error loading user from AsyncStorage:', error);
-      } finally {
         setLoading(false);
       }
     };
