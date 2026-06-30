@@ -105,6 +105,7 @@ export default function ChatScreen() {
   const [aiDailyLimit, setAiDailyLimit] = useState<number>((globalThis as any).getAiDailyLimit?.() ?? 15);
   const [onlineUsersCount, setOnlineUsersCount] = useState(0);
   const flatListRef = useRef<FlatList>(null);
+  const [inputBarHeight, setInputBarHeight] = useState(80);
   const insets = useSafeAreaInsets();
   
   // Animation for AI thinking text
@@ -226,7 +227,7 @@ export default function ChatScreen() {
   // Подсчет активных пользователей (сообщения за последние 5 минут) - удалено, теперь используем реальный онлайн-статус
 
   useEffect(() => {
-    scrollToBottom();
+    scrollToBottom(true);
   }, [messages]);
 
   const loadUsername = async () => {
@@ -389,10 +390,10 @@ export default function ChatScreen() {
     }
   };
 
-  const scrollToBottom = () => {
-    if (flatListRef.current && messages.length > 0) {
-      flatListRef.current.scrollToEnd({ animated: true });
-    }
+  const scrollToBottom = (animated = true) => {
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated });
+    }, 100);
   };
 
   const renderMessage = ({ item, index }: { item: Message; index: number }) => {
@@ -607,8 +608,8 @@ export default function ChatScreen() {
               renderItem={renderMessage}
               keyExtractor={(item) => item.id}
               style={styles.messagesList}
-              contentContainerStyle={[styles.messagesContainer, { paddingBottom: 160 }]}
-              onContentSizeChange={scrollToBottom}
+              contentContainerStyle={[styles.messagesContainer, { paddingBottom: inputBarHeight + 24 }]}
+              onContentSizeChange={() => scrollToBottom(true)}
               onScroll={(event) => {
                 const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
                 const distanceFromBottom = contentSize.height - (contentOffset.y || 0) - layoutMeasurement.height;
@@ -692,7 +693,10 @@ export default function ChatScreen() {
         )}
 
         {/* Input Area */}
-        <View style={[styles.inputContainer, { paddingBottom: insets.bottom > 0 ? insets.bottom + 16 : 24 }]}>
+        <View
+          onLayout={(e) => setInputBarHeight(e.nativeEvent.layout.height)}
+          style={[styles.inputContainer, { paddingBottom: insets.bottom > 0 ? insets.bottom + 16 : 24 }]}
+        >
           <View style={styles.inputWrapper}>
             <TouchableOpacity 
               onPress={sendPhoto} 
