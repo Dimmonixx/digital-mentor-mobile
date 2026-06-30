@@ -23,8 +23,6 @@ export const useAuth = () => {
         if (data) {
           const parsed = JSON.parse(data);
           console.log('[Auth Debug] Parsed user ID:', parsed?.id || parsed?.uid || parsed?.email);
-          setUser(parsed);
-          setRole(parsed.role);
 
           const targetDbKey = currentUser?.uid || parsed?.uid || parsed?.id || parsed?.email?.replace(/\./g, '_') || '';
           console.log('[Auth Debug] Formatted DB path key used for /users/:', targetDbKey);
@@ -32,9 +30,11 @@ export const useAuth = () => {
           if (targetDbKey) {
             const currentDb = getFirebaseDB();
             const userRef = ref(currentDb, `users/${targetDbKey}`);
-            console.log('[Auth Debug] Subscribing to:', `users/${targetDbKey}`);
-            unsubscribe = onValue(userRef, (snap) => {
-              console.log('[Auth Debug] Database Rules snapshot value:', snap.val());
+
+            // --- Одноразовое чтение: ждём первый snapshot перед setLoading(false) ---
+            try {
+              const snap = await get(userRef);
+              console.log('[Auth Debug] Initial get snapshot:', snap.val());
               if (snap.exists()) {
                 const fresh = snap.val();
                 const merged = { ...parsed, ...fresh };
@@ -43,21 +43,37 @@ export const useAuth = () => {
                 setRole(merged.role);
                 AsyncStorage.setItem('user', JSON.stringify(merged)).catch(() => {});
               } else {
-                console.log('[Auth Debug] Snapshot does not exist at', `users/${targetDbKey}`);
+                console.log('[Auth Debug] No Firebase data at', `users/${targetDbKey}`, '— using AsyncStorage');
+                setUser(parsed);
+                setRole(parsed.role);
               }
-              setLoading(false);
+            } catch (fbError) {
+              console.error('[Auth Debug] Firebase get error, falling back to AsyncStorage:', fbError);
+              setUser(parsed);
+              setRole(parsed.role);
+            }
+
+            // --- Live-обновления после первого рендера ---
+            unsubscribe = onValue(userRef, (snap) => {
+              console.log('[Auth Debug] Live update snapshot:', snap.val());
+              if (snap.exists()) {
+                const fresh = snap.val();
+                const merged = { ...parsed, ...fresh };
+                setUser(merged);
+                setRole(merged.role);
+                AsyncStorage.setItem('user', JSON.stringify(merged)).catch(() => {});
+              }
             }, (error) => {
               console.error('[Firebase Error Check]:', error);
-              setLoading(false);
             });
           } else {
-            setLoading(false);
+            setUser(parsed);
+            setRole(parsed.role);
           }
-        } else {
-          setLoading(false);
         }
       } catch (error) {
         console.error('Error loading user from AsyncStorage:', error);
+      } finally {
         setLoading(false);
       }
     };
