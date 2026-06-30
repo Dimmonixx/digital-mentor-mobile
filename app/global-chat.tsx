@@ -62,6 +62,7 @@ interface Message {
   timestamp: number;
   reactions?: { [emoji: string]: number };
   photoURL?: string;
+  isThinking?: boolean;
 }
 
 const AnimatedMessage = ({ children }: { children: React.ReactNode }) => {
@@ -397,6 +398,22 @@ export default function ChatScreen() {
   };
 
   const renderMessage = ({ item, index }: { item: Message; index: number }) => {
+    // Индикатор "AI думает..." — рендерим как псевдо-сообщение внутри списка
+    if (item.isThinking) {
+      return (
+        <AnimatedMessage>
+          <View style={[styles.messageContainer, styles.otherMessageContainer]}>
+            <View style={[styles.messageBubble, styles.otherMessageBubble]}>
+              <Text style={styles.messageUsername}>ИИ-Ассистент 🤖</Text>
+              <Animated.Text style={[styles.aiThinkingText, { opacity: thinkingOpacity }]}>
+                Печатает...
+              </Animated.Text>
+            </View>
+          </View>
+        </AnimatedMessage>
+      );
+    }
+
     const isMyMessage = item.username === username;
     const timeString = new Date(item.timestamp).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
 
@@ -464,7 +481,7 @@ export default function ChatScreen() {
             )}
             {!item.photoURL && item.username === 'ИИ-Ассистент 🤖' ? (
               <Markdown style={{
-                body: { color: '#ffffff', fontSize: 15 },
+                body: { color: '#ffffff', fontSize: 15, backgroundColor: 'transparent' },
                 strong: { color: '#f2ca50' },
                 bullet_list: { color: '#ffffff' },
                 ordered_list: { color: '#ffffff' },
@@ -472,6 +489,7 @@ export default function ChatScreen() {
                 fence: { backgroundColor: '#ffffff10', borderRadius: 8 },
                 heading1: { color: '#f2ca50' },
                 heading2: { color: '#f2ca50' },
+                paragraph: { color: '#ffffff', marginTop: 0, marginBottom: 4 },
               }}>
                 {item.text}
               </Markdown>
@@ -604,7 +622,7 @@ export default function ChatScreen() {
           <>
             <FlatList
               ref={flatListRef}
-              data={messages}
+              data={aiThinking ? [...messages, { id: '__thinking__', username: 'ИИ-Ассистент 🤖', text: '', timestamp: Date.now(), isThinking: true }] : messages}
               renderItem={renderMessage}
               keyExtractor={(item) => item.id}
               style={styles.messagesList}
@@ -616,15 +634,7 @@ export default function ChatScreen() {
                 setShowScrollButton(distanceFromBottom > 100);
               }}
               scrollEventThrottle={16}
-              ListFooterComponent={aiThinking ? (
-                <View style={styles.aiThinkingContainer}>
-                  <View style={styles.aiThinkingBubble}>
-                    <Animated.Text style={[styles.aiThinkingText, { opacity: thinkingOpacity }]}>
-                      AI думает...
-                    </Animated.Text>
-                  </View>
-                </View>
-              ) : null}
+              ListFooterComponent={null}
             />
           </>
         )}
