@@ -291,6 +291,8 @@ export default function ProfileScreen() {
         setProfile(mergedProfile);
         setProfileLoading(false);
         AsyncStorage.setItem('userProfile', JSON.stringify(mergedProfile)).catch(() => {});
+      } else {
+        setProfileLoading(false);
       }
     });
 
