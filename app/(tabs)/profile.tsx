@@ -463,31 +463,23 @@ export default function ProfileScreen() {
         return;
       }
 
-      // STEP 1: читаем всех users по inviteCode
-      let allUsers: any = null;
+      // STEP 1: ищем user по inviteCode через индекс
+      let targetUser: any = null;
       try {
         const usersRef = dbRef(getFirebaseDB(), 'users');
-        console.log('[Link] STEP 1: get users...');
-        const snapshot = await get(usersRef);
-        allUsers = snapshot.val();
-        console.log('[Link] STEP 1 OK: got', allUsers ? Object.keys(allUsers).length : 0, 'users');
+        const q = query(usersRef, orderByChild('inviteCode'), equalTo(partnerCode));
+        console.log('[Link] STEP 1: query users by inviteCode=', partnerCode);
+        const snapshot = await get(q);
+        console.log('[Link] STEP 1 OK: exists=', snapshot.exists(), 'val=', JSON.stringify(snapshot.val()));
+        if (snapshot.exists()) {
+          const results = snapshot.val();
+          const uid = Object.keys(results)[0];
+          targetUser = { uid, ...results[uid] };
+        }
       } catch (e: any) {
         console.log('[Link] STEP 1 ERROR code:', e?.code, 'message:', e?.message);
         showFeedback('Ошибка', `Чтение users: ${e?.message}`, 'error');
         return;
-      }
-
-      if (!allUsers) {
-        showFeedback('Ошибка', 'Пользователь с таким кодом не найден', 'error');
-        return;
-      }
-
-      let targetUser: any = null;
-      for (const [uid, userData] of Object.entries(allUsers)) {
-        if (userData && (userData as any).inviteCode === partnerCode) {
-          targetUser = { uid, ...userData };
-          break;
-        }
       }
 
       if (!targetUser) {
