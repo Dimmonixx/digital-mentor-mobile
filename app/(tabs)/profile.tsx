@@ -8,6 +8,7 @@ import { ref as dbRef, equalTo, get, onValue, orderByChild, query, remove, set }
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import {
+    ActivityIndicator,
     Alert,
     FlatList,
     Image,
@@ -82,10 +83,10 @@ export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, loading } = useAuth();
-  if (loading) return <ActivityIndicator size="large" color="#f2ca50" style={{flex: 1, backgroundColor: '#000'}} />;
   const { theme } = useTheme();
   const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<'upload' | 'preset'>('upload');
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
@@ -95,7 +96,7 @@ export default function ProfileScreen() {
     firstName: '',
     lastName: '',
     patronymic: '',
-    position: t('posDentist'),
+    position: '',
     laboratory: '',
     city: '',
     experience: '',
@@ -288,6 +289,7 @@ export default function ProfileScreen() {
               : data.position;
         const mergedProfile = { ...(data as ProfileData), position: rolePosition };
         setProfile(mergedProfile);
+        setProfileLoading(false);
         AsyncStorage.setItem('userProfile', JSON.stringify(mergedProfile)).catch(() => {});
       }
     });
@@ -790,6 +792,10 @@ export default function ProfileScreen() {
       console.log(error);
     }
   };
+
+  if (loading || profileLoading) {
+    return <ActivityIndicator size="large" color="#f2ca50" style={{ flex: 1, backgroundColor: '#000' }} />;
+  }
 
   return (
     <ImageBackground
