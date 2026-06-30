@@ -1,24 +1,24 @@
 ﻿import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, router } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { off, onValue, ref } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  ImageBackground,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    ImageBackground,
+    KeyboardAvoidingView,
+    Platform,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useAuth } from '@/hooks/useAuth';
 import { getFirebaseDB } from '@/constants/firebase';
+import { useAuth } from '@/hooks/useAuth';
 
 const API_BASE = 'http://62.238.13.160:8000';
 
@@ -49,6 +49,7 @@ export default function PartnerChatScreen() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
+  const [inputAreaHeight, setInputAreaHeight] = useState(80);
   const flatListRef = useRef<FlatList>(null);
 
   const currentUserId = user?.uid || user?.id || '';
@@ -235,6 +236,7 @@ export default function PartnerChatScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen options={{ headerShown: false }} />
       <ImageBackground
         source={require('@/assets/images/background.png')}
         style={styles.background}
@@ -265,7 +267,7 @@ export default function PartnerChatScreen() {
             data={messages}
             renderItem={renderMessage}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, { paddingBottom: inputAreaHeight + insets.bottom + 16 }]}
             ListEmptyComponent={(
               <View style={styles.emptyState}>
                 <Ionicons name="chatbubbles-outline" size={56} color="#f2ca5080" />
@@ -275,7 +277,10 @@ export default function PartnerChatScreen() {
             )}
           />
 
-          <View style={[styles.inputArea, { paddingBottom: insets.bottom > 0 ? insets.bottom : 12 }]}>
+          <View
+            onLayout={(e) => setInputAreaHeight(e.nativeEvent.layout.height)}
+            style={[styles.inputArea, { paddingBottom: insets.bottom > 0 ? insets.bottom : 12 }]}
+          >
             <View style={styles.inputWrapper}>
               <TextInput
                 style={styles.textInput}

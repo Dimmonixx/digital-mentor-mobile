@@ -575,8 +575,9 @@ export default function ChatScreen() {
   }
 
   return (
-    <View style={{flex:1}}>
+    <>
       <Stack.Screen options={{ headerShown: false }} />
+      <View style={{flex:1}}>
       <ImageBackground
         source={require('@/assets/images/background.png')}
         style={{ flex: 1 }}
@@ -747,7 +748,8 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </Modal>
       </ImageBackground>
-    </View>
+      </View>
+    </>
   );
 }
 
