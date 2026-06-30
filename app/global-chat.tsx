@@ -6,7 +6,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { get, off, onValue, push, ref, remove, set } from 'firebase/database';
 import { TrendingUpDown } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
@@ -553,6 +553,7 @@ export default function ChatScreen() {
 
   return (
     <View style={{flex:1}}>
+      <Stack.Screen options={{ headerShown: false }} />
       <ImageBackground
         source={require('@/assets/images/background.png')}
         style={{ flex: 1 }}

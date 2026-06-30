@@ -3,13 +3,13 @@ import { router } from 'expo-router';
 import { off, onValue, ref } from 'firebase/database';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  FlatList,
-  ImageBackground,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    FlatList,
+    ImageBackground,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -100,8 +100,8 @@ export default function ChatListScreen() {
             <Ionicons name="planet" size={28} color="#031427" />
           </View>
           <View style={styles.rowText}>
-            <Text style={styles.globalTitle}>Общий космический чат</Text>
-            <Text style={styles.subtitle}>Флудилка для всех пользователей</Text>
+            <Text style={styles.globalTitle}>Чат с ИИ-ассистентом</Text>
+            <Text style={styles.subtitle}>Задайте вопрос AI-наставнику</Text>
           </View>
           <Ionicons name="chevron-forward" size={22} color="#f2ca50" />
         </TouchableOpacity>
@@ -143,11 +143,7 @@ export default function ChatListScreen() {
         resizeMode="cover"
       >
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="chevron-back" size={24} color="#f2ca50" />
-          </TouchableOpacity>
           <Text style={styles.headerTitle}>Чаты</Text>
-          <View style={styles.backButton} />
         </View>
 
         {loading ? (
@@ -185,9 +181,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingHorizontal: 12,
     paddingBottom: 10,
     borderBottomWidth: 1,
