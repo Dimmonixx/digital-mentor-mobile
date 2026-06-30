@@ -312,7 +312,7 @@ export default function ChatScreen() {
         const userEmail = userObj?.email || '';
         const userRole = userObj?.role || 'technician';
         setAiThinking(true);
-        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150);
         const aiReply = await executeWithAiLimit(userEmail, () => getClaudeResponse(text, messages, userRole));
         setAiThinking(false);
         if (aiReply) {
@@ -626,7 +626,7 @@ export default function ChatScreen() {
               renderItem={renderMessage}
               keyExtractor={(item) => item.id}
               style={styles.messagesList}
-              contentContainerStyle={[styles.messagesContainer, { paddingBottom: inputBarHeight + 24 }]}
+              contentContainerStyle={[styles.messagesContainer, { paddingBottom: inputBarHeight + 80 }]}
               onContentSizeChange={() => scrollToBottom(true)}
               onScroll={(event) => {
                 const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
