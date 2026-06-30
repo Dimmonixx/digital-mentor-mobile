@@ -612,7 +612,7 @@ export default function ChatScreen() {
         </View>
 
         {/* Messages List */}
-        {messages.length === 0 ? (
+        {messages.length === 0 && !aiThinking ? (
           <View style={styles.emptyState}>
             <Ionicons name="chatbubbles" size={60} color="#f2ca5080" />
             <Text style={styles.emptyStateTitle}>Начните общение</Text>
