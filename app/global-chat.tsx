@@ -106,7 +106,7 @@ export default function ChatScreen() {
   const [aiDailyLimit, setAiDailyLimit] = useState<number>((globalThis as any).getAiDailyLimit?.() ?? 15);
   const [onlineUsersCount, setOnlineUsersCount] = useState(0);
   const flatListRef = useRef<FlatList>(null);
-  const [inputBarHeight, setInputBarHeight] = useState(80);
+  const [inputBarHeight, setInputBarHeight] = useState(120);
   const insets = useSafeAreaInsets();
   
   // Animation for AI thinking text
@@ -626,7 +626,7 @@ export default function ChatScreen() {
               renderItem={renderMessage}
               keyExtractor={(item) => item.id}
               style={styles.messagesList}
-              contentContainerStyle={[styles.messagesContainer, { paddingBottom: inputBarHeight + 80 }]}
+              contentContainerStyle={[styles.messagesContainer, { paddingBottom: inputBarHeight + insets.bottom + 80 }]}
               onContentSizeChange={() => scrollToBottom(true)}
               onScroll={(event) => {
                 const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
