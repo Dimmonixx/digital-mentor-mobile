@@ -47,3 +47,5 @@ app-example
 .env.local
 .env.production
 .env*.local
+
+firebase-key.json

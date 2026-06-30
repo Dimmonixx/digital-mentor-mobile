@@ -273,7 +273,7 @@ export default function ChatScreen() {
     return () => off(messagesRef);
   };
 
-  const getClaudeResponse = async (userMessage: string, history: Message[]) => {
+  const getClaudeResponse = async (userMessage: string, history: Message[], userRole?: string) => {
     const formData = new FormData();
     formData.append('message', userMessage);
     const historyPayload = history.slice(-10).map(msg => ({
@@ -281,6 +281,7 @@ export default function ChatScreen() {
       content: msg.text,
     }));
     formData.append('history', JSON.stringify(historyPayload));
+    formData.append('role', userRole === 'doctor' ? 'doctor' : 'technician');
     const res = await fetch(`${API_BASE_URL}/chat-ai`, {
       method: 'POST',
       body: formData,
@@ -307,8 +308,9 @@ export default function ChatScreen() {
         const rawUser = await AsyncStorage.getItem('user');
         const userObj = rawUser ? JSON.parse(rawUser) : null;
         const userEmail = userObj?.email || '';
+        const userRole = userObj?.role || 'technician';
         setAiThinking(true);
-        const aiReply = await executeWithAiLimit(userEmail, () => getClaudeResponse(text, messages));
+        const aiReply = await executeWithAiLimit(userEmail, () => getClaudeResponse(text, messages, userRole));
         setAiThinking(false);
         if (aiReply) {
           await push(messagesRef, {
