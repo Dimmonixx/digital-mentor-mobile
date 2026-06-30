@@ -722,7 +722,13 @@ export default function ProfileScreen() {
           avatarType: 'custom',
           avatarUrl: downloadUrl,
         }));
-        
+
+        // Сохраняем avatarUrl сразу в Firebase RTDB чтобы не слетало при перезапуске
+        const profileRef = dbRef(getFirebaseDB(), `users/${userId}/profile`);
+        const currentSnap = await get(profileRef);
+        const currentData = currentSnap.exists() ? currentSnap.val() : {};
+        await set(profileRef, { ...currentData, avatarType: 'custom', avatarUrl: downloadUrl });
+
         setAvatarModalVisible(false);
       }
     } catch (error) {
