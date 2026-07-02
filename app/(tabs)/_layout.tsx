@@ -4,8 +4,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Redirect, Tabs } from 'expo-router';
 
+import * as Haptics from 'expo-haptics';
+
 import { getFirebaseDB, getFirebaseFirestore } from '@/constants/firebase';
-import { query as dbQuery, equalTo, onValue, orderByChild, ref } from 'firebase/database';
+import { query as dbQuery, equalTo, get, onValue, orderByChild, ref } from 'firebase/database';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -70,6 +72,8 @@ export default function TabLayout() {
 
   const [newOrdersCount, setNewOrdersCount] = useState(0);
 
+  const [unreadChatsCount, setUnreadChatsCount] = useState(0);
+
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
   const [incomingArchiveCount, setIncomingArchiveCount] = useState(0);
@@ -79,6 +83,9 @@ export default function TabLayout() {
   const previousNewOrdersCountRef = useRef(0);
 
   const isInitialLoad = useRef(true);
+  const chatLastSeenRef = useRef<Record<string, number>>({});
+  const chatUnsubscribesRef = useRef<Map<string, () => void>>(new Map());
+  const unreadChatIdsRef = useRef<Set<string>>(new Set());
 
   const [diamondBalance, setDiamondBalance] = useState<number>(20);
   const diamondBalanceRef = useRef(diamondBalance);
@@ -134,6 +141,13 @@ export default function TabLayout() {
         }
       }
       setLoading(false);
+    });
+
+    // Загружаем lastSeenTimestamp для чатов
+    AsyncStorage.getItem('chatLastSeen').then((data) => {
+      if (data) {
+        chatLastSeenRef.current = JSON.parse(data);
+      }
     });
   }, []);
 
@@ -342,6 +356,134 @@ export default function TabLayout() {
 
   }, [user]);
 
+  // Глобальный слушатель новых сообщений в партнёрских чатах
+  useEffect(() => {
+    if (!user) return;
+
+    const userId = user.uid || user.id;
+    if (!userId) return;
+
+    const currentDb = getFirebaseDB();
+    const chatsRef = ref(currentDb, 'chats');
+
+    const unsubscribePartnerships = onValue(chatsRef, async (snapshot) => {
+      const data = snapshot.val();
+      const chatIds: string[] = [];
+      if (data && typeof data === 'object') {
+        Object.entries(data).forEach(([chatId, chatData]: [string, any]) => {
+          if (chatData?.members && chatData.members[userId]) {
+            chatIds.push(chatId);
+          }
+        });
+      }
+
+      // Одноразовый get() снапшот для инициализации chatLastSeen
+      for (const chatId of chatIds) {
+        if (chatLastSeenRef.current[chatId] === undefined) {
+          try {
+            const msgSnapshot = await get(ref(currentDb, `chat_messages/${chatId}`));
+            const msgData = msgSnapshot.val();
+            if (msgData && typeof msgData === 'object') {
+              const messages = Object.entries(msgData).map(([id, value]: [string, any]) => ({
+                id,
+                senderId: value.senderId || '',
+                timestamp: value.timestamp || 0,
+              }));
+              const maxTimestamp = messages.reduce((max, msg) => Math.max(max, msg.timestamp), 0);
+              chatLastSeenRef.current[chatId] = maxTimestamp;
+              await AsyncStorage.setItem('chatLastSeen', JSON.stringify(chatLastSeenRef.current));
+            }
+          } catch (e) {
+            console.error('Error fetching initial chat messages:', e);
+          }
+        }
+      }
+
+      // Очищаем старые подписки перед созданием новых
+      chatUnsubscribesRef.current.forEach(unsub => unsub());
+      chatUnsubscribesRef.current.clear();
+
+      // Подписываемся на новые сообщения
+      chatIds.forEach(chatId => {
+        // Пропускаем если уже подписаны
+        if (chatUnsubscribesRef.current.has(chatId)) {
+          return;
+        }
+
+        const messagesRef = ref(currentDb, `chat_messages/${chatId}`);
+        const unsub = onValue(messagesRef, (msgSnapshot) => {
+          const msgData = msgSnapshot.val();
+          if (!msgData) return;
+
+          const messages = Object.entries(msgData).map(([id, value]: [string, any]) => ({
+            id,
+            senderId: value.senderId || '',
+            timestamp: value.timestamp || 0,
+          }));
+
+          // Находим последнее сообщение от партнёра
+          const lastPartnerMessage = messages
+            .filter(m => m.senderId !== userId)
+            .sort((a, b) => b.timestamp - a.timestamp)[0];
+
+          if (lastPartnerMessage) {
+            const lastSeen = chatLastSeenRef.current[chatId] || 0;
+            console.log('=== SOUND CHECK ===', {
+              chatId,
+              lastPartnerMessageId: lastPartnerMessage.id,
+              lastPartnerTimestamp: lastPartnerMessage.timestamp,
+              lastSeen,
+              willPlay: lastPartnerMessage.timestamp > lastSeen
+            });
+            if (lastPartnerMessage.timestamp > lastSeen) {
+              if ((globalThis as any).isInPartnerChat === chatId) {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              } else {
+                playSuccessSound();
+                unreadChatIdsRef.current.add(chatId);
+                (globalThis as any).unreadChatsCount = unreadChatIdsRef.current.size;
+                console.log('=== UPDATE UNREAD COUNT ===', {
+                  newCount: (globalThis as any).unreadChatsCount,
+                  chatId
+                });
+                (globalThis as any).updateUnreadCount?.();
+              }
+            }
+          }
+        });
+        chatUnsubscribesRef.current.set(chatId, unsub);
+      });
+    });
+
+    return () => {
+      unsubscribePartnerships();
+      chatUnsubscribesRef.current.forEach(unsub => unsub());
+      chatUnsubscribesRef.current.clear();
+    };
+  }, [user]);
+
+  // Экспортируем функцию для обновления lastSeenTimestamp (используется в partner-chat)
+  useEffect(() => {
+    (globalThis as any).updateChatLastSeen = async (chatId: string) => {
+      const now = Date.now();
+      chatLastSeenRef.current[chatId] = now;
+      await AsyncStorage.setItem('chatLastSeen', JSON.stringify(chatLastSeenRef.current));
+    };
+
+    (globalThis as any).getChatLastSeen = (chatId: string) => {
+      return chatLastSeenRef.current[chatId] || 0;
+    };
+
+    (globalThis as any).updateUnreadCount = () => {
+      setUnreadChatsCount(prev => prev + 1);
+    };
+
+    (globalThis as any).resetChatUnread = (chatId: string) => {
+      unreadChatIdsRef.current.delete(chatId);
+      (globalThis as any).unreadChatsCount = unreadChatIdsRef.current.size;
+      (globalThis as any).updateUnreadCount?.();
+    };
+  }, []);
 
 
   if (loading) return null;

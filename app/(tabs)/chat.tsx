@@ -1,15 +1,17 @@
 ﻿import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { off, onValue, ref } from 'firebase/database';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
     ImageBackground,
+    Modal,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -27,6 +29,8 @@ export default function ChatListScreen() {
   const { user, role } = useAuth();
   const [partners, setPartners] = useState<ChatPartner[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [unreadChats, setUnreadChats] = useState<Set<string>>(new Set());
 
   const userId = user?.uid || user?.id || '';
 
@@ -73,8 +77,77 @@ export default function ChatListScreen() {
     return () => off(partnershipsRef, 'value', unsubscribe);
   }, [userId, role]);
 
+  // Слушатель для чатов и непрочитанных сообщений
+  useEffect(() => {
+    if (!userId || !role) return;
+
+    const chatsRef = ref(getFirebaseDB(), 'chats');
+    const unsubscribe = onValue(chatsRef, (snapshot) => {
+      const data = snapshot.val();
+      const unreadSet = new Set<string>();
+
+      if (data && typeof data === 'object') {
+        Object.entries(data).forEach(([chatId, chatData]: [string, any]) => {
+          if (chatData?.members && chatData.members[userId]) {
+            const lastTimestamp = chatData.lastTimestamp || 0;
+            const lastSeen = (globalThis as any).getChatLastSeen?.(chatId) || 0;
+            if (lastTimestamp > lastSeen) {
+              // Определяем партнёра из members
+              const partnerId = Object.keys(chatData.members).find(id => id !== userId);
+              if (partnerId) {
+                unreadSet.add(partnerId);
+              }
+            }
+          }
+        });
+      }
+
+      setUnreadChats(unreadSet);
+    });
+
+    return () => off(chatsRef, 'value', unsubscribe);
+  }, [userId, role]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!userId || !role) return;
+
+      const chatsRef = ref(getFirebaseDB(), 'chats');
+      const unsubscribe = onValue(chatsRef, (snapshot) => {
+        const data = snapshot.val();
+        const unreadSet = new Set<string>();
+
+        if (data && typeof data === 'object') {
+          Object.entries(data).forEach(([chatId, chatData]: [string, any]) => {
+            if (chatData?.members && chatData.members[userId]) {
+              // Исключаем чат если пользователь сейчас в нём
+              if ((globalThis as any).isInPartnerChat === chatId) {
+                return;
+              }
+              const lastTimestamp = chatData.lastTimestamp || 0;
+              const lastSeen = (globalThis as any).getChatLastSeen?.(chatId) || 0;
+              if (lastTimestamp > lastSeen) {
+                const partnerId = Object.keys(chatData.members).find(id => id !== userId);
+                if (partnerId) {
+                  unreadSet.add(partnerId);
+                }
+              }
+            }
+          });
+        }
+
+        // Даём время lastSeen обновиться перед пересчётом
+        setTimeout(() => {
+          setUnreadChats(unreadSet);
+        }, 500);
+      });
+
+      return () => off(chatsRef, 'value', unsubscribe);
+    }, [userId, role])
+  );
+
   const openGlobalChat = () => {
-    router.push('/global-chat');
+    setShowAiModal(true);
   };
 
   const openPartnerChat = (partner: ChatPartner) => {
@@ -100,8 +173,8 @@ export default function ChatListScreen() {
             <Ionicons name="planet" size={28} color="#031427" />
           </View>
           <View style={styles.rowText}>
-            <Text style={styles.globalTitle}>Чат с ИИ-ассистентом</Text>
-            <Text style={styles.subtitle}>Задайте вопрос AI-наставнику</Text>
+            <Text style={styles.globalTitle}>ИИ-Наставник</Text>
+            <Text style={styles.subtitle}>Выберите специализацию</Text>
           </View>
           <Ionicons name="chevron-forward" size={22} color="#f2ca50" />
         </TouchableOpacity>
@@ -109,6 +182,7 @@ export default function ChatListScreen() {
     }
 
     const partner = item as ChatPartner;
+    const hasUnread = unreadChats.has(partner.id);
     return (
       <TouchableOpacity
         style={styles.partnerRow}
@@ -128,6 +202,11 @@ export default function ChatListScreen() {
             {partner.role === 'doctor' ? 'Врач' : 'Техник'}
           </Text>
         </View>
+        {hasUnread && (
+          <View style={styles.unreadBadge}>
+            <Text style={styles.unreadBadgeText}>1</Text>
+          </View>
+        )}
         <Ionicons name="chevron-forward" size={22} color="#f2ca50" />
       </TouchableOpacity>
     );
@@ -142,8 +221,15 @@ export default function ChatListScreen() {
         style={styles.background}
         resizeMode="cover"
       >
-        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <Text style={styles.headerTitle}>Чаты</Text>
+        <View style={[styles.header, { paddingTop: 8 }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="chevron-back" size={24} color="#f2ca50" />
+          </TouchableOpacity>
+          <View style={styles.headerTitleContainer}>
+            <Ionicons name="chatbubbles" size={22} color="#f2ca50" style={styles.headerIcon} />
+            <Text style={styles.headerTitle}>Чаты</Text>
+          </View>
+          <View style={styles.backButton} />
         </View>
 
         {loading ? (
@@ -168,6 +254,45 @@ export default function ChatListScreen() {
           />
         )}
       </ImageBackground>
+
+      {/* AI Role Selection Modal */}
+      <Modal visible={showAiModal} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowAiModal(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>ИИ-Наставник</Text>
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => {
+                setShowAiModal(false);
+                router.push({ pathname: '/global-chat', params: { role: 'doctor' } } as any);
+              }}
+            >
+              <Ionicons name="medical" size={24} color="#031427" />
+              <Text style={styles.modalButtonText}>Для врача</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => {
+                setShowAiModal(false);
+                router.push({ pathname: '/global-chat', params: { role: 'technician' } } as any);
+              }}
+            >
+              <Ionicons name="construct" size={24} color="#031427" />
+              <Text style={styles.modalButtonText}>Для техника</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.modalCancelButton}
+              onPress={() => setShowAiModal(false)}
+            >
+              <Text style={styles.modalCancelText}>Отмена</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -181,10 +306,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 12,
-    paddingBottom: 10,
+    paddingBottom: 6,
     borderBottomWidth: 1,
     borderBottomColor: '#f2ca50',
   },
@@ -193,6 +319,14 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerIcon: {
+    marginRight: 4,
   },
   headerTitle: {
     color: '#f2ca50',
@@ -206,7 +340,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 12,
     paddingBottom: 24,
   },
   globalRow: {
@@ -265,6 +399,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 2,
   },
+  unreadBadge: {
+    backgroundColor: '#f2ca50',
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    marginRight: 8,
+  },
+  unreadBadgeText: {
+    color: '#031427',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
@@ -282,5 +431,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 6,
     textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  modalContent: {
+    backgroundColor: '#0a0f1e',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#f2ca50',
+    padding: 24,
+    width: '100%',
+    maxWidth: 320,
+  },
+  modalTitle: {
+    color: '#f2ca50',
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  modalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f2ca50',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    marginBottom: 12,
+    gap: 12,
+  },
+  modalButtonText: {
+    color: '#031427',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalCancelButton: {
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 16,
   },
 });

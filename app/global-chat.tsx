@@ -6,7 +6,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { get, off, onValue, push, ref, remove, set } from 'firebase/database';
 import { TrendingUpDown } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
@@ -19,7 +19,6 @@ import {
     Modal,
     StatusBar,
     StyleSheet,
-    Switch,
     Text,
     TextInput,
     TouchableOpacity,
@@ -92,25 +91,37 @@ const AnimatedMessage = ({ children }: { children: React.ReactNode }) => {
 };
 
 export default function ChatScreen() {
+  const { role: aiRole } = useLocalSearchParams<{ role?: string }>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [username, setUsername] = useState('');
   const [showUsernameInput, setShowUsernameInput] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
-  const [aiAssistantEnabled, setAiAssistantEnabled] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [showMenu, setShowMenu] = useState(false);
-  const [showScrollButton, setShowScrollButton] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const [currentDiamonds, setCurrentDiamonds] = useState((globalThis as any).getDiamondBalance?.() ?? 0);
   const [aiDailyLimit, setAiDailyLimit] = useState<number>((globalThis as any).getAiDailyLimit?.() ?? 15);
   const [onlineUsersCount, setOnlineUsersCount] = useState(0);
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const flatListRef = useRef<FlatList>(null);
-  const [inputBarHeight, setInputBarHeight] = useState(120);
   const insets = useSafeAreaInsets();
   
   // Animation for AI thinking text
   const thinkingOpacity = useRef(new Animated.Value(1)).current;
+  
+  // Animation for online indicator pulse
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.3, duration: 1500, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1500, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
   
   useEffect(() => {
     if (aiThinking) {
@@ -306,14 +317,13 @@ export default function ChatScreen() {
         timestamp: Date.now(),
       });
 
-      if (aiAssistantEnabled) {
+      if (aiRole === 'doctor' || aiRole === 'technician') {
         const rawUser = await AsyncStorage.getItem('user');
         const userObj = rawUser ? JSON.parse(rawUser) : null;
         const userEmail = userObj?.email || '';
-        const userRole = userObj?.role || 'technician';
         setAiThinking(true);
         setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150);
-        const aiReply = await executeWithAiLimit(userEmail, () => getClaudeResponse(text, messages, userRole));
+        const aiReply = await executeWithAiLimit(userEmail, () => getClaudeResponse(text, messages, aiRole));
         setAiThinking(false);
         if (aiReply) {
           await push(messagesRef, {
@@ -322,6 +332,7 @@ export default function ChatScreen() {
             timestamp: Date.now() + 1,
             isAI: true,
           });
+          setUserScrolledUp(false);
           setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 200);
         }
       }
@@ -392,9 +403,11 @@ export default function ChatScreen() {
   };
 
   const scrollToBottom = (animated = true) => {
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated });
-    }, 100);
+    if (!userScrolledUp) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated });
+      }, 100);
+    }
   };
 
   const renderMessage = ({ item, index }: { item: Message; index: number }) => {
@@ -485,8 +498,8 @@ export default function ChatScreen() {
                 strong: { color: '#f2ca50' },
                 bullet_list: { color: '#ffffff' },
                 ordered_list: { color: '#ffffff' },
-                code_inline: { backgroundColor: '#ffffff20', color: '#f2ca50', borderRadius: 4 },
-                fence: { backgroundColor: '#ffffff10', borderRadius: 8 },
+                code_inline: { backgroundColor: 'transparent', color: '#f2ca50', borderRadius: 4 },
+                fence: { backgroundColor: 'transparent', borderRadius: 8 },
                 heading1: { color: '#f2ca50' },
                 heading2: { color: '#f2ca50' },
                 paragraph: { color: '#ffffff', marginTop: 0, marginBottom: 4 },
@@ -523,7 +536,7 @@ export default function ChatScreen() {
                     onPress={() => addReaction(item.id, emoji)}
                     style={{
                       flexDirection: 'row',
-                      backgroundColor: '#ffffff15',
+                      backgroundColor: 'transparent',
                       borderRadius: 12,
                       paddingHorizontal: 8,
                       paddingVertical: 4,
@@ -589,56 +602,61 @@ export default function ChatScreen() {
           aiDailyLimit={aiDailyLimit}
         />
 
-        {/* Chat sub-bar: назад + онлайн + ИИ режим */}
+        {/* Chat sub-bar: назад */}
         <View style={styles.chatSubBar}>
-          <View style={styles.chatSubBarLeft}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.chatBackButton}>
-              <Ionicons name="arrow-back" size={24} color="#f2ca50" />
-            </TouchableOpacity>
-            <View style={styles.chatOnlineRow}>
-              <View style={styles.chatOnlineDot} />
-              <Text style={styles.chatOnlineText}>{onlineUsersCount} онлайн</Text>
-            </View>
-          </View>
-          <View style={styles.chatAiRow}>
-            <Text style={styles.chatAiLabel}>ИИ</Text>
-            <Switch
-              value={aiAssistantEnabled}
-              onValueChange={setAiAssistantEnabled}
-              trackColor={{ false: '#1a2233', true: '#f2ca50' }}
-              thumbColor={aiAssistantEnabled ? '#ffffff' : '#a0a0a0'}
-              ios_backgroundColor="#1a2233"
-            />
-          </View>
+          <TouchableOpacity onPress={() => router.back()} style={styles.chatBackButton}>
+            <Ionicons name="arrow-back" size={24} color="#f2ca50" />
+          </TouchableOpacity>
         </View>
 
-        {/* Messages List */}
-        {messages.length === 0 && !aiThinking ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="chatbubbles" size={60} color="#f2ca5080" />
-            <Text style={styles.emptyStateTitle}>Начните общение</Text>
-            <Text style={styles.emptyStateSubtitle}>Задайте вопрос AI наставнику</Text>
-          </View>
-        ) : (
-          <>
+        {/* Messages List + Input Area */}
+        <View style={{ flex: 1, flexDirection: 'column' }}>
+          {messages.length === 0 && !aiThinking ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="chatbubbles" size={60} color="#f2ca5080" />
+              <Text style={styles.emptyStateTitle}>Начните общение</Text>
+              <Text style={styles.emptyStateSubtitle}>Задайте вопрос AI наставнику</Text>
+            </View>
+          ) : (
             <FlatList
               ref={flatListRef}
               data={aiThinking ? [...messages, { id: '__thinking__', username: 'ИИ-Ассистент 🤖', text: '', timestamp: Date.now(), isThinking: true }] : messages}
               renderItem={renderMessage}
               keyExtractor={(item) => item.id}
-              style={styles.messagesList}
-              contentContainerStyle={[styles.messagesContainer, { paddingBottom: inputBarHeight + insets.bottom + 80 }]}
+              style={{ flex: 1 }}
+              contentContainerStyle={styles.messagesContainer}
+              automaticallyAdjustKeyboardInsets={true}
+              keyboardDismissMode="on-drag"
               onContentSizeChange={() => scrollToBottom(true)}
               onScroll={(event) => {
                 const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
                 const distanceFromBottom = contentSize.height - (contentOffset.y || 0) - layoutMeasurement.height;
-                setShowScrollButton(distanceFromBottom > 100);
+                if (distanceFromBottom > 100) {
+                  setUserScrolledUp(true);
+                  setShowScrollButton(true);
+                } else if (distanceFromBottom < 50) {
+                  setUserScrolledUp(false);
+                  setShowScrollButton(false);
+                }
               }}
               scrollEventThrottle={16}
               ListFooterComponent={null}
             />
-          </>
-        )}
+          )}
+
+          {/* Scroll to bottom button */}
+          {showScrollButton && (
+            <TouchableOpacity
+              style={styles.scrollButton}
+              onPress={() => {
+                flatListRef.current?.scrollToEnd({ animated: true });
+                setShowScrollButton(false);
+                setUserScrolledUp(false);
+              }}
+            >
+              <Ionicons name="chevron-down" size={24} color="#031427" />
+            </TouchableOpacity>
+          )}
 
         {/* Context Menu Modal */}
         <Modal visible={showMenu} transparent animationType="fade">
@@ -681,33 +699,9 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </Modal>
 
-        {/* Scroll Down Button */}
-        {showScrollButton && (
-          <TouchableOpacity
-            style={{
-              position: 'absolute',
-              bottom: 150,
-              right: 20,
-              backgroundColor: '#f2ca50',
-              borderRadius: 25,
-              width: 44,
-              height: 44,
-              justifyContent: 'center',
-              alignItems: 'center',
-              elevation: 5,
-              zIndex: 9999,
-            }}
-            onPress={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          >
-            <Ionicons name="chevron-down" size={24} color="#031427" />
-          </TouchableOpacity>
-        )}
 
         {/* Input Area */}
-        <View
-          onLayout={(e) => setInputBarHeight(e.nativeEvent.layout.height)}
-          style={[styles.inputContainer, { paddingBottom: insets.bottom > 0 ? insets.bottom + 16 : 24 }]}
-        >
+        <View style={[styles.inputContainer, { paddingBottom: insets.bottom > 0 ? insets.bottom + 16 : 24 }]}>
           <View style={styles.inputWrapper}>
             <TouchableOpacity 
               onPress={sendPhoto} 
@@ -732,6 +726,7 @@ export default function ChatScreen() {
               <TrendingUpDown size={24} color="#031427" />
             </TouchableOpacity>
           </View>
+        </View>
         </View>
 
         {/* Photo Modal */}
@@ -774,22 +769,20 @@ const styles = StyleSheet.create({
   chatOnlineRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(76, 175, 80, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(76, 175, 80, 0.2)',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     borderRadius: 20,
   },
   chatOnlineDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: '#4CAF50',
-    marginRight: 6,
+    marginRight: 8,
   },
   chatOnlineText: {
-    color: '#4CAF50',
+    color: '#f2ca50',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -930,10 +923,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
     backgroundColor: 'transparent',
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
   },
   inputWrapper: {
     backgroundColor: '#0a1628',
@@ -1015,5 +1004,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  scrollButton: {
+    position: 'absolute',
+    bottom: 135,
+    right: 16,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#f2ca50',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
 });

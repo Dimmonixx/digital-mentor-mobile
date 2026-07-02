@@ -1,10 +1,12 @@
 ﻿import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { off, onValue, ref } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    AppState,
     FlatList,
     ImageBackground,
     KeyboardAvoidingView,
@@ -13,12 +15,13 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getFirebaseDB } from '@/constants/firebase';
 import { useAuth } from '@/hooks/useAuth';
+import { playSuccessSound } from '@/utils/audio';
 
 const API_BASE = 'http://62.238.13.160:8000';
 
@@ -50,7 +53,10 @@ export default function PartnerChatScreen() {
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
   const [inputAreaHeight, setInputAreaHeight] = useState(80);
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const appState = useRef(AppState.currentState);
   const flatListRef = useRef<FlatList>(null);
+  const localLastSeenTimestamp = useRef(Date.now());
 
   const currentUserId = user?.uid || user?.id || '';
 
@@ -106,6 +112,17 @@ export default function PartnerChatScreen() {
   useEffect(() => {
     if (!chatId) return;
 
+    // Устанавливаем флаг что мы в чате (сохраняем chatId)
+    (globalThis as any).isInPartnerChat = chatId;
+
+    // Сбрасываем unreadChatsCount для конкретного чата при входе
+    (globalThis as any).resetChatUnread?.(chatId);
+
+    // Обновляем lastSeenTimestamp при входе в чат
+    if ((globalThis as any).updateChatLastSeen) {
+      (globalThis as any).updateChatLastSeen(chatId);
+    }
+
     const messagesRef = ref(getFirebaseDB(), `chat_messages/${chatId}`);
     const unsubscribe = onValue(messagesRef, (snapshot) => {
       const data = snapshot.val();
@@ -120,17 +137,57 @@ export default function PartnerChatScreen() {
         timestamp: value.timestamp || 0,
       }));
       list.sort((a, b) => a.timestamp - b.timestamp);
+      
+      // Check if new message from partner
+      const lastMessage = list[list.length - 1];
+      if (lastMessage && lastMessage.senderId !== currentUserId && lastMessage.timestamp > localLastSeenTimestamp.current) {
+        localLastSeenTimestamp.current = lastMessage.timestamp;
+        // Звук только если приложение не активно, иначе вибрация
+        if (appState.current !== 'active') {
+          playSuccessSound();
+        } else {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        // Обновляем lastSeen если приложение активно - предотвратит бейдж при выходе
+        if (appState.current === 'active' && (globalThis as any).updateChatLastSeen) {
+          (globalThis as any).updateChatLastSeen(chatId);
+        }
+      }
+      
       setMessages(list);
+      
+      // Принудительный скролл вниз при открытии экрана
+      if (list.length > 0) {
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 300);
+      }
     });
 
-    return () => off(messagesRef, 'value', unsubscribe);
+    return () => {
+      // Сбрасываем флаг при выходе
+      (globalThis as any).isInPartnerChat = null;
+      off(messagesRef, 'value', unsubscribe);
+    };
+  }, [chatId, currentUserId, userScrolledUp]);
+
+  // AppState listener
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: any) => {
+      appState.current = nextAppState as any;
+      if (nextAppState === 'active' && chatId && (globalThis as any).updateChatLastSeen) {
+        (globalThis as any).updateChatLastSeen(chatId);
+      }
+    });
+
+    return () => subscription.remove();
   }, [chatId]);
 
-  useEffect(() => {
-    if (messages.length > 0) {
-      flatListRef.current?.scrollToEnd({ animated: true });
+  const scrollToBottom = (animated = true) => {
+    if (!userScrolledUp) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated });
+      }, 100);
     }
-  }, [messages]);
+  };
 
   const sendMessage = async () => {
     if (!inputText.trim() || !chatId || !currentUserId) return;
@@ -157,6 +214,14 @@ export default function PartnerChatScreen() {
         console.error('[partner-chat] send error:', detail);
         Alert.alert('Ошибка отправки', detail);
         setInputText(text);
+      } else {
+        // Обновляем lastSeen после успешной отправки
+        if ((globalThis as any).updateChatLastSeen) {
+          (globalThis as any).updateChatLastSeen(chatId);
+        }
+        // Сбрасываем флаг скролла и скроллим вниз
+        setUserScrolledUp(false);
+        scrollToBottom(true);
       }
     } catch (e) {
       console.error('[partner-chat] send exception:', e);
@@ -247,12 +312,17 @@ export default function PartnerChatScreen() {
             <Ionicons name="chevron-back" size={24} color="#f2ca50" />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle} numberOfLines={1}>
-              {partnerName || 'Коллега'}
-            </Text>
-            <Text style={styles.headerSubtitle}>
-              {partnerRole === 'doctor' ? 'Врач' : partnerRole === 'technician' ? 'Техник' : 'Коллега'}
-            </Text>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{(partnerName || 'К')[0].toUpperCase()}</Text>
+            </View>
+            <View style={styles.headerTextContainer}>
+              <Text style={styles.headerTitle} numberOfLines={1}>
+                {partnerName || 'Коллега'}
+              </Text>
+              <Text style={styles.headerSubtitle}>
+                {partnerRole === 'doctor' ? 'Врач' : partnerRole === 'technician' ? 'Техник' : 'Коллега'}
+              </Text>
+            </View>
           </View>
           <View style={styles.backButton} />
         </View>
@@ -267,7 +337,20 @@ export default function PartnerChatScreen() {
             data={messages}
             renderItem={renderMessage}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={[styles.listContent, { paddingBottom: inputAreaHeight + insets.bottom + 16 }]}
+            contentContainerStyle={[styles.listContent, { paddingBottom: inputAreaHeight + 16 }]}
+            automaticallyAdjustKeyboardInsets={true}
+            keyboardDismissMode="on-drag"
+            onContentSizeChange={() => scrollToBottom(true)}
+            onScroll={(event) => {
+              const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+              const distanceFromBottom = contentSize.height - (contentOffset.y || 0) - layoutMeasurement.height;
+              if (distanceFromBottom > 100) {
+                setUserScrolledUp(true);
+              } else if (distanceFromBottom < 50) {
+                setUserScrolledUp(false);
+              }
+            }}
+            scrollEventThrottle={16}
             ListEmptyComponent={(
               <View style={styles.emptyState}>
                 <Ionicons name="chatbubbles-outline" size={56} color="#f2ca5080" />
@@ -338,16 +421,35 @@ const styles = StyleSheet.create({
   },
   headerCenter: {
     flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
+    marginLeft: 12,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#f2ca50',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  avatarText: {
+    color: '#031427',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  headerTextContainer: {
+    flex: 1,
   },
   headerTitle: {
     color: '#f2ca50',
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: 'bold',
   },
   headerSubtitle: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
     marginTop: 2,
   },
   center: {
@@ -371,7 +473,6 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 12,
     flexGrow: 1,
   },
   emptyState: {

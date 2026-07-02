@@ -59,6 +59,7 @@ export default function HomeScreen() {
   const [profile, setProfile] = useState<{ firstName?: string; lastName?: string; patronymic?: string } | null>(null);
   const [serverProfile, setServerProfile] = useState<{ name?: string; role?: string; diamonds?: number; mastery?: { score: number; level: string } } | null>(null);
   const [isAppReady, setIsAppReady] = useState(false);
+  const [chatBadge, setChatBadge] = useState(() => (globalThis as any).unreadChatsCount || 0);
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const scrollAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
@@ -214,6 +215,13 @@ export default function HomeScreen() {
         <Ionicons name="scan-outline" size={20} color="#f2ca50" />
         <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78} style={styles.invertedTrapText}>ЧАТ</Text>
       </View>
+      {chatBadge > 0 && (
+        <View style={styles.chatBadge}>
+          <Text style={styles.chatBadgeText}>
+            {chatBadge > 9 ? '9+' : chatBadge}
+          </Text>
+        </View>
+      )}
     </TouchableOpacity>
   );
 
@@ -299,6 +307,15 @@ export default function HomeScreen() {
         });
       }
     });
+  }, []);
+
+  useEffect(() => {
+    setChatBadge((globalThis as any).unreadChatsCount || 0);
+    (globalThis as any).updateUnreadCount = () => {
+      const count = (globalThis as any).unreadChatsCount || 0;
+      console.log('=== BADGE UPDATE ===', count);
+      setChatBadge(count);
+    };
   }, []);
 
   useEffect(() => {
@@ -1105,5 +1122,21 @@ const styles = StyleSheet.create({
   },
   prominentLabelText: {
     color: '#f2ca50',
+  },
+  chatBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#f2ca50',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chatBadgeText: {
+    color: '#031427',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
 });
