@@ -1,4 +1,5 @@
 import { getFirebaseFirestore } from '@/constants/firebase';
+import { executeWithAiLimit } from '@/services/aiRequestService';
 import { saveToArchive, uploadMediaToServer } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -11,17 +12,17 @@ import { ref as dbRef, get } from 'firebase/database';
 import { arrayUnion, doc, updateDoc } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Dimensions,
-  Image,
-  ImageBackground,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    Image,
+    ImageBackground,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DraggableZones, { Zone } from '../../components/DraggableZones';
@@ -454,7 +455,9 @@ const reset = useCallback(() => {
       console.log('HYBRID: compressed base64 length =', compressedBase64.length);
 
       // Шаг 3: Claude визуально анализирует зуб, используя calculatedShade как подсказку
-      const analysis = await analyzeWithClaude(compressedBase64, 'image/jpeg', calculatedShade);
+      const rawUser = await AsyncStorage.getItem('user');
+      const userEmail = rawUser ? JSON.parse(rawUser)?.email || '' : '';
+      const analysis = await executeWithAiLimit(userEmail, () => analyzeWithClaude(compressedBase64, 'image/jpeg', calculatedShade));
       if (!analysis) {
         setLoading(false);
         return;

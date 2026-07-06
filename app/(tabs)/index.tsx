@@ -10,16 +10,16 @@ import { router } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Animated,
-    Dimensions,
-    Easing,
-    Image,
-    ImageBackground,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Animated,
+  Dimensions,
+  Easing,
+  Image,
+  ImageBackground,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import Svg, { Defs, Polygon, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 
@@ -60,6 +60,7 @@ export default function HomeScreen() {
   const [serverProfile, setServerProfile] = useState<{ name?: string; role?: string; diamonds?: number; mastery?: { score: number; level: string } } | null>(null);
   const [isAppReady, setIsAppReady] = useState(false);
   const [chatBadge, setChatBadge] = useState(() => (globalThis as any).unreadChatsCount || 0);
+  const pulseBadgeAnim = useRef(new Animated.Value(1)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const scrollAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
@@ -212,16 +213,23 @@ export default function HomeScreen() {
         <Polygon points="22,13 134,13 108,51 48,51" fill="#120a02" stroke="#8B5E00" strokeWidth={1} opacity={0.92} />
       </Svg>
       <View style={styles.invertedTrapContent}>
-        <Ionicons name="scan-outline" size={20} color="#f2ca50" />
+        <View style={{ position: 'relative' }}>
+          <Ionicons name="scan-outline" size={20} color="#f2ca50" />
+          {chatBadge > 0 && (
+            <Animated.View style={{
+              position: 'absolute',
+              top: 6,
+              right: 5,
+              width: 8,
+              height: 8,
+              borderRadius: 4,
+              backgroundColor: '#ff4444',
+              opacity: pulseBadgeAnim,
+            }} />
+          )}
+        </View>
         <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78} style={styles.invertedTrapText}>ЧАТ</Text>
       </View>
-      {chatBadge > 0 && (
-        <View style={styles.chatBadge}>
-          <Text style={styles.chatBadgeText}>
-            {chatBadge > 9 ? '9+' : chatBadge}
-          </Text>
-        </View>
-      )}
     </TouchableOpacity>
   );
 
@@ -316,6 +324,23 @@ export default function HomeScreen() {
       console.log('=== BADGE UPDATE ===', count);
       setChatBadge(count);
     };
+  }, []);
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseBadgeAnim, {
+          toValue: 0.3,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseBadgeAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
   }, []);
 
   useEffect(() => {
@@ -1122,21 +1147,5 @@ const styles = StyleSheet.create({
   },
   prominentLabelText: {
     color: '#f2ca50',
-  },
-  chatBadge: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    backgroundColor: '#f2ca50',
-    borderRadius: 10,
-    width: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  chatBadgeText: {
-    color: '#031427',
-    fontSize: 11,
-    fontWeight: 'bold',
   },
 });

@@ -1,23 +1,26 @@
-﻿import { getFirebaseDB } from '@/constants/firebase';
+﻿import { API_BASE_URL } from '@/constants/config';
+import { getFirebaseDB } from '@/constants/firebase';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { onValue, ref, remove, set } from 'firebase/database';
+import { get, onValue, ref, remove, set } from 'firebase/database';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Alert,
     Dimensions,
     FlatList,
     Image,
+    Modal,
     SafeAreaView,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const MEDIA_WIDTH = SCREEN_WIDTH - 32;
 const STORAGE_KEY = '@global_case_club_posts';
 
 const PRESET_AVATARS: any[] = [
@@ -50,11 +53,17 @@ function mapBackendCases(raw: any): any[] {
     role: 'technician',
     description: c.title || '',
     fullDescription: c.description || '',
-    media: c.imageUrl ? [{ uri: c.imageUrl, stage: 'Обложка' }] : [],
+    media: [
+      ...(c.imageUrl ? [{ uri: c.imageUrl, stage: 'Обложка' }] : []),
+      ...(Array.isArray(c.additionalImages) ? c.additionalImages.map((url: string, i: number) => ({ uri: url, stage: `Фото ${i + 2}` })) : []),
+    ],
     coverIndex: 0,
     rating: c.rating || 0,
     totalVotes: c.totalVotes || 0,
     createdAt: c.createdAt || 0,
+    likedBy: c.likedBy || {},
+    dislikedBy: c.dislikedBy || {},
+    commentsCount: c.commentsCount || (c.commentsList ? Object.keys(c.commentsList).length : 0),
     riddle: c.correctShade
       ? {
           question: 'Угадайте оттенок VITA',
@@ -127,17 +136,24 @@ const PostCard = ({
   onLike: (id: string) => void;
   onDislike: (id: string) => void;
 }) => {
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const [showSenseiModal, setShowSenseiModal] = useState(false);
+  const [selectedEnergy, setSelectedEnergy] = useState(1);
+  const [senseiLoading, setSenseiLoading] = useState(false);
+  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 60 }).current;
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems.length > 0) setPhotoIndex(viewableItems[0].index ?? 0);
+  }).current;
+  
   const isOwn = (!!currentEmail && (post.authorEmail === currentEmail || post.authorId === currentEmail)) ||
     (!!currentUserId && post.authorId === currentUserId);
   const isTech = post.role === 'Техник' || post.role === 'technician' || post.role === 'Зубной техник';
   const roleLabel = isTech ? 'Зубной техник' : 'Врач';
 
   const mediaArr = toArray<any>(post.media);
-  const coverIdx = post.coverIndex ?? 0;
-  const coverItem = mediaArr[coverIdx] ?? mediaArr[0];
-  const photoUri = validUri(
-    coverItem?.uri ?? (typeof coverItem === 'string' ? coverItem : undefined)
-  );
+  const photoUris = mediaArr
+    .map(item => validUri(item?.uri ?? (typeof item === 'string' ? item : undefined)))
+    .filter(Boolean) as string[];
 
   const likedBy: Record<string, boolean> = post.likedBy && typeof post.likedBy === 'object' ? post.likedBy : {};
   const dislikedBy: Record<string, boolean> = post.dislikedBy && typeof post.dislikedBy === 'object' ? post.dislikedBy : {};
@@ -147,6 +163,29 @@ const PostCard = ({
   const isDisliked = !!currentUserId && !!dislikedBy[currentUserId];
 
   const menuOpen = menuPostId === post.id;
+
+  const handleSenseiVote = async () => {
+    if (!currentUserId) return;
+    setSenseiLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/case-club/sensei-vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          case_id: post.id,
+          user_id: currentUserId,
+          energy_amount: selectedEnergy,
+        }),
+      });
+      if (response.ok) {
+        setShowSenseiModal(false);
+      }
+    } catch (e) {
+      console.error('[PostCard] Ошибка голосования:', e);
+    } finally {
+      setSenseiLoading(false);
+    }
+  };
 
   return (
     <TouchableOpacity
@@ -161,8 +200,17 @@ const PostCard = ({
       <View style={styles.cardHeader}>
         <Avatar post={post} />
         <View style={styles.authorBlock}>
-          <View style={[styles.badge, isTech && styles.badgeTech]}>
-            <Text style={[styles.badgeText, isTech && styles.badgeTextTech]}>{roleLabel}</Text>
+          <View style={styles.badgesRow}>
+            <View style={[styles.badge, isTech && styles.badgeTech]}>
+              <Text style={[styles.badgeText, isTech && styles.badgeTextTech]}>{roleLabel}</Text>
+            </View>
+            {post.category && (
+              <View style={[styles.categoryBadge, post.category === 'case' && styles.categoryBadgeCase, post.category === 'sos' && styles.categoryBadgeSos, post.category === 'trash' && styles.categoryBadgeTrash]}>
+                <Text style={[styles.categoryBadgeText, post.category === 'case' && styles.categoryBadgeTextCase, post.category === 'sos' && styles.categoryBadgeTextSos, post.category === 'trash' && styles.categoryBadgeTextTrash]}>
+                  {post.category === 'case' ? '🔵 Кейс' : post.category === 'sos' ? '🆘 SOS' : '💀 Треш'}
+                </Text>
+              </View>
+            )}
           </View>
           <Text style={styles.authorName} numberOfLines={1}>{formatName(post.author || 'Автор')}</Text>
         </View>
@@ -205,18 +253,53 @@ const PostCard = ({
         </View>
       )}
 
-      {/* Photo */}
-      {!!photoUri && (
-        <Image source={{ uri: photoUri }} style={styles.photo} onError={() => {}} />
+      {/* Photo carousel */}
+      {photoUris.length > 0 && (
+        <View style={{ width: MEDIA_WIDTH, overflow: 'hidden' }}>
+          <FlatList
+            data={photoUris}
+            keyExtractor={(_, i) => String(i)}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            viewabilityConfig={viewabilityConfig}
+            onViewableItemsChanged={onViewableItemsChanged}
+            renderItem={({ item }) => (
+              <TouchableOpacity activeOpacity={0.95} onPress={() => router.push({ pathname: '/case-details', params: { id: post.id } } as any)} style={{ width: MEDIA_WIDTH }}>
+                <Image source={{ uri: item }} style={[styles.photo, { width: MEDIA_WIDTH }]} resizeMode="cover" />
+              </TouchableOpacity>
+            )}
+          />
+          {photoUris.length > 1 && (
+            <View style={styles.dotsRow}>
+              {photoUris.map((_, i) => (
+                <View key={i} style={[styles.dot, i === photoIndex && styles.dotActive]} />
+              ))}
+            </View>
+          )}
+        </View>
       )}
 
       {/* Description */}
       {!!post.description && (
-        <Text style={styles.description} numberOfLines={5}>{post.description}</Text>
+        <>
+          <Text style={styles.description} numberOfLines={3}>{post.description}</Text>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => router.push({ pathname: '/case-details', params: { id: post.id } } as any)}
+          >
+            <Text style={styles.readMoreText}>Читать далее →</Text>
+          </TouchableOpacity>
+        </>
       )}
 
+      {/* Post date */}
+      <Text style={styles.postDate}>
+        {new Date(post.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }).replace('.', '')}, {new Date(post.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+      </Text>
+
       {/* Actions row */}
-      <View style={styles.actionsRow}>
+      <View style={styles.actionsRow} onStartShouldSetResponder={() => true}>
         <View style={styles.actionsLeft}>
           <TouchableOpacity
             onPress={() => onLike(post.id)}
@@ -249,7 +332,66 @@ const PostCard = ({
           <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.45)" />
           <Text style={styles.actionCount}>{post.commentsCount || 0}</Text>
         </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.actionBtn} 
+          activeOpacity={0.7}
+          onPress={() => setShowSenseiModal(true)}
+        >
+          <Ionicons name="skull-outline" size={20} color="#ff6b6b" />
+          <Text style={[styles.actionCount, { color: '#ff6b6b' }]}>{post.aiReviewTotal || 0}/5</Text>
+        </TouchableOpacity>
       </View>
+
+      {/* Sensei Modal */}
+      <Modal visible={showSenseiModal} transparent animationType="fade" onRequestClose={() => setShowSenseiModal(false)}>
+        <View style={styles.senseiModalOverlay}>
+          <View style={styles.senseiModal}>
+            <Text style={styles.senseiModalTitle}>💀 Вызвать Сенсея</Text>
+            
+            <View style={styles.senseiProgressBar}>
+              <View style={[styles.senseiProgressFill, { width: `${((post.aiReviewTotal || 0) / 5) * 100}%` }]} />
+            </View>
+            <Text style={styles.senseiProgressText}>{post.aiReviewTotal || 0}/5 энергии накоплено</Text>
+            
+            <View style={styles.senseiEnergyButtons}>
+              {[1, 2, 3, 5].map((energy) => (
+                <TouchableOpacity
+                  key={energy}
+                  style={[
+                    styles.senseiEnergyButton,
+                    selectedEnergy === energy && styles.senseiEnergyButtonSelected
+                  ]}
+                  onPress={() => setSelectedEnergy(energy)}
+                >
+                  <Text style={[
+                    styles.senseiEnergyButtonText,
+                    selectedEnergy === energy && styles.senseiEnergyButtonTextSelected
+                  ]}>
+                    {energy}⚡
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.senseiSubmitButton} 
+              onPress={handleSenseiVote}
+              disabled={senseiLoading}
+            >
+              <Text style={styles.senseiSubmitButtonText}>
+                {senseiLoading ? 'Вносим...' : 'Внести'}
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.senseiCancelButton} 
+              onPress={() => setShowSenseiModal(false)}
+            >
+              <Text style={styles.senseiCancelButtonText}>Отмена</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </TouchableOpacity>
   );
 };
@@ -276,10 +418,44 @@ export default function CaseClubScreen() {
 
   useEffect(() => {
     const postsRef = ref(getFirebaseDB(), 'case_club');
-    const unsub = onValue(postsRef, (snapshot) => {
+    const unsub = onValue(postsRef, async (snapshot) => {
       const raw = snapshot.exists() ? snapshot.val() : null;
       const arr = mapBackendCases(raw).filter((p: any) => p?.id && (p?.description || p?.fullDescription));
-      const sorted = arr.sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
+      const withProfiles = await Promise.all(
+        arr.map(async (post: any) => {
+          let updated = { ...post };
+          if (post.authorId) {
+            try {
+              const profileSnap = await get(ref(getFirebaseDB(), `users/${post.authorId}/profile`));
+              if (profileSnap.exists()) {
+                const profile = profileSnap.val();
+                updated = {
+                  ...updated,
+                  author: profile.name || updated.author,
+                  avatarType: profile.avatarType,
+                  avatarPresetId: profile.avatarPresetId,
+                  avatarUrl: profile.avatarUrl,
+                };
+              }
+            } catch (e) {
+              console.warn('[CaseClub] Ошибка загрузки профиля:', e);
+            }
+          }
+          try {
+            const commentsSnap = await get(ref(getFirebaseDB(), `case_club_posts/${post.id}/commentsList`));
+            if (commentsSnap.exists()) {
+              const commentsList = commentsSnap.val();
+              updated.commentsCount = Object.keys(commentsList).length;
+            } else {
+              updated.commentsCount = 0;
+            }
+          } catch (e) {
+            console.warn('[CaseClub] Ошибка загрузки комментариев:', e);
+          }
+          return updated;
+        })
+      );
+      const sorted = withProfiles.sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
       setPosts(sorted);
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(sorted)).catch(() => {});
     });
@@ -363,6 +539,7 @@ export default function CaseClubScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        disableScrollViewPanResponder={false}
         onScrollBeginDrag={() => setMenuPostId(null)}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -434,6 +611,8 @@ const styles = StyleSheet.create({
 
   authorBlock: { flex: 1, marginLeft: 10 },
   authorName: { fontSize: 14, fontWeight: '600', color: '#ffffff', marginTop: 3 },
+  postDate: { fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 8, marginBottom: 6 },
+  badgesRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 
   badge: {
     alignSelf: 'flex-start',
@@ -447,6 +626,23 @@ const styles = StyleSheet.create({
   badgeTech: { borderColor: 'rgba(79,195,247,0.45)', backgroundColor: 'rgba(79,195,247,0.08)' },
   badgeText: { fontSize: 10, fontWeight: '700', color: '#f2ca50', letterSpacing: 0.4 },
   badgeTextTech: { color: '#4fc3f7' },
+
+  categoryBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(74,144,226,0.45)',
+    backgroundColor: 'rgba(74,144,226,0.08)',
+  },
+  categoryBadgeCase: { borderColor: 'rgba(74,144,226,0.45)', backgroundColor: 'rgba(74,144,226,0.08)' },
+  categoryBadgeSos: { borderColor: 'rgba(226,74,74,0.45)', backgroundColor: 'rgba(226,74,74,0.08)' },
+  categoryBadgeTrash: { borderColor: 'rgba(136,136,136,0.45)', backgroundColor: 'rgba(136,136,136,0.08)' },
+  categoryBadgeText: { fontSize: 11, fontWeight: '600', color: '#4a90e2' },
+  categoryBadgeTextCase: { color: '#4a90e2' },
+  categoryBadgeTextSos: { color: '#e24a4a' },
+  categoryBadgeTextTrash: { color: '#888' },
 
   menuBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
 
@@ -473,18 +669,48 @@ const styles = StyleSheet.create({
 
   photo: {
     width: '100%',
-    height: SCREEN_WIDTH - 60,
+    height: SCREEN_WIDTH * 0.65,
     borderRadius: 14,
     backgroundColor: '#0d1120',
     marginBottom: 12,
+    alignSelf: 'center',
   },
+  dotsRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: -6, marginBottom: 12 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#555' },
+  dotActive: { backgroundColor: '#f2ca50' },
+  carouselArrow: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -14,
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  carouselArrowLeft: { left: 8 },
+  carouselArrowRight: { right: 8 },
+  counterBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  counterText: { fontSize: 11, color: '#fff', fontWeight: '600' },
   description: {
     fontSize: 14,
     lineHeight: 21,
     color: 'rgba(255,255,255,0.80)',
     paddingHorizontal: 2,
-    marginBottom: 10,
+    marginBottom: 4,
   },
+  readMoreText: { fontSize: 13, fontWeight: '600', color: '#f2ca50', marginBottom: 10, paddingHorizontal: 2 },
 
   /* Actions */
   actionsRow: {
@@ -499,4 +725,99 @@ const styles = StyleSheet.create({
   actionsLeft: { flexDirection: 'row', gap: 20 },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionCount: { fontSize: 13, color: 'rgba(255,255,255,0.45)', fontWeight: '600' },
+
+  /* Sensei Modal */
+  senseiModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  senseiModal: {
+    backgroundColor: '#1a1f2e',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 320,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  senseiModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ffffff',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  senseiProgressBar: {
+    height: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 3,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  senseiProgressFill: {
+    height: '100%',
+    backgroundColor: '#f2ca50',
+    borderRadius: 3,
+  },
+  senseiProgressText: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.6)',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  senseiEnergyButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  senseiEnergyButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 8,
+    width: 60,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  senseiEnergyButtonSelected: {
+    backgroundColor: 'rgba(242, 202, 80, 0.2)',
+    borderColor: '#f2ca50',
+  },
+  senseiEnergyButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  senseiEnergyButtonTextSelected: {
+    color: '#f2ca50',
+  },
+  senseiSubmitButton: {
+    backgroundColor: '#f2ca50',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  senseiSubmitButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1a1206',
+  },
+  senseiCancelButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  senseiCancelButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
 });

@@ -1,7 +1,6 @@
-import { uploadMediaToServer } from '@/utils/saveToArchive';
+import { CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET } from '@/constants/config';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
@@ -24,16 +23,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CONTENT_WIDTH = SCREEN_WIDTH - 40;
 
-const VITA_SHADES = ['A1', 'A2', 'A3', 'A3.5', 'B1', 'B2', 'C2', 'D3'];
-
 
 export default function CreateCaseScreen() {
   const insets = useSafeAreaInsets();
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
   const [coverIndex, setCoverIndex] = useState(0);
-  const [isRiddle, setIsRiddle] = useState(false);
-  const [riddleAnswer, setRiddleAnswer] = useState<string | null>(null);
+  const [category, setCategory] = useState<'case' | 'sos' | 'trash'>('case');
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [overlay, setOverlay] = useState<{ title: string; message: string; icon?: string } | null>(null);
 
@@ -55,20 +51,19 @@ export default function CreateCaseScreen() {
 
   const uploadBase64Photo = async (base64Uri: string): Promise<string | null> => {
     try {
-      const match = base64Uri.match(/^data:image\/(\w+);base64,(.*)$/);
-      if (!match) return null;
-      const ext = match[1] === 'png' ? 'png' : 'jpg';
-      const base64 = match[2];
-      const fs = FileSystem as any;
-      const tempUri = `${fs.cacheDirectory}case_upload_${Date.now()}.${ext}`;
-      await fs.writeAsStringAsync(tempUri, base64, {
-        encoding: fs.EncodingType?.Base64 || 'base64',
-      });
-      const url = await uploadMediaToServer(tempUri);
-      try {
-        await fs.deleteAsync(tempUri, { idempotent: true });
-      } catch {}
-      return url;
+      const formData = new FormData();
+      formData.append('file', base64Uri);
+      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+        { method: 'POST', body: formData }
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        console.error('[CreateCase] Cloudinary error:', data);
+        return null;
+      }
+      return data.secure_url || null;
     } catch (e) {
       console.error('[CreateCase] uploadBase64Photo error:', e);
       return null;
@@ -93,6 +88,10 @@ export default function CreateCaseScreen() {
       return;
     }
 
+    const otherPhotos = photos.filter((_, i) => i !== coverIndex);
+    const additionalUrls = await Promise.all(otherPhotos.map(uri => uploadBase64Photo(uri)));
+    const validAdditional = additionalUrls.filter(Boolean) as string[];
+
     let authorId = '';
     let authorEmail = '';
     try {
@@ -115,14 +114,18 @@ export default function CreateCaseScreen() {
           title: description.trim().slice(0, 100),
           description: description.trim(),
           image_url: imageUrl,
-          correct_shade: isRiddle && riddleAnswer ? riddleAnswer : '',
+          additional_images: validAdditional,
+          category,
         }),
       });
 
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        setOverlay({ title: 'Ошибка', message: data.detail || `Ошибка сервера ${response.status}`, icon: 'alert-circle-outline' });
+        const errorMsg = typeof data.detail === 'string'
+          ? data.detail
+          : JSON.stringify(data.detail);
+        setOverlay({ title: 'Ошибка', message: errorMsg, icon: 'alert-circle-outline' });
         return;
       }
 
@@ -199,6 +202,45 @@ export default function CreateCaseScreen() {
               </View>
             </ScrollView>
           </View>
+          
+          <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 4, marginBottom: 8 }}>
+            💀 Обложка будет использована AI-Сенсеем для разбора работы
+          </Text>
+
+          {/* Category */}
+          <View style={styles.section}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="grid-outline" size={20} color="#f2ca50" />
+              <Text style={styles.sectionTitle}>Категория</Text>
+            </View>
+            <View style={styles.categoryRow}>
+              {[
+                { key: 'case', icon: '🔵', title: 'ПРОСТО КЕЙС', desc: 'Показываю свою работу. Фото до/после, описание материалов и техники.', color: '#4a90e2' },
+                { key: 'sos', icon: '🆘', title: 'SOS', desc: 'Коллеги, нужна помощь! Опиши проблему и задай конкретный вопрос.', color: '#e24a4a' },
+                { key: 'trash', icon: '💀', title: 'ТРЕШ', desc: 'Честно о провалах. Только анонимно, без данных пациента, цель — научить других.', color: '#555' },
+              ].map((cat) => {
+                const active = category === cat.key;
+                return (
+                  <TouchableOpacity
+                    key={cat.key}
+                    activeOpacity={0.85}
+                    style={[
+                      styles.categoryCard,
+                      active && { borderColor: cat.color },
+                    ]}
+                    onPress={() => {
+                      setCategory(cat.key as any);
+                      if (cat.key === 'trash') setIsAnonymous(true);
+                    }}
+                  >
+                    <Text style={styles.categoryIcon}>{cat.icon}</Text>
+                    <Text style={[styles.categoryTitle, active && { color: cat.color }]}>{cat.title}</Text>
+                    <Text style={styles.categoryDesc}>{cat.desc}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
 
           {/* Description */}
           <View style={styles.section}>
@@ -217,45 +259,6 @@ export default function CreateCaseScreen() {
             />
           </View>
 
-          {/* Riddle switch */}
-          <View style={styles.section}>
-            <View style={styles.switchRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.switchTitle}>Сделать кейсом-загадкой</Text>
-                <Text style={styles.switchHint}>Коллеги попробуют угадать оттенок VITA</Text>
-              </View>
-              <Switch
-                value={isRiddle}
-                onValueChange={setIsRiddle}
-                trackColor={{ false: 'rgba(255,255,255,0.15)', true: 'rgba(79,195,247,0.5)' }}
-                thumbColor={isRiddle ? '#4fc3f7' : '#f2ca50'}
-              />
-            </View>
-
-            {isRiddle && (
-              <View style={styles.riddleAnswerBlock}>
-                <Text style={styles.riddleAnswerLabel}>Правильный оттенок VITA:</Text>
-                <View style={styles.shadeGrid}>
-                  {VITA_SHADES.map((shade) => {
-                    const active = riddleAnswer === shade;
-                    return (
-                      <TouchableOpacity
-                        key={shade}
-                        activeOpacity={0.8}
-                        style={[styles.shadeChip, active && styles.shadeChipActive]}
-                        onPress={() => setRiddleAnswer(shade)}
-                      >
-                        <Text style={[styles.shadeChipText, active && styles.shadeChipTextActive]}>
-                          {shade}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            )}
-          </View>
-
           {/* Anonymous (blind) publication switch */}
           <View style={styles.section}>
             <View style={styles.switchRow}>
@@ -267,7 +270,8 @@ export default function CreateCaseScreen() {
               </View>
               <Switch
                 value={isAnonymous}
-                onValueChange={setIsAnonymous}
+                onValueChange={category === 'trash' ? undefined : setIsAnonymous}
+                disabled={category === 'trash'}
                 trackColor={{ false: 'rgba(255,255,255,0.15)', true: 'rgba(79,195,247,0.5)' }}
                 thumbColor={isAnonymous ? '#4fc3f7' : '#f2ca50'}
               />
@@ -397,29 +401,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  categoryRow: { flexDirection: 'row', gap: 10 },
+  categoryCard: {
+    flex: 1,
+    backgroundColor: '#0a1628',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    padding: 12,
+    alignItems: 'center',
+  },
+  categoryIcon: { fontSize: 22, marginBottom: 6 },
+  categoryTitle: { fontSize: 12, fontWeight: '800', color: '#ffffff', textAlign: 'center', marginBottom: 6 },
+  categoryDesc: { fontSize: 10, color: 'rgba(255,255,255,0.5)', textAlign: 'center', lineHeight: 14 },
+
   switchRow: { flexDirection: 'row', alignItems: 'center' },
   switchTitle: { fontSize: 15, fontWeight: '700', color: '#ffffff', marginBottom: 4 },
   switchHint: { fontSize: 12, color: 'rgba(255,255,255,0.55)' },
-
-  riddleAnswerBlock: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.1)',
-  },
-  riddleAnswerLabel: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.8)', marginBottom: 12 },
-  shadeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  shadeChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: 'rgba(10, 15, 26, 0.6)',
-    borderWidth: 1,
-    borderColor: 'rgba(242, 202, 80, 0.4)',
-  },
-  shadeChipActive: { backgroundColor: 'rgba(79, 195, 247, 0.18)', borderColor: '#4fc3f7' },
-  shadeChipText: { fontSize: 14, fontWeight: '800', color: '#f2ca50' },
-  shadeChipTextActive: { color: '#4fc3f7' },
 
   anonPreview: {
     flexDirection: 'row',

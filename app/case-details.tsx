@@ -1,6 +1,7 @@
 import BottomTabBar from '@/components/BottomTabBar';
 import { PostActionsSheet } from '@/components/case-post-actions';
 import GlobalHeader from '@/components/global-header';
+import { API_BASE_URL } from '@/constants/config';
 import { getFirebaseDB } from '@/constants/firebase';
 import {
     CASES,
@@ -8,8 +9,7 @@ import {
     CaseMedia,
     ClinicalCase,
     deleteCaseById,
-    isOwnCase,
-    registerAiLike
+    isOwnCase
 } from '@/data/cases';
 import { getUserIdentity } from '@/utils/getUserIdentity';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -100,13 +100,6 @@ const MediaCarousel = ({ media: rawMedia, onPressPhoto }: { media: CaseMedia[]; 
         renderItem={({ item, index }) => (
           <TouchableOpacity activeOpacity={0.95} onPress={() => onPressPhoto(index)} style={{ width: MEDIA_WIDTH }}>
             <Image source={{ uri: item.uri }} style={styles.mediaImage} />
-            <View style={styles.stageBadge}>
-              <Text style={styles.stageBadgeText}>{item.stage}</Text>
-            </View>
-            <View style={styles.counterBadge}>
-              <Ionicons name="images-outline" size={12} color="#fff" />
-              <Text style={styles.counterText}>{index + 1} из {media.length}</Text>
-            </View>
           </TouchableOpacity>
         )}
       />
@@ -276,25 +269,71 @@ const RiddleBlock = ({
 };
 
 /* ---------------- AI review (harsh critic) ---------------- */
-const AiReviewBlock = ({ review, onSpent }: { review: string; onSpent: () => void }) => {
-  const [revealed, setRevealed] = useState(false);
-  const [liked, setLiked] = useState(false);
+const AiReviewBlock = ({ 
+  caseId, 
+  currentUserId, 
+  userEmail, 
+  initialTotal, 
+  initialReview,
+  showVoteModal,
+  setShowVoteModal
+}: { 
+  caseId: string; 
+  currentUserId: string; 
+  userEmail: string; 
+  initialTotal: number; 
+  initialReview: string; 
+  showVoteModal: boolean;
+  setShowVoteModal: (show: boolean) => void;
+}) => {
+  const [total, setTotal] = useState(initialTotal);
+  const [aiReview, setAiReview] = useState(initialReview);
+  const [showVerdictModal, setShowVerdictModal] = useState(false);
+  const [selectedEnergy, setSelectedEnergy] = useState(1);
+  const [loading, setLoading] = useState(false);
 
-  const runReview = async () => {
-    const ok = await (globalThis as any).spendDiamonds?.(AI_REVIEW_COST);
-    if (!ok) {
-      Alert.alert('Низкий заряд ИИ', `Для AI-разбора нужно ${AI_REVIEW_COST} заряда. Пополните заряды в «Станции зарядки».`);
-      return;
-    }
-    (globalThis as any).forceDiamondUpdate?.();
-    onSpent();
-    setRevealed(true);
-  };
+  useEffect(() => {
+    const loadStatus = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/case-club/sensei-status/${caseId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setTotal(data.total || 0);
+          setAiReview(data.aiReview || '');
+        }
+      } catch (e) {
+        console.error('[AiReviewBlock] Ошибка загрузки статуса:', e);
+      }
+    };
+    loadStatus();
+  }, [caseId]);
 
-  const toggleLike = () => {
-    if (!liked) {
-      setLiked(true);
-      registerAiLike();
+  const handleVote = async () => {
+    if (!currentUserId) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/case-club/sensei-vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          case_id: caseId,
+          user_id: currentUserId,
+          energy_amount: selectedEnergy,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setTotal(data.total || 0);
+        if (data.status === 'ready' && data.aiReview) {
+          setAiReview(data.aiReview);
+          setShowVoteModal(false);
+          setShowVerdictModal(true);
+        }
+      }
+    } catch (e) {
+      console.error('[AiReviewBlock] Ошибка голосования:', e);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -304,24 +343,98 @@ const AiReviewBlock = ({ review, onSpent }: { review: string; onSpent: () => voi
         <Ionicons name="skull-outline" size={28} color="#ff6b6b" />
         <Text style={styles.sectionTitle}>AI-разбор работы</Text>
       </View>
-      {!revealed ? (
-        <>
-          <TouchableOpacity activeOpacity={0.85} style={styles.eshafotnikButton} onPress={runReview}>
-            <Text style={styles.eshafotnikText}>Эшафотник за 2</Text>
-            <Ionicons name="flash" size={14} color="#f2ca50" />
-          </TouchableOpacity>
-        </>
+      
+      {aiReview ? (
+        <TouchableOpacity 
+          activeOpacity={0.85} 
+          style={styles.verdictReadyButton} 
+          onPress={() => setShowVerdictModal(true)}
+        >
+          <Text style={styles.verdictReadyText}>⚔️ Вердикт Сенсея готов</Text>
+        </TouchableOpacity>
       ) : (
-        <>
-          <View style={styles.aiReviewBubble}>
-            <Text style={styles.aiReviewText}>{review}</Text>
+        <View>
+          <View style={styles.progressBar}>
+            <View style={[styles.progressFill, { width: `${(total / 5) * 100}%` }]} />
           </View>
-          <TouchableOpacity style={styles.aiLikeRow} activeOpacity={0.7} onPress={toggleLike}>
-            <Ionicons name={liked ? 'thumbs-up' : 'thumbs-up-outline'} size={18} color="#f2ca50" />
-            <Text style={styles.aiLikeText}>{liked ? 'Полезный разбор' : 'Отметить разбор полезным'}</Text>
+          <TouchableOpacity 
+            activeOpacity={0.85} 
+            style={styles.callSenseiButton} 
+            onPress={() => setShowVoteModal(true)}
+          >
+            <Text style={styles.callSenseiText}>Вызвать Сенсея {total}/5⚡</Text>
           </TouchableOpacity>
-        </>
+        </View>
       )}
+
+      {/* Модал выбора энергии */}
+      <Modal visible={showVoteModal} transparent animationType="fade" onRequestClose={() => setShowVoteModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.voteModal}>
+            <Text style={styles.voteModalTitle}>Вызвать Сенсея</Text>
+            <Text style={styles.voteModalText}>
+              Внесите энергию для вызова AI-Сенсея. Когда накопится 5⚡, он даст вердикт по работе.
+            </Text>
+            
+            <View style={styles.progressBar}>
+              <View style={[styles.progressFill, { width: `${(total / 5) * 100}%` }]} />
+            </View>
+            <Text style={styles.progressText}>{total}/5 энергии накоплено</Text>
+            
+            <View style={styles.energyButtons}>
+              {[1, 2, 3, 5].map((energy) => (
+                <TouchableOpacity
+                  key={energy}
+                  style={[
+                    styles.energyButton,
+                    selectedEnergy === energy && styles.energyButtonSelected
+                  ]}
+                  onPress={() => setSelectedEnergy(energy)}
+                >
+                  <Text style={[
+                    styles.energyButtonText,
+                    selectedEnergy === energy && styles.energyButtonTextSelected
+                  ]}>
+                    {energy}⚡
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.submitButton} 
+              onPress={handleVote}
+              disabled={loading}
+            >
+              <Text style={styles.submitButtonText}>
+                {loading ? 'Вносим...' : 'Внести'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.cancelButton} 
+              onPress={() => setShowVoteModal(false)}
+            >
+              <Text style={styles.cancelButtonText}>Отмена</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Модал вердикта */}
+      <Modal visible={showVerdictModal} transparent animationType="fade" onRequestClose={() => setShowVerdictModal(false)}>
+        <View style={styles.verdictModalOverlay}>
+          <View style={styles.verdictModal}>
+            <Text style={styles.verdictModalTitle}>⚔️ Вердикт Сенсея</Text>
+            <Text style={styles.verdictModalText}>{aiReview}</Text>
+            <TouchableOpacity 
+              style={styles.closeVerdictButton} 
+              onPress={() => setShowVerdictModal(false)}
+            >
+              <Text style={styles.closeVerdictButtonText}>Закрыть</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -419,6 +532,8 @@ export default function CaseDetailsScreen() {
   const [currentEmail, setCurrentEmail] = useState<string>('');
   const [currentAuthorName, setCurrentAuthorName] = useState<string>('');
   const [currentFullName, setCurrentFullName] = useState<string>('');
+  const [authorProfileName, setAuthorProfileName] = useState<string>('');
+  const [showVoteModal, setShowVoteModal] = useState(false);
 
   const refreshDiamonds = () => setDiamonds((globalThis as any).getDiamondBalance?.() ?? 0);
 
@@ -446,7 +561,7 @@ export default function CaseDetailsScreen() {
     const loadCase = async () => {
       try {
         // Читаем из Firebase как основного источника
-        const fbSnap = await get(ref(getFirebaseDB(), `case_club_posts/${id}`));
+        const fbSnap = await get(ref(getFirebaseDB(), `case_club/${id}`));
         let found: ClinicalCase | null = fbSnap.exists() ? fbSnap.val() : null;
         // Fallback: локальный кэш
         if (!found) {
@@ -455,10 +570,40 @@ export default function CaseDetailsScreen() {
           found = posts.find((p) => p.id === id) ?? null;
         }
         setItem(found);
+        
+        // Нормализация данных из case_club формата
+        if (found && !(found as any).media && (found as any).imageUrl) {
+          const imageUrl = (found as any).imageUrl;
+          const additionalImages = (found as any).additionalImages || [];
+          const mediaArr = [
+            { uri: imageUrl, stage: 'Обложка' },
+            ...additionalImages.map((url: string, i: number) => ({ uri: url, stage: `Фото ${i + 2}` }))
+          ];
+          (found as any).media = mediaArr;
+        }
+        if (found && !(found as any).fullDescription && (found as any).description) {
+          (found as any).fullDescription = (found as any).description;
+        }
+        
         if (found) {
           setLocalCase({ ...found });
           setEditedDescription(found.fullDescription);
           setComments(found.commentsList ?? []);
+          
+          // Загружаем профиль автора для актуального имени
+          if ((found as any).authorId) {
+            try {
+              const profileSnap = await get(ref(getFirebaseDB(), `users/${(found as any).authorId}/profile`));
+              if (profileSnap.exists()) {
+                const profile = profileSnap.val();
+                if (profile.name) {
+                  setAuthorProfileName(profile.name);
+                }
+              }
+            } catch (e) {
+              console.error('[CaseDetails] Ошибка загрузки профиля автора:', e);
+            }
+          }
         }
       } catch (e) {
         console.error('[CaseDetails] Ошибка чтения AsyncStorage:', e);
@@ -471,7 +616,11 @@ export default function CaseDetailsScreen() {
     return (
       <ImageBackground source={require('@/assets/images/background.png')} style={{ flex: 1 }} resizeMode="cover">
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-        <GlobalHeader diamonds={diamonds} newOrdersCount={3} />
+        <GlobalHeader 
+          diamonds={diamonds}
+          newOrdersCount={(globalThis as any).getNewOrdersCount?.() ?? 0}
+          onBurgerPress={() => (globalThis as any).openDrawer?.()}
+        />
         <View style={styles.notFound}>
           <Text style={styles.notFoundText}>Кейс не найден</Text>
         </View>
@@ -483,6 +632,7 @@ export default function CaseDetailsScreen() {
   const isAnon = !!item.anonymous;
 
   const formatShortName = (fullName: string) => {
+    if (!fullName) return 'Аноним';
     const parts = fullName.trim().split(/\s+/);
     if (parts.length === 1) return parts[0];
     const [last, first, middle] = parts;
@@ -495,7 +645,7 @@ export default function CaseDetailsScreen() {
   const isTech = resolvedRole === 'Техник' || resolvedRole === 'Зубной техник' || resolvedRole === 'technician';
   const roleDisplay = isTech ? 'Зубной техник' : 'Врач';
 
-  const rawName = isAnon ? 'Анонимный коллега' : isOwn && identity?.name ? identity.name : item.author;
+  const rawName = isAnon ? 'Анонимный коллега' : authorProfileName || (isOwn && identity?.name ? identity.name : item.author);
   const displayName = isAnon ? rawName : formatShortName(rawName);
   const avatarSource: ImageSourcePropType | null = (() => {
     if (isAnon) return null;
@@ -585,7 +735,11 @@ export default function CaseDetailsScreen() {
       resizeMode="cover"
     >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <GlobalHeader diamonds={diamonds} newOrdersCount={3} />
+      <GlobalHeader 
+          diamonds={diamonds}
+          newOrdersCount={(globalThis as any).getNewOrdersCount?.() ?? 0}
+          onBurgerPress={() => (globalThis as any).openDrawer?.()}
+        />
 
       <View style={styles.navBar}>
         <TouchableOpacity style={styles.navBackButton} activeOpacity={0.7} onPress={() => router.back()}>
@@ -604,7 +758,7 @@ export default function CaseDetailsScreen() {
             </View>
             <Text style={styles.authorName}>{displayName}</Text>
           </View>
-          {isOwn && (
+                    {isOwn && (
             <TouchableOpacity style={styles.manageButton} activeOpacity={0.7} onPress={() => setMenuVisible(true)}>
               <Ionicons name="ellipsis-vertical" size={22} color="#f2ca50" />
             </TouchableOpacity>
@@ -663,7 +817,15 @@ export default function CaseDetailsScreen() {
         </View>
 
         {/* AI-разбор — под описанием */}
-        <AiReviewBlock review={item.aiReview} onSpent={refreshDiamonds} />
+        <AiReviewBlock 
+          caseId={(item as any).id || id}
+          currentUserId={currentUserId}
+          userEmail={currentEmail}
+          initialTotal={(item as any).aiReviewTotal || 0}
+          initialReview={(item as any).aiReview || ''}
+          showVoteModal={showVoteModal}
+          setShowVoteModal={setShowVoteModal}
+        />
 
         {/* Riddle */}
         {item.riddle && <RiddleBlock caseId={id} riddle={item.riddle} onReward={refreshDiamonds} />}
@@ -710,6 +872,7 @@ export default function CaseDetailsScreen() {
           </View>
         )}
 
+        
       </ScrollView>
 
       <BottomTabBar />
@@ -777,6 +940,31 @@ const styles = StyleSheet.create({
   roleBadgeText: { fontSize: 12, fontWeight: '700', color: '#f2ca50', letterSpacing: 0.5 },
   roleBadgeTextTech: { color: '#4fc3f7' },
   manageButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  senseiProgressButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 107, 107, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.3)',
+    borderRadius: 20,
+    gap: 2,
+  },
+  senseiProgressText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#ff6b6b',
+    marginTop: -2,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    gap: 12,
+  },
 
   mediaWrap: { borderRadius: 16, overflow: 'hidden', marginBottom: 14 },
   mediaImage: { width: MEDIA_WIDTH, height: 240, borderRadius: 16, backgroundColor: '#10141f' },
@@ -917,6 +1105,180 @@ const styles = StyleSheet.create({
   aiReviewText: { fontSize: 14, lineHeight: 22, color: 'rgba(255,255,255,0.9)', fontStyle: 'italic' },
   aiLikeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
   aiLikeText: { fontSize: 13, fontWeight: '600', color: '#f2ca50' },
+
+  /* New AI Review Styles */
+  verdictReadyButton: {
+    backgroundColor: 'rgba(242, 202, 80, 0.15)',
+    borderWidth: 1,
+    borderColor: '#f2ca50',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  verdictReadyText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#f2ca50',
+    letterSpacing: 0.3,
+  },
+  progressBar: {
+    height: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 3,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#f2ca50',
+    borderRadius: 3,
+  },
+  progressText: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.6)',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  callSenseiButton: {
+    backgroundColor: 'rgba(255, 107, 107, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.4)',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  callSenseiText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ff6b6b',
+    letterSpacing: 0.3,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  voteModal: {
+    backgroundColor: '#1a1f2e',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 320,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  voteModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ffffff',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  voteModalText: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.7)',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  energyButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  energyButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 8,
+    width: 60,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  energyButtonSelected: {
+    backgroundColor: 'rgba(242, 202, 80, 0.2)',
+    borderColor: '#f2ca50',
+  },
+  energyButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  energyButtonTextSelected: {
+    color: '#f2ca50',
+  },
+  submitButton: {
+    backgroundColor: '#f2ca50',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  submitButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1a1206',
+  },
+  cancelButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  cancelButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  verdictModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  verdictModal: {
+    backgroundColor: '#1a1f2e',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 360,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.3)',
+  },
+  verdictModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ff6b6b',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  verdictModalText: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.85)',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  closeVerdictButton: {
+    backgroundColor: 'rgba(255, 107, 107, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.4)',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  closeVerdictButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ff6b6b',
+  },
 
   /* Riddle */
   rewardLine: {

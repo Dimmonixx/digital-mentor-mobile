@@ -7,7 +7,7 @@ import { Redirect, Tabs } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
 import { getFirebaseDB, getFirebaseFirestore } from '@/constants/firebase';
-import { query as dbQuery, equalTo, get, onValue, orderByChild, ref } from 'firebase/database';
+import { query as dbQuery, equalTo, get, off, onValue, orderByChild, ref } from 'firebase/database';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -158,6 +158,27 @@ export default function TabLayout() {
     AsyncStorage.setItem('user', JSON.stringify(updated));
   }, [diamondBalance, user]);
 
+  // Чтение aiLimits из Firebase RTDB в реальном времени
+  useEffect(() => {
+    if (!user) return;
+    const email: string = user?.email || '';
+    const uid = email ? emailToKey(email) : (user?.id || user?.uid || '');
+    if (!uid) return;
+
+    const currentDb = getFirebaseDB();
+    const userRef = ref(currentDb, `users/${uid}`);
+    const unsubscribe = onValue(userRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const fresh = snapshot.val();
+        const freshLimits = fresh?.aiLimits ?? 15;
+        setAiDailyLimit(freshLimits);
+        aiDailyLimitRef.current = freshLimits;
+      }
+    });
+
+    return () => off(userRef);
+  }, [user]);
+
   useEffect(() => {
     (globalThis as any).getDiamondBalance = () => diamondBalanceRef.current;
     (globalThis as any).getAiDailyLimit = () => aiDailyLimitRef.current;
@@ -215,7 +236,9 @@ export default function TabLayout() {
     (globalThis as any).forceDiamondUpdate = () => {
       setDiamondBalance(prev => prev);
     };
-  }, [isAdmin]);
+    (globalThis as any).openDrawer = () => setDrawerVisible(true);
+    (globalThis as any).getNewOrdersCount = () => newOrdersCount;
+  }, [isAdmin, newOrdersCount]);
 
 
 
@@ -317,7 +340,7 @@ export default function TabLayout() {
       (snapshot) => {
 
         const data = snapshot.val();
-
+        console.log('=== CONNECTION REQUESTS ===', JSON.stringify(data));
         let pendingCount = 0;
 
 
@@ -336,7 +359,7 @@ export default function TabLayout() {
 
         }
 
-
+        console.log('=== PENDING COUNT ===', pendingCount);
 
         setPendingRequestsCount(pendingCount);
 
@@ -428,13 +451,6 @@ export default function TabLayout() {
 
           if (lastPartnerMessage) {
             const lastSeen = chatLastSeenRef.current[chatId] || 0;
-            console.log('=== SOUND CHECK ===', {
-              chatId,
-              lastPartnerMessageId: lastPartnerMessage.id,
-              lastPartnerTimestamp: lastPartnerMessage.timestamp,
-              lastSeen,
-              willPlay: lastPartnerMessage.timestamp > lastSeen
-            });
             if (lastPartnerMessage.timestamp > lastSeen) {
               if ((globalThis as any).isInPartnerChat === chatId) {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -442,10 +458,6 @@ export default function TabLayout() {
                 playSuccessSound();
                 unreadChatIdsRef.current.add(chatId);
                 (globalThis as any).unreadChatsCount = unreadChatIdsRef.current.size;
-                console.log('=== UPDATE UNREAD COUNT ===', {
-                  newCount: (globalThis as any).unreadChatsCount,
-                  chatId
-                });
                 (globalThis as any).updateUnreadCount?.();
               }
             }

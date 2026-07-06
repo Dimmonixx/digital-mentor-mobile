@@ -1,27 +1,37 @@
 ﻿import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { off, onValue, ref } from 'firebase/database';
+import { get, off, onValue, ref } from 'firebase/database';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    ImageBackground,
-    Modal,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  FlatList,
+  Image,
+  ImageBackground,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getFirebaseDB } from '@/constants/firebase';
 import { useAuth } from '@/hooks/useAuth';
 
+const PRESET_AVATARS = [
+  require('../../assets/avatars/avatar_1.jpg'),
+  require('../../assets/avatars/avatar_2.jpg'),
+  require('../../assets/avatars/avatar_3.jpg'),
+];
+
 interface ChatPartner {
   id: string;
   name: string;
   role: 'doctor' | 'technician';
+  avatarType?: 'custom' | 'preset';
+  avatarPresetId?: number;
+  avatarUrl?: string;
 }
 
 export default function ChatListScreen() {
@@ -42,7 +52,7 @@ export default function ChatListScreen() {
 
     const partnershipsRef = ref(getFirebaseDB(), 'partnerships');
 
-    const unsubscribe = onValue(partnershipsRef, (snapshot) => {
+    const unsubscribe = onValue(partnershipsRef, async (snapshot) => {
       const data = snapshot.val();
       const list: ChatPartner[] = [];
       const seen = new Set<string>();
@@ -69,8 +79,31 @@ export default function ChatListScreen() {
         });
       }
 
-      list.sort((a, b) => a.name.localeCompare(b.name));
-      setPartners(list);
+      // Загружаем аватарки и полные имена партнёров параллельно
+      const partnersWithAvatars = await Promise.all(
+        list.map(async (partner) => {
+          try {
+            const profileRef = ref(getFirebaseDB(), `users/${partner.id}/profile`);
+            const profileSnap = await get(profileRef);
+            if (profileSnap.exists()) {
+              const profileData = profileSnap.val();
+              return {
+                ...partner,
+                name: profileData.name || partner.name,
+                avatarType: profileData.avatarType,
+                avatarPresetId: profileData.avatarPresetId,
+                avatarUrl: profileData.avatarUrl,
+              };
+            }
+          } catch (error) {
+            console.error('Error loading partner avatar:', error);
+          }
+          return partner;
+        })
+      );
+
+      partnersWithAvatars.sort((a, b) => a.name.localeCompare(b.name));
+      setPartners(partnersWithAvatars);
       setLoading(false);
     });
 
@@ -115,29 +148,23 @@ export default function ChatListScreen() {
       const chatsRef = ref(getFirebaseDB(), 'chats');
       const unsubscribe = onValue(chatsRef, (snapshot) => {
         const data = snapshot.val();
-        const unreadSet = new Set<string>();
-
-        if (data && typeof data === 'object') {
-          Object.entries(data).forEach(([chatId, chatData]: [string, any]) => {
-            if (chatData?.members && chatData.members[userId]) {
-              // Исключаем чат если пользователь сейчас в нём
-              if ((globalThis as any).isInPartnerChat === chatId) {
-                return;
-              }
-              const lastTimestamp = chatData.lastTimestamp || 0;
-              const lastSeen = (globalThis as any).getChatLastSeen?.(chatId) || 0;
-              if (lastTimestamp > lastSeen) {
-                const partnerId = Object.keys(chatData.members).find(id => id !== userId);
-                if (partnerId) {
-                  unreadSet.add(partnerId);
-                }
-              }
-            }
-          });
-        }
 
         // Даём время lastSeen обновиться перед пересчётом
         setTimeout(() => {
+          const unreadSet = new Set<string>();
+          if (data && typeof data === 'object') {
+            Object.entries(data).forEach(([chatId, chatData]: [string, any]) => {
+              if (chatData?.members && chatData.members[userId]) {
+                if ((globalThis as any).isInPartnerChat === chatId) return;
+                const lastTimestamp = chatData.lastTimestamp || 0;
+                const lastSeen = (globalThis as any).getChatLastSeen?.(chatId) || 0;
+                if (lastTimestamp > lastSeen) {
+                  const partnerId = Object.keys(chatData.members).find(id => id !== userId);
+                  if (partnerId) unreadSet.add(partnerId);
+                }
+              }
+            });
+          }
           setUnreadChats(unreadSet);
         }, 500);
       });
@@ -145,6 +172,19 @@ export default function ChatListScreen() {
       return () => off(chatsRef, 'value', unsubscribe);
     }, [userId, role])
   );
+
+  useEffect(() => {
+    (globalThis as any).clearPartnerUnread = (partnerId: string) => {
+      setUnreadChats(prev => {
+        const next = new Set(prev);
+        next.delete(partnerId);
+        return next;
+      });
+    };
+    return () => {
+      delete (globalThis as any).clearPartnerUnread;
+    };
+  }, []);
 
   const openGlobalChat = () => {
     setShowAiModal(true);
@@ -183,6 +223,21 @@ export default function ChatListScreen() {
 
     const partner = item as ChatPartner;
     const hasUnread = unreadChats.has(partner.id);
+    
+    // Определяем источник аватарки
+    const getAvatarSource = () => {
+      if (partner.avatarType === 'custom' && partner.avatarUrl) {
+        return { uri: partner.avatarUrl };
+      }
+      if (partner.avatarType === 'preset' && partner.avatarPresetId) {
+        return PRESET_AVATARS[partner.avatarPresetId - 1] || PRESET_AVATARS[0];
+      }
+      return null;
+    };
+    
+    const avatarSource = getAvatarSource();
+    const initial = partner.name ? partner.name[0].toUpperCase() : '?';
+
     return (
       <TouchableOpacity
         style={styles.partnerRow}
@@ -190,11 +245,13 @@ export default function ChatListScreen() {
         activeOpacity={0.8}
       >
         <View style={styles.avatarWrap}>
-          <Ionicons
-            name={partner.role === 'doctor' ? 'medical' : 'construct'}
-            size={24}
-            color="#f2ca50"
-          />
+          {avatarSource ? (
+            <Image source={avatarSource} style={styles.avatarImage} />
+          ) : (
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarText}>{initial}</Text>
+            </View>
+          )}
         </View>
         <View style={styles.rowText}>
           <Text style={styles.partnerName}>{partner.name}</Text>
@@ -263,7 +320,8 @@ export default function ChatListScreen() {
           onPress={() => setShowAiModal(false)}
         >
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>ИИ-Наставник</Text>
+            <Text style={styles.modalTitle}>Задай вопрос профи 💬</Text>
+            <Text style={styles.modalSubtitle}>1 ⚡ за каждые 5 минут</Text>
             <TouchableOpacity
               style={styles.modalButton}
               onPress={() => {
@@ -271,18 +329,16 @@ export default function ChatListScreen() {
                 router.push({ pathname: '/global-chat', params: { role: 'doctor' } } as any);
               }}
             >
-              <Ionicons name="medical" size={24} color="#031427" />
-              <Text style={styles.modalButtonText}>Для врача</Text>
+              <Text style={styles.modalButtonText}>🦷 Эксперт-стоматолог</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.modalButton}
+              style={styles.modalButtonTechnician}
               onPress={() => {
                 setShowAiModal(false);
                 router.push({ pathname: '/global-chat', params: { role: 'technician' } } as any);
               }}
             >
-              <Ionicons name="construct" size={24} color="#031427" />
-              <Text style={styles.modalButtonText}>Для техника</Text>
+              <Text style={styles.modalButtonText}>🔧 Эксперт-техник</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.modalCancelButton}
@@ -380,6 +436,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  avatarCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#f2ca50',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    color: '#031427',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   rowText: {
     flex: 1,
@@ -453,6 +528,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     textAlign: 'center',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 14,
+    textAlign: 'center',
     marginBottom: 20,
   },
   modalButton: {
@@ -460,6 +541,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#f2ca50',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    marginBottom: 12,
+    gap: 12,
+  },
+  modalButtonTechnician: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#c9a227',
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 20,

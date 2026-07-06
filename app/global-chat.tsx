@@ -1,6 +1,7 @@
 import GlobalHeader from '@/components/global-header';
 import { API_BASE_URL } from '@/constants/config';
 import { getFirebaseDB } from '@/constants/firebase';
+import { useAuth } from '@/hooks/useAuth';
 import { executeWithAiLimit } from '@/services/aiRequestService';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -11,6 +12,7 @@ import { get, off, onValue, push, ref, remove, set } from 'firebase/database';
 import { TrendingUpDown } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+    Alert,
     Animated,
     Clipboard,
     FlatList,
@@ -54,6 +56,13 @@ const formatDate = (timestamp: number): string => {
   }
 };
 
+// Форматирование времени сессии
+const formatSessionTime = (ms: number): string => {
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+};
+
 interface Message {
   id: string;
   username: string;
@@ -92,6 +101,8 @@ const AnimatedMessage = ({ children }: { children: React.ReactNode }) => {
 
 export default function ChatScreen() {
   const { role: aiRole } = useLocalSearchParams<{ role?: string }>();
+  const { user } = useAuth();
+  const userId = user?.uid || user?.id || 'anonymous';
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [username, setUsername] = useState('');
@@ -101,10 +112,11 @@ export default function ChatScreen() {
   const [showMenu, setShowMenu] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const [currentDiamonds, setCurrentDiamonds] = useState((globalThis as any).getDiamondBalance?.() ?? 0);
-  const [aiDailyLimit, setAiDailyLimit] = useState<number>((globalThis as any).getAiDailyLimit?.() ?? 15);
+  const [aiDailyLimit, setAiDailyLimit] = useState<number>(() => (globalThis as any).getAiDailyLimit?.() ?? 0);
   const [onlineUsersCount, setOnlineUsersCount] = useState(0);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [sessionTimeLeft, setSessionTimeLeft] = useState<number>(0);
   const flatListRef = useRef<FlatList>(null);
   const insets = useSafeAreaInsets();
   
@@ -144,10 +156,60 @@ export default function ChatScreen() {
     }
   }, [aiThinking]);
 
+  // Логика сессии AI чата - вынесена в отдельную функцию
+  const checkSession = async () => {
+    console.log('=== CHECK SESSION START ===', { userId, userEmail: user?.email, aiRole });
+    console.log('=== CHECK SESSION ===', { userId, aiRole, sessionTimeLeft });
+    const sessionKey = `ai_chat_session_${userId}_${aiRole}`;
+    const lastSessionStr = await AsyncStorage.getItem(sessionKey);
+    const lastSession = lastSessionStr ? parseInt(lastSessionStr, 10) : 0;
+    const now = Date.now();
+    const timeSinceLastSession = now - lastSession;
+    const SESSION_DURATION = 300000; // 5 минут
+
+    if (!lastSession || timeSinceLastSession > SESSION_DURATION) {
+      // Прошло больше 5 минут или сессии нет - списываем энергию
+      const allowed = await executeWithAiLimit(user?.email || '', async () => {
+        await AsyncStorage.setItem(sessionKey, String(now));
+        return true;
+      });
+      console.log('=== EXECUTE RESULT ===', { allowed });
+      (globalThis as any).forceDiamondUpdate?.();
+      if (!allowed) {
+        return false;
+      }
+      setSessionTimeLeft(SESSION_DURATION);
+    } else {
+      // Меньше 5 минут - бесплатно
+      const timeLeft = SESSION_DURATION - timeSinceLastSession;
+      setSessionTimeLeft(timeLeft);
+    }
+    return true;
+  };
+
   useEffect(() => {
+    if (!userId || userId === 'anonymous') return;
     loadUsername();
     setupFirebaseListener();
-  }, []);
+    checkSession().then(allowed => {
+      if (!allowed) router.back();
+    });
+  }, [userId, aiRole]);
+
+  // Таймер сессии - уменьшает оставшееся время каждую секунду
+  useEffect(() => {
+    if (sessionTimeLeft <= 0) return;
+    const interval = setInterval(() => {
+      setSessionTimeLeft(prev => {
+        const next = Math.max(0, prev - 1000);
+        if (next === 0) {
+          setTimeout(() => checkSession(), 500);
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [sessionTimeLeft]);
 
   // Синхронизация баланса алмазов с _layout (аналогично balance.tsx)
   useEffect(() => {
@@ -267,7 +329,8 @@ export default function ChatScreen() {
   };
 
   const setupFirebaseListener = () => {
-    const messagesRef = ref(getFirebaseDB(), 'chat_messages');
+    console.log('DEBUG userId:', userId, 'aiRole:', aiRole);
+    const messagesRef = ref(getFirebaseDB(), `global_chat/${userId}/${aiRole || 'technician'}`);
     const unsubscribe = onValue(messagesRef, (snapshot: any) => {
       const data = snapshot.val();
       if (data) {
@@ -310,7 +373,7 @@ export default function ChatScreen() {
     setNewMessage('');
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const messagesRef = ref(getFirebaseDB(), 'chat_messages');
+      const messagesRef = ref(getFirebaseDB(), `global_chat/${userId}/${aiRole || 'technician'}`);
       await push(messagesRef, {
         username: username,
         text,
@@ -318,12 +381,18 @@ export default function ChatScreen() {
       });
 
       if (aiRole === 'doctor' || aiRole === 'technician') {
-        const rawUser = await AsyncStorage.getItem('user');
-        const userObj = rawUser ? JSON.parse(rawUser) : null;
-        const userEmail = userObj?.email || '';
+        // Проверяем сессию перед отправкой запроса к ИИ
+        console.log('=== SEND MESSAGE SESSION CHECK ===', { sessionTimeLeft });
+        if (sessionTimeLeft <= 0) {
+          const allowed = await checkSession();
+          if (!allowed) {
+            return;
+          }
+        }
+
         setAiThinking(true);
         setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150);
-        const aiReply = await executeWithAiLimit(userEmail, () => getClaudeResponse(text, messages, aiRole));
+        const aiReply = await getClaudeResponse(text, messages, aiRole);
         setAiThinking(false);
         if (aiReply) {
           await push(messagesRef, {
@@ -343,7 +412,7 @@ export default function ChatScreen() {
   };
 
   const addReaction = async (messageId: string, emoji: string) => {
-    const messageRef = ref(getFirebaseDB(), `chat_messages/${messageId}/reactions/${emoji}`);
+    const messageRef = ref(getFirebaseDB(), `global_chat/${userId}/${aiRole || 'technician'}/${messageId}/reactions/${emoji}`);
     const snapshot = await get(messageRef);
     const current = snapshot.val() || 0;
     await set(messageRef, current + 1);
@@ -353,10 +422,21 @@ export default function ChatScreen() {
   const deleteMessage = async (messageId: string) => {
     try {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const messageRef = ref(getFirebaseDB(), `chat_messages/${messageId}`);
+      const messageRef = ref(getFirebaseDB(), `global_chat/${userId}/${aiRole || 'technician'}/${messageId}`);
       await remove(messageRef);
     } catch (error) {
       console.error('Error deleting message:', error);
+    }
+  };
+
+  const deleteAllChatMessages = async () => {
+    try {
+      const messagesRef = ref(getFirebaseDB(), `global_chat/${userId}/${aiRole || 'technician'}`);
+      await remove(messagesRef);
+      setMessages([]);
+      setShowMenu(false);
+    } catch (error) {
+      console.error('Error deleting all messages:', error);
     }
   };
 
@@ -389,7 +469,7 @@ export default function ChatScreen() {
           return;
         }
         
-        const messagesRef = ref(getFirebaseDB(), 'chat_messages');
+        const messagesRef = ref(getFirebaseDB(), `global_chat/${userId}/${aiRole || 'technician'}`);
         await push(messagesRef, {
           username: username,
           text: '',
@@ -607,6 +687,9 @@ export default function ChatScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.chatBackButton}>
             <Ionicons name="arrow-back" size={24} color="#f2ca50" />
           </TouchableOpacity>
+          {sessionTimeLeft > 0 && (
+            <Text style={styles.sessionTimer}>⚡-1 • {formatSessionTime(sessionTimeLeft)}</Text>
+          )}
         </View>
 
         {/* Messages List + Input Area */}
@@ -644,19 +727,19 @@ export default function ChatScreen() {
             />
           )}
 
-          {/* Scroll to bottom button */}
-          {showScrollButton && (
-            <TouchableOpacity
-              style={styles.scrollButton}
-              onPress={() => {
-                flatListRef.current?.scrollToEnd({ animated: true });
-                setShowScrollButton(false);
-                setUserScrolledUp(false);
-              }}
-            >
-              <Ionicons name="chevron-down" size={24} color="#031427" />
-            </TouchableOpacity>
-          )}
+        {/* Scroll to bottom button */}
+        {showScrollButton && (
+          <TouchableOpacity
+            style={styles.scrollButton}
+            onPress={() => {
+              flatListRef.current?.scrollToEnd({ animated: true });
+              setShowScrollButton(false);
+              setUserScrolledUp(false);
+            }}
+          >
+            <Ionicons name="chevron-down" size={24} color="#031427" />
+          </TouchableOpacity>
+        )}
 
         {/* Context Menu Modal */}
         <Modal visible={showMenu} transparent animationType="fade">
@@ -694,6 +777,21 @@ export default function ChatScreen() {
               }} style={{padding:16, flexDirection:'row', gap:12}}>
                 <Ionicons name="trash" size={20} color="#ff4444"/>
                 <Text style={{color:'#ff4444', fontSize:16}}>Удалить</Text>
+              </TouchableOpacity>
+              <View style={{height:1, backgroundColor:'#f2ca5030'}}/>
+              <TouchableOpacity onPress={() => {
+                setShowMenu(false);
+                Alert.alert(
+                  'Удалить все сообщения',
+                  'Вы уверены? Это удалит всю историю чата.',
+                  [
+                    { text: 'Отмена', style: 'cancel' },
+                    { text: 'Удалить', style: 'destructive', onPress: deleteAllChatMessages },
+                  ]
+                );
+              }} style={{padding:16, flexDirection:'row', gap:12}}>
+                <Ionicons name="trash-bin" size={20} color="#ff4444"/>
+                <Text style={{color:'#ff4444', fontSize:16}}>Удалить все в чате</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -765,6 +863,12 @@ const styles = StyleSheet.create({
   },
   chatBackButton: {
     paddingRight: 10,
+  },
+  sessionTimer: {
+    color: '#f2ca50',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   chatOnlineRow: {
     flexDirection: 'row',
@@ -1007,7 +1111,7 @@ const styles = StyleSheet.create({
   },
   scrollButton: {
     position: 'absolute',
-    bottom: 135,
+    bottom: 100,
     right: 16,
     width: 48,
     height: 48,

@@ -1,21 +1,23 @@
 ﻿import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { off, onValue, ref } from 'firebase/database';
+import { get, off, onValue, ref, remove, set } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    AppState,
-    FlatList,
-    ImageBackground,
-    KeyboardAvoidingView,
-    Platform,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  AppState,
+  Clipboard,
+  FlatList,
+  Image,
+  ImageBackground,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -24,6 +26,12 @@ import { useAuth } from '@/hooks/useAuth';
 import { playSuccessSound } from '@/utils/audio';
 
 const API_BASE = 'http://62.238.13.160:8000';
+
+const PRESET_AVATARS = [
+  require('../assets/avatars/avatar_1.jpg'),
+  require('../assets/avatars/avatar_2.jpg'),
+  require('../assets/avatars/avatar_3.jpg'),
+];
 
 interface ChatMessage {
   id: string;
@@ -54,6 +62,15 @@ export default function PartnerChatScreen() {
   const [sending, setSending] = useState(false);
   const [inputAreaHeight, setInputAreaHeight] = useState(80);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
+  const [showMenu, setShowMenu] = useState(false);
+  const [partnerAvatar, setPartnerAvatar] = useState<{
+    avatarType?: 'custom' | 'preset';
+    avatarPresetId?: number;
+    avatarUrl?: string;
+  }>({});
+  const [partnerLastSeen, setPartnerLastSeen] = useState<number>(0);
   const appState = useRef(AppState.currentState);
   const flatListRef = useRef<FlatList>(null);
   const localLastSeenTimestamp = useRef(Date.now());
@@ -114,6 +131,7 @@ export default function PartnerChatScreen() {
 
     // Устанавливаем флаг что мы в чате (сохраняем chatId)
     (globalThis as any).isInPartnerChat = chatId;
+    setShowScrollButton(false);
 
     // Сбрасываем unreadChatsCount для конкретного чата при входе
     (globalThis as any).resetChatUnread?.(chatId);
@@ -121,6 +139,15 @@ export default function PartnerChatScreen() {
     // Обновляем lastSeenTimestamp при входе в чат
     if ((globalThis as any).updateChatLastSeen) {
       (globalThis as any).updateChatLastSeen(chatId);
+    }
+
+    // Записываем myLastSeen в Firebase для статуса прочтения партнёром
+    const myLastSeenRef = ref(getFirebaseDB(), `users/${currentUserId}/chatLastSeen/${chatId}`);
+    set(myLastSeenRef, Date.now());
+
+    // Устанавливаем chatOpenedAt в globalThis при первом входе
+    if (!(globalThis as any)[`chatOpenedAt_${chatId}`]) {
+      (globalThis as any)[`chatOpenedAt_${chatId}`] = Date.now();
     }
 
     const messagesRef = ref(getFirebaseDB(), `chat_messages/${chatId}`);
@@ -148,9 +175,10 @@ export default function PartnerChatScreen() {
         } else {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
-        // Обновляем lastSeen если приложение активно - предотвратит бейдж при выходе
-        if (appState.current === 'active' && (globalThis as any).updateChatLastSeen) {
-          (globalThis as any).updateChatLastSeen(chatId);
+        // Обновляем myLastSeen в Firebase для статуса прочтения партнёром в реальном времени
+        if (appState.current === 'active') {
+          const myLastSeenRef = ref(getFirebaseDB(), `users/${currentUserId}/chatLastSeen/${chatId}`);
+          set(myLastSeenRef, Date.now());
         }
       }
       
@@ -165,6 +193,8 @@ export default function PartnerChatScreen() {
     return () => {
       // Сбрасываем флаг при выходе
       (globalThis as any).isInPartnerChat = null;
+      const partnerId = currentUserId === doctorId ? technicianId : doctorId;
+      (globalThis as any).clearPartnerUnread?.(partnerId);
       off(messagesRef, 'value', unsubscribe);
     };
   }, [chatId, currentUserId, userScrolledUp]);
@@ -181,12 +211,81 @@ export default function PartnerChatScreen() {
     return () => subscription.remove();
   }, [chatId]);
 
+  // Загрузка аватарки партнёра
+  useEffect(() => {
+    if (!partnerId) return;
+
+    const loadPartnerAvatar = async () => {
+      try {
+        const profileRef = ref(getFirebaseDB(), `users/${partnerId}/profile`);
+        const profileSnap = await get(profileRef);
+        if (profileSnap.exists()) {
+          const profileData = profileSnap.val();
+          setPartnerAvatar({
+            avatarType: profileData.avatarType,
+            avatarPresetId: profileData.avatarPresetId,
+            avatarUrl: profileData.avatarUrl,
+          });
+        }
+      } catch (error) {
+        console.error('Error loading partner avatar:', error);
+      }
+    };
+
+    loadPartnerAvatar();
+  }, [partnerId]);
+
+  // Слушатель для partnerLastSeen
+  useEffect(() => {
+    if (!chatId || !partnerId) return;
+
+    const lastSeenRef = ref(getFirebaseDB(), `users/${partnerId}/chatLastSeen/${chatId}`);
+    const unsubscribe = onValue(lastSeenRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setPartnerLastSeen(snapshot.val());
+        // Принудительный ре-рендер для обновления звёздочек
+        setMessages(prev => [...prev]);
+      }
+    });
+
+    return () => off(lastSeenRef, 'value', unsubscribe);
+  }, [chatId, partnerId]);
+
   const scrollToBottom = (animated = true) => {
     if (!userScrolledUp) {
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated });
       }, 100);
     }
+  };
+
+  const deleteMessage = async (messageId: string) => {
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const messageRef = ref(getFirebaseDB(), `chat_messages/${chatId}/${messageId}`);
+      await remove(messageRef);
+    } catch (error) {
+      console.error('Error deleting message:', error);
+    }
+  };
+
+  const deleteAllChatMessages = async () => {
+    try {
+      const messagesRef = ref(getFirebaseDB(), `chat_messages/${chatId}`);
+      await remove(messagesRef);
+      setMessages([]);
+      setShowMenu(false);
+    } catch (error) {
+      console.error('Error deleting all messages:', error);
+    }
+  };
+
+  // Сокращённое имя партнёра с инициалами
+  const getShortName = () => {
+    if (!partnerName) return 'К';
+    const parts = (partnerName || '').split(' ').filter(w => w.length > 0);
+    const shortName = parts[0] + ' ' + parts[1]?.[0] + '.' + (parts[2] ? parts[2][0] + '.' : '');
+    return shortName;
   };
 
   const sendMessage = async () => {
@@ -234,14 +333,40 @@ export default function PartnerChatScreen() {
 
   const renderMessage = ({ item }: { item: ChatMessage }) => {
     const isMe = item.senderId === currentUserId;
+    
+    // Статус прочтения для своих сообщений: звёздочка всегда показывается
+    const chatOpenedAt = (globalThis as any)[`chatOpenedAt_${chatId}`] || 0;
+    const isRead = isMe && partnerLastSeen > 0 && item.timestamp < partnerLastSeen && partnerLastSeen > chatOpenedAt;
+    
     return (
       <View style={[styles.messageRow, isMe ? styles.myRow : styles.partnerRow]}>
-        <View style={[styles.bubble, isMe ? styles.myBubble : styles.partnerBubble]}>
+        <TouchableOpacity
+          onLongPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setSelectedMessage(item);
+            setShowMenu(true);
+          }}
+          delayLongPress={500}
+          activeOpacity={1}
+          style={{ flex: 1 }}
+        >
+          <View style={[styles.bubble, isMe ? styles.myBubble : styles.partnerBubble]}>
+          {!isMe && (
+            <Text style={styles.messageSenderName}>{getShortName()}</Text>
+          )}
           <Text style={[styles.messageText, isMe ? styles.myMessageText : styles.partnerMessageText]}>
             {item.text}
           </Text>
-          <Text style={styles.timeText}>{formatTime(item.timestamp)}</Text>
+          <View style={styles.timeRow}>
+            <Text style={styles.timeText}>{formatTime(item.timestamp)}</Text>
+            {isMe && (
+              <Text style={[styles.readStatus, isRead ? styles.readStatusRead : styles.readStatusSent]}>
+                {isRead ? '★' : '✦'}
+              </Text>
+            )}
+          </View>
         </View>
+        </TouchableOpacity>
       </View>
     );
   };
@@ -312,12 +437,32 @@ export default function PartnerChatScreen() {
             <Ionicons name="chevron-back" size={24} color="#f2ca50" />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{(partnerName || 'К')[0].toUpperCase()}</Text>
-            </View>
+            {(() => {
+              const getAvatarSource = () => {
+                if (partnerAvatar.avatarType === 'custom' && partnerAvatar.avatarUrl) {
+                  return { uri: partnerAvatar.avatarUrl };
+                }
+                if (partnerAvatar.avatarType === 'preset' && partnerAvatar.avatarPresetId) {
+                  return PRESET_AVATARS[partnerAvatar.avatarPresetId - 1] || PRESET_AVATARS[0];
+                }
+                return null;
+              };
+              const avatarSource = getAvatarSource();
+              const initial = (partnerName || 'К')[0].toUpperCase();
+              
+              return (
+                <View style={styles.avatar}>
+                  {avatarSource ? (
+                    <Image source={avatarSource} style={styles.avatarImage} />
+                  ) : (
+                    <Text style={styles.avatarText}>{initial}</Text>
+                  )}
+                </View>
+              );
+            })()}
             <View style={styles.headerTextContainer}>
               <Text style={styles.headerTitle} numberOfLines={1}>
-                {partnerName || 'Коллега'}
+                {getShortName() || 'Коллега'}
               </Text>
               <Text style={styles.headerSubtitle}>
                 {partnerRole === 'doctor' ? 'Врач' : partnerRole === 'technician' ? 'Техник' : 'Коллега'}
@@ -337,7 +482,7 @@ export default function PartnerChatScreen() {
             data={messages}
             renderItem={renderMessage}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={[styles.listContent, { paddingBottom: inputAreaHeight + 16 }]}
+            contentContainerStyle={[styles.listContent, { paddingBottom: inputAreaHeight + 16, paddingRight: 52 }]}
             automaticallyAdjustKeyboardInsets={true}
             keyboardDismissMode="on-drag"
             onContentSizeChange={() => scrollToBottom(true)}
@@ -346,8 +491,10 @@ export default function PartnerChatScreen() {
               const distanceFromBottom = contentSize.height - (contentOffset.y || 0) - layoutMeasurement.height;
               if (distanceFromBottom > 100) {
                 setUserScrolledUp(true);
+                setShowScrollButton(true);
               } else if (distanceFromBottom < 50) {
                 setUserScrolledUp(false);
+                setShowScrollButton(false);
               }
             }}
             scrollEventThrottle={16}
@@ -359,6 +506,88 @@ export default function PartnerChatScreen() {
               </View>
             )}
           />
+
+          {/* Scroll to bottom button */}
+          {showScrollButton && (
+            <TouchableOpacity
+              style={styles.scrollButton}
+              onPress={() => {
+                flatListRef.current?.scrollToEnd({ animated: true });
+                setShowScrollButton(false);
+                setUserScrolledUp(false);
+              }}
+            >
+              <Ionicons name="chevron-down" size={24} color="#031427" />
+            </TouchableOpacity>
+          )}
+
+          {/* Context Menu Modal */}
+          {showMenu && (
+            <View style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              justifyContent: 'flex-end',
+              paddingBottom: 100,
+            }}>
+              <TouchableOpacity 
+                style={{flex:1}}
+                onPress={() => setShowMenu(false)}
+              />
+              <View style={{
+                marginHorizontal: 20,
+                backgroundColor:'#0a1628', borderRadius:16, 
+                borderWidth:1, borderColor:'#f2ca50', overflow:'hidden'
+              }}>
+                <View style={{flexDirection:'row', justifyContent:'space-around', 
+                  padding:12, borderBottomWidth:1, borderBottomColor:'#f2ca5030'}}>
+                  {['👍','❤️','🔥','😂','😮'].map(emoji => (
+                    <TouchableOpacity key={emoji} onPress={() => {
+                      // addReaction(selectedMessage!.id, emoji);
+                      setShowMenu(false);
+                    }}>
+                      <Text style={{fontSize:28}}>{emoji}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <TouchableOpacity onPress={() => {
+                  Clipboard.setString(selectedMessage?.text || '');
+                  setShowMenu(false);
+                }} style={{padding:16, flexDirection:'row', gap:12}}>
+                  <Ionicons name="copy" size={20} color="#f2ca50"/>
+                  <Text style={{color:'#ffffff', fontSize:16}}>Копировать</Text>
+                </TouchableOpacity>
+                <View style={{height:1, backgroundColor:'#f2ca5030'}}/>
+                {selectedMessage?.senderId === currentUserId && (
+                  <TouchableOpacity onPress={() => {
+                    if(selectedMessage) deleteMessage(selectedMessage.id);
+                    setShowMenu(false);
+                  }} style={{padding:16, flexDirection:'row', gap:12}}>
+                    <Ionicons name="trash" size={20} color="#ff4444"/>
+                    <Text style={{color:'#ff4444', fontSize:16}}>Удалить</Text>
+                  </TouchableOpacity>
+                )}
+                <View style={{height:1, backgroundColor:'#f2ca5030'}}/>
+                <TouchableOpacity onPress={() => {
+                  setShowMenu(false);
+                  Alert.alert(
+                    'Удалить все сообщения',
+                    'Вы уверены? Это удалит всю историю чата.',
+                    [
+                      { text: 'Отмена', style: 'cancel' },
+                      { text: 'Удалить', style: 'destructive', onPress: deleteAllChatMessages },
+                    ]
+                  );
+                }} style={{padding:16, flexDirection:'row', gap:12}}>
+                  <Ionicons name="trash-bin" size={20} color="#ff4444"/>
+                  <Text style={{color:'#ff4444', fontSize:16}}>Удалить все в чате</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
           <View
             onLayout={(e) => setInputAreaHeight(e.nativeEvent.layout.height)}
@@ -433,6 +662,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   avatarText: {
     color: '#031427',
@@ -451,6 +686,71 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.6)',
     fontSize: 13,
     marginTop: 2,
+  },
+  messageAvatarContainer: {
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  messageAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  messageAvatarCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#f2ca50',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  messageAvatarText: {
+    color: '#031427',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  messageAvatarName: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 10,
+    marginTop: 2,
+  },
+  messageSenderName: {
+    color: '#f2ca50',
+    fontSize: 11,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 4,
+  },
+  readStatus: {
+    fontSize: 11,
+    marginLeft: 4,
+  },
+  readStatusRead: {
+    color: '#f2ca50',
+  },
+  readStatusSent: {
+    color: '#888',
+  },
+  scrollButton: {
+    position: 'absolute',
+    bottom: 130,
+    right: 8,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#f2ca50',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   center: {
     flex: 1,
@@ -509,7 +809,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   myBubble: {
-    backgroundColor: '#f2ca50',
+    backgroundColor: '#1a2a4a',
+    borderWidth: 1.5,
+    borderColor: '#f2ca50',
     borderBottomRightRadius: 4,
   },
   partnerBubble: {
@@ -523,7 +825,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   myMessageText: {
-    color: '#031427',
+    color: '#ffffff',
   },
   partnerMessageText: {
     color: '#ffffff',

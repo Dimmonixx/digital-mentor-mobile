@@ -737,13 +737,22 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleSelectPreset = (presetId: number) => {
+  const handleSelectPreset = async (presetId: number) => {
     setProfile(prev => ({
       ...prev,
       avatarType: 'preset',
       avatarPresetId: presetId,
       avatarUrl: '',
     }));
+
+    const userId = user?.uid || user?.id;
+    if (userId) {
+      const profileRef = dbRef(getFirebaseDB(), `users/${userId}/profile`);
+      const currentSnap = await get(profileRef);
+      const currentData = currentSnap.exists() ? currentSnap.val() : {};
+      await set(profileRef, { ...currentData, avatarType: 'preset', avatarPresetId: presetId, avatarUrl: '' });
+    }
+
     setAvatarModalVisible(false);
   };
 

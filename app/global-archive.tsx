@@ -20,10 +20,12 @@ import {
     arrayUnion,
     collection,
     doc,
+    getDocs,
     onSnapshot,
     query,
     updateDoc,
-    where
+    where,
+    writeBatch
 } from 'firebase/firestore';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -1111,6 +1113,24 @@ export default function GlobalArchiveScreen() {
     AsyncStorage.setItem(key, JSON.stringify(data)).catch(() => {});
   };
 
+  const markAllAsRead = async () => {
+    if (!authUid) return;
+    const q = query(collection(getFirebaseFirestore(), ARCHIVE_COLLECTION));
+    const snap = await getDocs(q);
+    console.log('=== MARK ALL READ ===', { authUid, docsCount: snap.docs.length });
+    const batch = writeBatch(getFirebaseFirestore());
+    snap.docs.forEach(d => {
+      const data = d.data();
+      const isSharedWithMe = Object.keys(data.sharedWith || {}).includes(authUid);
+      const isNotMine = data.userId !== authUid;
+      const isUnread = !(data.readBy || {})[authUid];
+      if (isSharedWithMe && isNotMine && isUnread) {
+        batch.update(d.ref, { [`readBy.${authUid}`]: true });
+      }
+    });
+    await batch.commit();
+  };
+
   const loadFromCache = async (): Promise<ArchiveItem[]> => {
     try {
       // Для режима 'mine' объединяем два источника:
@@ -1408,7 +1428,9 @@ export default function GlobalArchiveScreen() {
               <Ionicons name="arrow-back" size={24} color="#f2ca50" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Глобальный архив</Text>
-            <View style={{ width: 40 }} />
+            <TouchableOpacity onPress={markAllAsRead} style={styles.markReadBtn}>
+              <Text style={styles.markReadText}>Прочитано ✓</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Мои / Входящие */}
@@ -1619,6 +1641,17 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  markReadBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markReadText: {
+    color: '#f2ca50',
+    fontSize: 13,
+    fontWeight: '600',
   },
   filterRow: {
     flexDirection: 'row',
