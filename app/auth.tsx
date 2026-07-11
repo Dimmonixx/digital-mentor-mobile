@@ -144,7 +144,7 @@ export default function AuthScreen() {
         avatarPresetId: 1,
       };
       await AsyncStorage.setItem('user', JSON.stringify(userData));
-      router.replace('/(tabs)');
+      router.replace({ pathname: '/verify-email', params: { email: email.trim() } } as any);
     } catch (error: any) {
       console.log('Register error:', error.message);
       setError(error.message || 'Ошибка регистрации');

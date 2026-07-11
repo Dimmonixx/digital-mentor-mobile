@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
+    ActivityIndicator,
     Dimensions,
     Image,
     ImageBackground,
@@ -31,6 +32,7 @@ export default function CreateCaseScreen() {
   const [coverIndex, setCoverIndex] = useState(0);
   const [category, setCategory] = useState<'case' | 'sos' | 'trash'>('case');
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [overlay, setOverlay] = useState<{ title: string; message: string; icon?: string } | null>(null);
 
   const pickPhotos = async () => {
@@ -71,12 +73,16 @@ export default function CreateCaseScreen() {
   };
 
   const handlePublish = async () => {
+    if (isPublishing) return;
+    setIsPublishing(true);
     if (!description.trim()) {
+      setIsPublishing(false);
       setOverlay({ title: 'Ошибка', message: 'Пожалуйста, добавьте описание кейса', icon: 'alert-circle-outline' });
       return;
     }
 
     if (photos.length === 0) {
+      setIsPublishing(false);
       setOverlay({ title: 'Ошибка публикации', message: 'Пожалуйста, загрузите хотя бы одну фотографию клинического случая!', icon: 'alert-circle-outline' });
       return;
     }
@@ -84,6 +90,7 @@ export default function CreateCaseScreen() {
     const coverUri = photos[coverIndex] ?? photos[0];
     const imageUrl = await uploadBase64Photo(coverUri);
     if (!imageUrl) {
+      setIsPublishing(false);
       setOverlay({ title: 'Ошибка', message: 'Не удалось загрузить фото на сервер', icon: 'alert-circle-outline' });
       return;
     }
@@ -125,10 +132,12 @@ export default function CreateCaseScreen() {
         const errorMsg = typeof data.detail === 'string'
           ? data.detail
           : JSON.stringify(data.detail);
+        setIsPublishing(false);
         setOverlay({ title: 'Ошибка', message: errorMsg, icon: 'alert-circle-outline' });
         return;
       }
 
+      setIsPublishing(false);
       setOverlay({ title: 'Опубликовано', message: 'Кейс отправлен в Кейс-Клуб', icon: 'checkmark-circle-outline' });
       setTimeout(() => {
         setOverlay(null);
@@ -136,6 +145,7 @@ export default function CreateCaseScreen() {
       }, 1200);
     } catch (e) {
       console.error('[CreateCase] publish error:', e);
+      setIsPublishing(false);
       setOverlay({ title: 'Ошибка', message: 'Не удалось опубликовать кейс. Проверьте соединение.', icon: 'alert-circle-outline' });
     }
   };
@@ -287,10 +297,21 @@ export default function CreateCaseScreen() {
           </View>
 
           {/* Publish button */}
-          <TouchableOpacity activeOpacity={0.85} style={styles.publishButton} onPress={handlePublish}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={[styles.publishButton, isPublishing && { opacity: 0.7 }]}
+            onPress={handlePublish}
+            disabled={isPublishing}
+          >
             <View style={styles.publishContent}>
-              <Ionicons name="cloud-upload-outline" size={22} color="#1a1206" />
-              <Text style={styles.publishText}>Опубликовать кейс</Text>
+              {isPublishing ? (
+                <ActivityIndicator size="small" color="#1a1206" />
+              ) : (
+                <Ionicons name="cloud-upload-outline" size={22} color="#1a1206" />
+              )}
+              <Text style={styles.publishText}>
+                {isPublishing ? 'Публикуем...' : 'Опубликовать кейс'}
+              </Text>
             </View>
           </TouchableOpacity>
 

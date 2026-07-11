@@ -1,4 +1,5 @@
-﻿import { API_BASE_URL } from '@/constants/config';
+﻿import { DemoOverlay, DemoOverlayData } from '@/components/case-post-actions';
+import { API_BASE_URL } from '@/constants/config';
 import { getFirebaseDB } from '@/constants/firebase';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -7,20 +8,22 @@ import { router } from 'expo-router';
 import { get, onValue, ref, remove, set } from 'firebase/database';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    Alert,
+    ActivityIndicator,
     Dimensions,
     FlatList,
     Image,
     Modal,
     SafeAreaView,
+    ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
     View
 } from 'react-native';
+import ImageView from 'react-native-image-viewing';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const MEDIA_WIDTH = SCREEN_WIDTH - 32;
+const MEDIA_WIDTH = SCREEN_WIDTH - 60;
 const STORAGE_KEY = '@global_case_club_posts';
 
 const PRESET_AVATARS: any[] = [
@@ -46,7 +49,11 @@ function toArray<T>(val: any): T[] {
 
 function mapBackendCases(raw: any): any[] {
   if (!raw || typeof raw !== 'object') return [];
-  return Object.entries(raw).map(([id, c]: [string, any]) => ({
+  return Object.entries(raw).map(([id, c]: [string, any], index) => {
+    if (index === 0) {
+      console.log('=== MAP CASE ===', { id, commentsCount: c.commentsCount, commentsList: c.commentsList });
+    }
+    return {
     id,
     authorId: c.authorId || '',
     author: c.authorId ? 'Коллега' : 'Аноним',
@@ -61,6 +68,8 @@ function mapBackendCases(raw: any): any[] {
     rating: c.rating || 0,
     totalVotes: c.totalVotes || 0,
     createdAt: c.createdAt || 0,
+    aiReviewTotal: c.aiReviewTotal || 0,
+    aiReview: c.aiReview || '',
     likedBy: c.likedBy || {},
     dislikedBy: c.dislikedBy || {},
     commentsCount: c.commentsCount || (c.commentsList ? Object.keys(c.commentsList).length : 0),
@@ -76,7 +85,8 @@ function mapBackendCases(raw: any): any[] {
           correct: c.correctShade,
         }
       : undefined,
-  }));
+    };
+  });
 }
 
 function validUri(uri?: string): string | undefined {
@@ -93,6 +103,16 @@ function formatName(fullName: string): string {
   const mi = middle?.[0] ? middle[0].toUpperCase() + '.' : '';
   return `${last} ${fi}${mi}`.trim();
 }
+
+const cleanMarkdown = (text: string): string => {
+  return text
+    .replace(/#{1,6}\s/g, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/^---+$/gm, '───────────')
+    .replace(/^-\s/gm, '• ')
+    .trim();
+};
 
 /* ─── Avatar ─── */
 const Avatar = ({ post }: { post: any }) => {
@@ -125,6 +145,8 @@ const PostCard = ({
   onDeletePhoto,
   onLike,
   onDislike,
+  userEnergy,
+  setOverlayData,
 }: {
   post: any;
   currentEmail: string;
@@ -135,11 +157,33 @@ const PostCard = ({
   onDeletePhoto: (id: string) => void;
   onLike: (id: string) => void;
   onDislike: (id: string) => void;
+  userEnergy: number;
+  setOverlayData: (data: DemoOverlayData) => void;
 }) => {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showSenseiModal, setShowSenseiModal] = useState(false);
+  const [verdictText, setVerdictText] = useState(post.aiReview || '');
+  const [showVerdictModal, setShowVerdictModal] = useState(false);
   const [selectedEnergy, setSelectedEnergy] = useState(1);
   const [senseiLoading, setSenseiLoading] = useState(false);
+  const [imageViewerVisible, setImageViewerVisible] = useState(false);
+  const [imageViewerIndex, setImageViewerIndex] = useState(0);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(`sensei_generating_${post.id}`).then(val => {
+      if (val === 'true') setIsGenerating(true);
+    });
+  }, [post.id]);
+
+  useEffect(() => {
+    setVerdictText(post.aiReview || '');
+    if (post.aiReview) {
+      setIsGenerating(false);
+      AsyncStorage.removeItem(`sensei_generating_${post.id}`);
+    }
+  }, [post.aiReview]);
+  const senseiState = verdictText ? 'ready' : (isGenerating || (post.aiReviewTotal || 0) >= 5) ? 'processing' : 'pending';
   const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 60 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems.length > 0) setPhotoIndex(viewableItems[0].index ?? 0);
@@ -166,6 +210,12 @@ const PostCard = ({
 
   const handleSenseiVote = async () => {
     if (!currentUserId) return;
+    const willTriggerSensei = ((post.aiReviewTotal || 0) + selectedEnergy) >= 5;
+    if (willTriggerSensei) {
+      setShowSenseiModal(false);
+      setIsGenerating(true);
+      AsyncStorage.setItem(`sensei_generating_${post.id}`, 'true');
+    }
     setSenseiLoading(true);
     try {
       const response = await fetch(`${API_BASE_URL}/case-club/sensei-vote`, {
@@ -178,10 +228,42 @@ const PostCard = ({
         }),
       });
       if (response.ok) {
-        setShowSenseiModal(false);
+        if (!willTriggerSensei) {
+          setShowSenseiModal(false);
+        }
+        (globalThis as any).forceDiamondUpdate?.();
+      } else {
+        if (willTriggerSensei) {
+          setIsGenerating(false);
+          AsyncStorage.removeItem(`sensei_generating_${post.id}`);
+        }
+        let errorMessage = 'Не удалось внести энергию. Попробуйте ещё раз.';
+        if (response.status === 403) {
+          errorMessage = 'Недостаточно энергии для этого действия.';
+        }
+        setOverlayData({
+          title: 'Ошибка',
+          message: errorMessage,
+          icon: 'alert-circle-outline',
+          danger: true,
+          confirmText: 'Понятно',
+          onConfirm: () => setOverlayData(null),
+        });
       }
     } catch (e) {
       console.error('[PostCard] Ошибка голосования:', e);
+      if (willTriggerSensei) {
+        setIsGenerating(false);
+        AsyncStorage.removeItem(`sensei_generating_${post.id}`);
+      }
+      setOverlayData({
+        title: 'Ошибка',
+        message: 'Не удалось связаться с сервером. Проверьте интернет-соединение.',
+        icon: 'alert-circle-outline',
+        danger: true,
+        confirmText: 'Понятно',
+        onConfirm: () => setOverlayData(null),
+      });
     } finally {
       setSenseiLoading(false);
     }
@@ -255,7 +337,7 @@ const PostCard = ({
 
       {/* Photo carousel */}
       {photoUris.length > 0 && (
-        <View style={{ width: MEDIA_WIDTH, overflow: 'hidden' }}>
+        <View style={{ width: MEDIA_WIDTH, overflow: 'hidden', borderRadius: 14 }}>
           <FlatList
             data={photoUris}
             keyExtractor={(_, i) => String(i)}
@@ -264,9 +346,17 @@ const PostCard = ({
             showsHorizontalScrollIndicator={false}
             viewabilityConfig={viewabilityConfig}
             onViewableItemsChanged={onViewableItemsChanged}
-            renderItem={({ item }) => (
-              <TouchableOpacity activeOpacity={0.95} onPress={() => router.push({ pathname: '/case-details', params: { id: post.id } } as any)} style={{ width: MEDIA_WIDTH }}>
-                <Image source={{ uri: item }} style={[styles.photo, { width: MEDIA_WIDTH }]} resizeMode="cover" />
+            style={{ borderRadius: 14, overflow: 'hidden' }}
+            renderItem={({ item, index }) => (
+              <TouchableOpacity 
+                activeOpacity={0.95} 
+                onPress={() => {
+                  setImageViewerIndex(index);
+                  setImageViewerVisible(true);
+                }} 
+                style={{ width: MEDIA_WIDTH, borderRadius: 14, overflow: 'hidden' }}
+              >
+                <Image source={{ uri: item }} style={[styles.photo, { width: MEDIA_WIDTH, borderRadius: 14 }]} resizeMode="cover" />
               </TouchableOpacity>
             )}
           />
@@ -282,21 +372,26 @@ const PostCard = ({
 
       {/* Description */}
       {!!post.description && (
-        <>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.push({ pathname: '/case-details', params: { id: post.id } } as any)}
+        >
           <Text style={styles.description} numberOfLines={3}>{post.description}</Text>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => router.push({ pathname: '/case-details', params: { id: post.id } } as any)}
-          >
-            <Text style={styles.readMoreText}>Читать далее →</Text>
-          </TouchableOpacity>
-        </>
+          <Text style={styles.readMoreText}>Читать далее →</Text>
+        </TouchableOpacity>
       )}
 
       {/* Post date */}
       <Text style={styles.postDate}>
         {new Date(post.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }).replace('.', '')}, {new Date(post.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
       </Text>
+
+      {senseiState === 'processing' && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingVertical: 8 }}>
+          <ActivityIndicator size="small" color="rgba(255,255,255,0.6)" />
+          <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>⏳ Сенсей составляет вердикт...</Text>
+        </View>
+      )}
 
       {/* Actions row */}
       <View style={styles.actionsRow} onStartShouldSetResponder={() => true}>
@@ -332,21 +427,54 @@ const PostCard = ({
           <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.45)" />
           <Text style={styles.actionCount}>{post.commentsCount || 0}</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.actionBtn} 
+        <TouchableOpacity
+          style={styles.actionBtn}
           activeOpacity={0.7}
-          onPress={() => setShowSenseiModal(true)}
+          disabled={senseiState === 'processing'}
+          onPress={() => {
+            if (senseiState === 'ready') {
+              setShowVerdictModal(true);
+            } else if (senseiState === 'pending') {
+              setShowSenseiModal(true);
+            }
+            // processing — ничего не делаем, кнопки энергии уже не нужны
+          }}
         >
-          <Ionicons name="skull-outline" size={20} color="#ff6b6b" />
-          <Text style={[styles.actionCount, { color: '#ff6b6b' }]}>{post.aiReviewTotal || 0}/5</Text>
+          {senseiState === 'processing' ? (
+            <ActivityIndicator size="small" color="#ff6b6b" />
+          ) : (
+            <>
+              <Ionicons name="skull-outline" size={20} color="#ff6b6b" />
+              <Text style={[styles.actionCount, { color: '#ff6b6b' }]}>{post.aiReviewTotal || 0}/5</Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
+
+      {/* Verdict Modal */}
+      <Modal visible={showVerdictModal} transparent animationType="fade" onRequestClose={() => setShowVerdictModal(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', paddingTop: 60, paddingBottom: 40, paddingHorizontal: 20 }}>
+          <View style={{ flex: 1, width: '100%', backgroundColor: '#1a1f2e', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: 'rgba(255,107,107,0.3)' }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: '#ff6b6b', textAlign: 'center', marginBottom: 12 }}>⚔️ Вердикт Сенсея</Text>
+            <ScrollView style={{ marginBottom: 16 }} contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+              <Text style={{ fontSize: 14, lineHeight: 22, color: 'rgba(255,255,255,0.85)' }}>{cleanMarkdown(verdictText)}</Text>
+            </ScrollView>
+            <TouchableOpacity
+              style={{ backgroundColor: '#ff6b6b', borderRadius: 10, paddingVertical: 12, alignItems: 'center' }}
+              onPress={() => setShowVerdictModal(false)}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '700', color: '#ffffff' }}>Закрыть</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Sensei Modal */}
       <Modal visible={showSenseiModal} transparent animationType="fade" onRequestClose={() => setShowSenseiModal(false)}>
         <View style={styles.senseiModalOverlay}>
           <View style={styles.senseiModal}>
             <Text style={styles.senseiModalTitle}>💀 Вызвать Сенсея</Text>
+            <Text style={styles.senseiModalDesc}>{`AI-Сенсей разберёт эту работу жёстко и профессионально.\n\nНакоплено: ${post.aiReviewTotal || 0}/5⚡\n\nВнесите энергию — когда наберётся 5⚡, вердикт появится для всех навсегда.`}</Text>
             
             <View style={styles.senseiProgressBar}>
               <View style={[styles.senseiProgressFill, { width: `${((post.aiReviewTotal || 0) / 5) * 100}%` }]} />
@@ -354,44 +482,74 @@ const PostCard = ({
             <Text style={styles.senseiProgressText}>{post.aiReviewTotal || 0}/5 энергии накоплено</Text>
             
             <View style={styles.senseiEnergyButtons}>
-              {[1, 2, 3, 5].map((energy) => (
-                <TouchableOpacity
-                  key={energy}
-                  style={[
-                    styles.senseiEnergyButton,
-                    selectedEnergy === energy && styles.senseiEnergyButtonSelected
-                  ]}
-                  onPress={() => setSelectedEnergy(energy)}
-                >
-                  <Text style={[
-                    styles.senseiEnergyButtonText,
-                    selectedEnergy === energy && styles.senseiEnergyButtonTextSelected
-                  ]}>
-                    {energy}⚡
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {[1, 2, 3, 4, 5].map((energy) => {
+                const remainingToThreshold = 5 - (post.aiReviewTotal || 0);
+                const maxAllowed = Math.min(remainingToThreshold, userEnergy);
+                const disabled = energy > maxAllowed;
+                return (
+                  <TouchableOpacity
+                    key={energy}
+                    disabled={disabled}
+                    style={[
+                      styles.senseiEnergyButton,
+                      selectedEnergy === energy && styles.senseiEnergyButtonSelected,
+                      disabled && { opacity: 0.35 }
+                    ]}
+                    onPress={() => setSelectedEnergy(energy)}
+                  >
+                    <Text style={[
+                      styles.senseiEnergyButtonText,
+                      selectedEnergy === energy && styles.senseiEnergyButtonTextSelected
+                    ]}>
+                      {energy}⚡
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
             
             <TouchableOpacity 
-              style={styles.senseiSubmitButton} 
+              style={[styles.senseiSubmitButton, userEnergy <= 0 && { opacity: 0.5 }]} 
               onPress={handleSenseiVote}
-              disabled={senseiLoading}
+              disabled={senseiLoading || userEnergy <= 0}
             >
               <Text style={styles.senseiSubmitButtonText}>
-                {senseiLoading ? 'Вносим...' : 'Внести'}
+                {senseiLoading ? 'Вносим...' : userEnergy <= 0 ? 'Нет энергии' : 'Внести'}
               </Text>
             </TouchableOpacity>
+
+            {userEnergy <= 0 && (
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => {
+                  setShowSenseiModal(false);
+                  router.push('/(tabs)/balance' as any);
+                }}
+                style={{ marginTop: 10, alignItems: 'center' }}
+              >
+                <Text style={{ color: '#f2ca50', fontSize: 13, textDecorationLine: 'underline' }}>
+                  Пополнить энергию в Маркете →
+                </Text>
+              </TouchableOpacity>
+            )}
             
             <TouchableOpacity 
               style={styles.senseiCancelButton} 
               onPress={() => setShowSenseiModal(false)}
             >
-              <Text style={styles.senseiCancelButtonText}>Отмена</Text>
+              <Text style={styles.senseiCancelButtonText}>Выйти</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      {/* Image viewer */}
+      <ImageView
+        images={photoUris.map(uri => ({ uri }))}
+        imageIndex={imageViewerIndex}
+        visible={imageViewerVisible}
+        onRequestClose={() => setImageViewerVisible(false)}
+      />
     </TouchableOpacity>
   );
 };
@@ -402,6 +560,7 @@ export default function CaseClubScreen() {
   const [currentEmail, setCurrentEmail] = useState('');
   const [currentUserId, setCurrentUserId] = useState('');
   const [menuPostId, setMenuPostId] = useState<string | null>(null);
+  const [overlayData, setOverlayData] = useState<DemoOverlayData>(null);
   const unsubRef = useRef<(() => void) | null>(null);
 
   useFocusEffect(
@@ -420,7 +579,7 @@ export default function CaseClubScreen() {
     const postsRef = ref(getFirebaseDB(), 'case_club');
     const unsub = onValue(postsRef, async (snapshot) => {
       const raw = snapshot.exists() ? snapshot.val() : null;
-      const arr = mapBackendCases(raw).filter((p: any) => p?.id && (p?.description || p?.fullDescription));
+      const arr = mapBackendCases(raw).filter((p: any) => p?.id && p.id !== 'undefined' && (p?.description || p?.fullDescription));
       const withProfiles = await Promise.all(
         arr.map(async (post: any) => {
           let updated = { ...post };
@@ -442,7 +601,7 @@ export default function CaseClubScreen() {
             }
           }
           try {
-            const commentsSnap = await get(ref(getFirebaseDB(), `case_club_posts/${post.id}/commentsList`));
+            const commentsSnap = await get(ref(getFirebaseDB(), `case_club/${post.id}/commentsList`));
             if (commentsSnap.exists()) {
               const commentsList = commentsSnap.val();
               updated.commentsCount = Object.keys(commentsList).length;
@@ -464,19 +623,22 @@ export default function CaseClubScreen() {
   }, []);
 
   const deletePost = useCallback(async (id: string) => {
-    Alert.alert('Удалить пост?', 'Это действие нельзя отменить.', [
-      { text: 'Отмена', style: 'cancel' },
-      {
-        text: 'Удалить', style: 'destructive', onPress: async () => {
-          try {
-            await remove(ref(getFirebaseDB(), `case_club/${id}`));
-          } catch (e) {
-            console.warn('[CaseClub] Ошибка удаления:', e);
-            setPosts(prev => prev.filter(p => p.id !== id));
-          }
+    setOverlayData({
+      title: 'Удалить пост?',
+      message: 'Это действие нельзя отменить. Пост будет удалён навсегда.',
+      icon: 'trash-outline',
+      danger: true,
+      confirmText: 'Удалить',
+      onConfirm: async () => {
+        setOverlayData(null);
+        try {
+          await remove(ref(getFirebaseDB(), `case_club/${id}`));
+        } catch (e) {
+          console.warn('[CaseClub] Ошибка удаления:', e);
+          setPosts(prev => prev.filter(p => p.id !== id));
         }
       },
-    ]);
+    });
   }, []);
 
   const deletePhoto = useCallback(async (postId: string) => {
@@ -523,6 +685,8 @@ export default function CaseClubScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <DemoOverlay data={overlayData} onClose={() => setOverlayData(null)} />
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
@@ -559,6 +723,8 @@ export default function CaseClubScreen() {
             onDeletePhoto={deletePhoto}
             onLike={handleLike}
             onDislike={handleDislike}
+            userEnergy={(globalThis as any).getAiDailyLimit?.() ?? 15}
+            setOverlayData={setOverlayData}
           />
         )}
       />
@@ -587,15 +753,20 @@ const styles = StyleSheet.create({
 
   /* Card */
   card: {
-    backgroundColor: 'rgba(18,24,38,0.88)',
+    backgroundColor: 'rgba(18,24,38,0.92)',
     borderRadius: 20,
     paddingTop: 14,
     paddingHorizontal: 14,
     paddingBottom: 4,
     marginBottom: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    overflow: 'visible',
+    borderColor: 'rgba(242,202,80,0.25)',
+    overflow: 'hidden',
+    shadowColor: '#f2ca50',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
 
@@ -672,8 +843,10 @@ const styles = StyleSheet.create({
     height: SCREEN_WIDTH * 0.65,
     borderRadius: 14,
     backgroundColor: '#0d1120',
-    marginBottom: 12,
+    marginBottom: 0,
     alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.15)',
   },
   dotsRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: -6, marginBottom: 12 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#555' },
@@ -718,9 +891,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.07)',
+    borderTopColor: 'rgba(242,202,80,0.15)',
     paddingVertical: 10,
     paddingHorizontal: 4,
+    backgroundColor: 'rgba(242,202,80,0.03)',
   },
   actionsLeft: { flexDirection: 'row', gap: 20 },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -748,6 +922,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
     textAlign: 'center',
+    marginBottom: 8,
+  },
+  senseiModalDesc: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.6)',
+    textAlign: 'center',
+    lineHeight: 18,
     marginBottom: 16,
   },
   senseiProgressBar: {
@@ -770,7 +951,7 @@ const styles = StyleSheet.create({
   },
   senseiEnergyButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 6,
     marginBottom: 16,
   },
   senseiEnergyButton: {
@@ -778,7 +959,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 8,
-    width: 60,
+    flex: 1,
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',

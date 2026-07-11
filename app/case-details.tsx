@@ -1,5 +1,5 @@
 import BottomTabBar from '@/components/BottomTabBar';
-import { PostActionsSheet } from '@/components/case-post-actions';
+import { DemoOverlay, DemoOverlayData, PostActionsSheet } from '@/components/case-post-actions';
 import GlobalHeader from '@/components/global-header';
 import { API_BASE_URL } from '@/constants/config';
 import { getFirebaseDB } from '@/constants/firebase';
@@ -8,17 +8,19 @@ import {
     CaseComment,
     CaseMedia,
     ClinicalCase,
-    deleteCaseById,
     isOwnCase
 } from '@/data/cases';
 import { getUserIdentity } from '@/utils/getUserIdentity';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
-import { get, ref, set } from 'firebase/database';
+import { get, off, onValue, ref, remove, set } from 'firebase/database';
+import { TrendingUpDown } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+    ActivityIndicator,
     Alert,
+    Clipboard,
     Dimensions,
     FlatList,
     Image,
@@ -268,6 +270,16 @@ const RiddleBlock = ({
   );
 };
 
+const cleanMarkdown = (text: string): string => {
+  return text
+    .replace(/#{1,6}\s/g, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/^---+$/gm, '───────────')
+    .replace(/^-\s/gm, '• ')
+    .trim();
+};
+
 /* ---------------- AI review (harsh critic) ---------------- */
 const AiReviewBlock = ({ 
   caseId, 
@@ -286,30 +298,53 @@ const AiReviewBlock = ({
   showVoteModal: boolean;
   setShowVoteModal: (show: boolean) => void;
 }) => {
+  console.log('=== AIBLOCK RENDER ===', { caseId, currentUserId });
   const [total, setTotal] = useState(initialTotal);
   const [aiReview, setAiReview] = useState(initialReview);
   const [showVerdictModal, setShowVerdictModal] = useState(false);
   const [selectedEnergy, setSelectedEnergy] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  console.log('=== SENSEI STATE CHECK ===', { aiReview: !!aiReview, isGenerating, total, senseiState: aiReview ? 'ready' : (isGenerating || total >= 5) ? 'processing' : 'pending' });
+  const senseiState = aiReview ? 'ready' : (isGenerating || total >= 5) ? 'processing' : 'pending';
+  console.log('=== SENSEI STATE ===', { total, aiReview: aiReview?.slice(0, 50), senseiState });
 
   useEffect(() => {
-    const loadStatus = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/case-club/sensei-status/${caseId}`);
-        if (response.ok) {
-          const data = await response.json();
-          setTotal(data.total || 0);
-          setAiReview(data.aiReview || '');
-        }
-      } catch (e) {
-        console.error('[AiReviewBlock] Ошибка загрузки статуса:', e);
+    if (!caseId) return;
+    AsyncStorage.getItem(`sensei_generating_${caseId}`).then(val => {
+      if (val === 'true') setIsGenerating(true);
+    });
+    const totalRef = ref(getFirebaseDB(), `case_club/${caseId}/aiReviewTotal`);
+    const reviewRef = ref(getFirebaseDB(), `case_club/${caseId}/aiReview`);
+
+    const unsubTotal = onValue(totalRef, (snap) => {
+      setTotal(snap.val() || 0);
+    });
+
+    const unsubReview = onValue(reviewRef, (snap) => {
+      const review = snap.val() || '';
+      console.log('=== REVIEW UPDATED ===', review);
+      setAiReview(review);
+      if (review) {
+        AsyncStorage.removeItem(`sensei_generating_${caseId}`);
       }
+    });
+
+    return () => {
+      off(totalRef);
+      off(reviewRef);
     };
-    loadStatus();
   }, [caseId]);
 
   const handleVote = async () => {
+    console.log('=== HANDLE VOTE ===', { currentUserId, selectedEnergy, caseId });
     if (!currentUserId) return;
+    const willTriggerSensei = (total + selectedEnergy) >= 5;
+    if (willTriggerSensei) {
+      setShowVoteModal(false);
+      setIsGenerating(true);
+      AsyncStorage.setItem(`sensei_generating_${caseId}`, 'true');
+    }
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE_URL}/case-club/sensei-vote`, {
@@ -324,6 +359,9 @@ const AiReviewBlock = ({
       if (response.ok) {
         const data = await response.json();
         setTotal(data.total || 0);
+        setIsGenerating(false);
+        (globalThis as any).forceDiamondUpdate?.();
+        console.log('=== SENSEI VOTE RESULT ===', data);
         if (data.status === 'ready' && data.aiReview) {
           setAiReview(data.aiReview);
           setShowVoteModal(false);
@@ -344,23 +382,33 @@ const AiReviewBlock = ({
         <Text style={styles.sectionTitle}>AI-разбор работы</Text>
       </View>
       
-      {aiReview ? (
-        <TouchableOpacity 
-          activeOpacity={0.85} 
-          style={styles.verdictReadyButton} 
+      {senseiState === 'ready' && (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={styles.verdictReadyButton}
           onPress={() => setShowVerdictModal(true)}
         >
           <Text style={styles.verdictReadyText}>⚔️ Вердикт Сенсея готов</Text>
         </TouchableOpacity>
-      ) : (
+      )}
+
+      {senseiState === 'processing' && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 }}>
+          <ActivityIndicator size="small" color="rgba(255,255,255,0.6)" />
+          <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>⏳ Сенсей составляет вердикт...</Text>
+        </View>
+      )}
+
+      {senseiState === 'pending' && (
         <View>
           <View style={styles.progressBar}>
             <View style={[styles.progressFill, { width: `${(total / 5) * 100}%` }]} />
           </View>
-          <TouchableOpacity 
-            activeOpacity={0.85} 
-            style={styles.callSenseiButton} 
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={styles.callSenseiButton}
             onPress={() => setShowVoteModal(true)}
+            disabled={senseiState !== 'pending'}
           >
             <Text style={styles.callSenseiText}>Вызвать Сенсея {total}/5⚡</Text>
           </TouchableOpacity>
@@ -373,7 +421,7 @@ const AiReviewBlock = ({
           <View style={styles.voteModal}>
             <Text style={styles.voteModalTitle}>Вызвать Сенсея</Text>
             <Text style={styles.voteModalText}>
-              Внесите энергию для вызова AI-Сенсея. Когда накопится 5⚡, он даст вердикт по работе.
+              💀 AI-Сенсей — строгий эксперт с 30-летним опытом. Он разберёт работу жёстко, честно и профессионально — без лести и снисхождения.{"\n\n"}Когда сообщество накопит 5⚡ — вердикт появится для всех навсегда.
             </Text>
             
             <View style={styles.progressBar}>
@@ -414,7 +462,7 @@ const AiReviewBlock = ({
               style={styles.cancelButton} 
               onPress={() => setShowVoteModal(false)}
             >
-              <Text style={styles.cancelButtonText}>Отмена</Text>
+              <Text style={styles.cancelButtonText}>Выход</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -422,10 +470,12 @@ const AiReviewBlock = ({
 
       {/* Модал вердикта */}
       <Modal visible={showVerdictModal} transparent animationType="fade" onRequestClose={() => setShowVerdictModal(false)}>
-        <View style={styles.verdictModalOverlay}>
-          <View style={styles.verdictModal}>
-            <Text style={styles.verdictModalTitle}>⚔️ Вердикт Сенсея</Text>
-            <Text style={styles.verdictModalText}>{aiReview}</Text>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', paddingTop: 60, paddingBottom: 40, paddingHorizontal: 20 }}>
+          <View style={{ flex: 1, width: '100%', backgroundColor: '#1a1f2e', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: 'rgba(255,107,107,0.3)' }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: '#ff6b6b', textAlign: 'center', marginBottom: 12 }}>⚔️ Вердикт Сенсея</Text>
+            <ScrollView style={{ marginBottom: 16 }} contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+              <Text style={styles.verdictModalText}>{cleanMarkdown(aiReview)}</Text>
+            </ScrollView>
             <TouchableOpacity 
               style={styles.closeVerdictButton} 
               onPress={() => setShowVerdictModal(false)}
@@ -450,7 +500,7 @@ const CommentsSection = ({ comments }: { comments: CaseComment[] }) => (
       <View key={c.id} style={styles.commentRow}>
         <AuthorAvatar source={c.avatar ? { uri: c.avatar } : null} size={30} />
         <View style={styles.commentBubble}>
-          <Text style={styles.commentAuthor}>{c.author}</Text>
+          <Text style={styles.commentAuthor}>{formatShortName(c.author)}</Text>
           <Text style={styles.commentText}>{c.text}</Text>
         </View>
       </View>
@@ -518,6 +568,7 @@ const FullscreenViewer = ({
 export default function CaseDetailsScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const commentsScrollRef = useRef<ScrollView>(null);
   const [item, setItem] = useState<ClinicalCase | null>(null);
   const [identity, setIdentity] = useState<Identity>(undefined);
   const [viewer, setViewer] = useState<{ media: CaseMedia[]; index: number } | null>(null);
@@ -528,12 +579,20 @@ export default function CaseDetailsScreen() {
   const [editedDescription, setEditedDescription] = useState('');
   const [commentText, setCommentText] = useState('');
   const [comments, setComments] = useState<CaseComment[]>([]);
+  const [commentAuthorAvatars, setCommentAuthorAvatars] = useState<Record<string, any>>({});
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [currentEmail, setCurrentEmail] = useState<string>('');
   const [currentAuthorName, setCurrentAuthorName] = useState<string>('');
   const [currentFullName, setCurrentFullName] = useState<string>('');
+  const [currentUserFullName, setCurrentUserFullName] = useState<string>('');
   const [authorProfileName, setAuthorProfileName] = useState<string>('');
   const [showVoteModal, setShowVoteModal] = useState(false);
+  const [selectedComment, setSelectedComment] = useState<any>(null);
+  const [showCommentMenu, setShowCommentMenu] = useState(false);
+  const [isEditingComment, setIsEditingComment] = useState(false);
+  const [overlayData, setOverlayData] = useState<DemoOverlayData>(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const refreshDiamonds = () => setDiamonds((globalThis as any).getDiamondBalance?.() ?? 0);
 
@@ -546,7 +605,7 @@ export default function CaseDetailsScreen() {
         setIdentity((globalThis as any).getCaseClubIdentity?.());
       }
     });
-    AsyncStorage.getItem('user').then((raw) => {
+    AsyncStorage.getItem('user').then(async (raw) => {
       if (raw) {
         const u = JSON.parse(raw);
         if (u.id) setCurrentUserId(u.id);
@@ -554,6 +613,13 @@ export default function CaseDetailsScreen() {
         if (u.name) {
           setCurrentFullName(u.name);
           setCurrentAuthorName((prev) => prev || u.name);
+        }
+        // Загружаем полное имя из профиля Firebase
+        if (u.id) {
+          const profileSnap = await get(ref(getFirebaseDB(), `users/${u.id}/profile`));
+          if (profileSnap.exists()) {
+            setCurrentUserFullName(profileSnap.val().name || '');
+          }
         }
       }
     }).catch(() => {});
@@ -589,6 +655,7 @@ export default function CaseDetailsScreen() {
           setLocalCase({ ...found });
           setEditedDescription(found.fullDescription);
           setComments(found.commentsList ?? []);
+          console.log('=== COMMENTS LOADED ===', { id, commentsList: found?.commentsList });
           
           // Загружаем профиль автора для актуального имени
           if ((found as any).authorId) {
@@ -610,6 +677,52 @@ export default function CaseDetailsScreen() {
       }
     };
     loadCase();
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+
+    const commentsRef = ref(getFirebaseDB(), `case_club/${id}/commentsList`);
+
+    const unsub = onValue(commentsRef, async (snapshot) => {
+      if (!snapshot.exists()) {
+        setComments([]);
+        setCommentAuthorAvatars({});
+        return;
+      }
+
+      const commentsData = snapshot.val();
+      const commentsList = Array.isArray(commentsData) ? commentsData : Object.values(commentsData);
+      setComments(commentsList);
+
+      const uniqueAuthorIds = [...new Set(
+        commentsList
+          .map((c: any) => c.authorId)
+          .filter((authorId: any) => !!authorId)
+      )] as string[];
+
+      const avatarEntries = await Promise.all(
+        uniqueAuthorIds.map(async (authorId) => {
+          try {
+            const profileSnap = await get(ref(getFirebaseDB(), `users/${authorId}/profile`));
+            if (profileSnap.exists()) {
+              return [authorId, profileSnap.val()] as [string, any];
+            }
+          } catch (e) {
+            console.error('[CaseDetails] Ошибка загрузки аватарки автора комментария:', e);
+          }
+          return [authorId, null] as [string, any];
+        })
+      );
+
+      const avatarsMap: Record<string, any> = {};
+      avatarEntries.forEach(([authorId, profile]) => {
+        if (profile) avatarsMap[authorId] = profile;
+      });
+      setCommentAuthorAvatars(avatarsMap);
+    });
+
+    return () => off(commentsRef);
   }, [id]);
 
   if (!item) {
@@ -639,6 +752,18 @@ export default function CaseDetailsScreen() {
     const firstI = first ? first[0].toUpperCase() + '.' : '';
     const middleI = middle ? middle[0].toUpperCase() + '.' : '';
     return `${last} ${firstI}${middleI}`;
+  };
+
+  const formatCommentTime = (ts?: number) => {
+    if (!ts) return '';
+    const d = new Date(ts);
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    if (isToday) {
+      return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    }
+    return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }) + ' ' +
+      d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   };
 
   const resolvedRole = isOwn && identity?.role ? identity.role : ((item as any).role ?? '');
@@ -681,32 +806,62 @@ export default function CaseDetailsScreen() {
   };
 
   const handleAddComment = async () => {
+    console.log('=== ADD COMMENT ===', { itemId: item?.id, id });
     const text = commentText.trim();
     if (!text) return;
-    const authorName = identity?.name ?? 'Анонимный';
+    const authorName = currentUserFullName || identity?.name || 'Анонимный';
+    console.log('=== AUTHOR NAME ===', { currentUserFullName, identityName: identity?.name, authorName });
     const newComment: CaseComment = {
       id: Date.now().toString(),
       author: authorName,
+      authorId: currentUserId,
       avatar: '',
       text,
-    };
+      createdAt: Date.now(),
+    } as CaseComment;
     const updated = [newComment, ...comments];
     setComments(updated);
     setCommentText('');
+    setTimeout(() => commentsScrollRef.current?.scrollToEnd({ animated: true }), 100);
     try {
       // Обновляем в Firebase
-      await set(ref(getFirebaseDB(), `case_club_posts/${item.id}/commentsList`), updated);
-      // Обновляем локальный кэш
-      const raw = await AsyncStorage.getItem('@global_case_club_posts');
-      const posts: ClinicalCase[] = raw ? JSON.parse(raw) : [];
-      const idx = posts.findIndex((p) => p.id === item.id);
-      if (idx !== -1) {
-        posts[idx].commentsList = updated;
-        await AsyncStorage.setItem('@global_case_club_posts', JSON.stringify(posts));
-      }
+      await set(ref(getFirebaseDB(), `case_club/${id}/commentsList`), updated);
+      console.log('=== COMMENT SAVED TO FIREBASE ===', { id, updated });
+      await set(ref(getFirebaseDB(), `case_club/${id}/commentsCount`), updated.length);
     } catch (e) {
       console.error('[CaseDetails] Ошибка сохранения комментария:', e);
     }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    const updated = comments.filter((c) => c.id !== commentId);
+    setComments(updated);
+    setShowCommentMenu(false);
+    setSelectedComment(null);
+    try {
+      await set(ref(getFirebaseDB(), `case_club/${id}/commentsList`), updated);
+      await set(ref(getFirebaseDB(), `case_club/${id}/commentsCount`), updated.length);
+    } catch (e) {
+      console.error('[CaseDetails] Ошибка удаления комментария:', e);
+    }
+  };
+
+  const handleEditComment = async (commentId: string, newText: string) => {
+    const updated = comments.map((c) => c.id === commentId ? { ...c, text: newText } : c);
+    setComments(updated);
+    setShowCommentMenu(false);
+    setSelectedComment(null);
+    try {
+      await set(ref(getFirebaseDB(), `case_club/${id}/commentsList`), updated);
+    } catch (e) {
+      console.error('[CaseDetails] Ошибка редактирования комментария:', e);
+    }
+  };
+
+  const handleCopyComment = (text: string) => {
+    Clipboard.setString(text);
+    setShowCommentMenu(false);
+    setSelectedComment(null);
   };
 
   const handleDeletePhoto = () => {
@@ -724,8 +879,22 @@ export default function CaseDetailsScreen() {
 
   const handleDeletePost = () => {
     setMenuVisible(false);
-    deleteCaseById(item.id);
-    router.back();
+    setOverlayData({
+      title: 'Удалить кейс?',
+      message: 'Это действие нельзя отменить. Кейс будет удалён навсегда.',
+      icon: 'trash-outline',
+      danger: true,
+      confirmText: 'Удалить',
+      onConfirm: async () => {
+        setOverlayData(null);
+        try {
+          await remove(ref(getFirebaseDB(), `case_club/${id}`));
+        } catch (e) {
+          console.error('[CaseDetails] Ошибка удаления кейса:', e);
+        }
+        router.back();
+      },
+    });
   };
 
   return (
@@ -737,6 +906,7 @@ export default function CaseDetailsScreen() {
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <GlobalHeader 
           diamonds={diamonds}
+          aiDailyLimit={(globalThis as any).getAiDailyLimit?.() ?? 15}
           newOrdersCount={(globalThis as any).getNewOrdersCount?.() ?? 0}
           onBurgerPress={() => (globalThis as any).openDrawer?.()}
         />
@@ -748,7 +918,7 @@ export default function CaseDetailsScreen() {
         <Text style={styles.navTitle}>Просмотр кейса</Text>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView ref={commentsScrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Author */}
         <View style={styles.authorBlock}>
           <AuthorAvatar source={avatarSource} size={62} />
@@ -830,6 +1000,50 @@ export default function CaseDetailsScreen() {
         {/* Riddle */}
         {item.riddle && <RiddleBlock caseId={id} riddle={item.riddle} onReward={refreshDiamonds} />}
 
+        {/* Comments list */}
+        {comments.length > 0 && (
+          <View style={styles.commentsList}>
+            {comments.map((c) => (
+              <TouchableOpacity
+                key={c.id}
+                style={styles.commentItem}
+                activeOpacity={0.85}
+                onLongPress={() => { setSelectedComment(c); setShowCommentMenu(true); }}
+              >
+                <View style={styles.commentAvatar}>
+                  {(() => {
+                    const authorProfile = (c as any).authorId ? commentAuthorAvatars[(c as any).authorId] : null;
+                    let avatarSource: any = null;
+                    if (authorProfile?.avatarType === 'custom' && authorProfile?.avatarUrl) {
+                      avatarSource = { uri: authorProfile.avatarUrl };
+                    } else if (authorProfile?.avatarType === 'preset' && authorProfile?.avatarPresetId) {
+                      avatarSource = PRESET_AVATARS[(authorProfile.avatarPresetId - 1) % PRESET_AVATARS.length];
+                    } else if (identity?.avatarSource && (c.author === identity?.name || c.author === currentUserFullName)) {
+                      avatarSource = identity.avatarSource;
+                    }
+                    return avatarSource ? (
+                      <Image source={avatarSource} style={styles.commentAvatarImg} />
+                    ) : (
+                      <Ionicons name="person" size={16} color="rgba(242,202,80,0.7)" />
+                    );
+                  })()}
+                </View>
+                <View style={styles.commentBody}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={styles.commentAuthorText}>{formatShortName(c.author)}</Text>
+                    {(c as any).createdAt ? (
+                      <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginLeft: 8 }}>
+                        {formatCommentTime((c as any).createdAt)}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Text style={styles.commentContentText}>{c.text}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
         {/* Comment input — inside scroll */}
         <View style={styles.commentInputRow}>
           <TextInput
@@ -847,30 +1061,9 @@ export default function CaseDetailsScreen() {
             activeOpacity={0.75}
             onPress={handleAddComment}
           >
-            <Ionicons name="send" size={18} color="#0b0e14" />
+            <TrendingUpDown size={18} color="#0b0e14" />
           </TouchableOpacity>
         </View>
-
-        {/* Comments list */}
-        {comments.length > 0 && (
-          <View style={styles.commentsList}>
-            {comments.map((c) => (
-              <View key={c.id} style={styles.commentItem}>
-                <View style={styles.commentAvatar}>
-                  {identity?.avatarSource && c.author === identity?.name ? (
-                    <Image source={identity.avatarSource} style={styles.commentAvatarImg} />
-                  ) : (
-                    <Ionicons name="person" size={16} color="rgba(242,202,80,0.7)" />
-                  )}
-                </View>
-                <View style={styles.commentBody}>
-                  <Text style={styles.commentAuthorText}>{c.author}</Text>
-                  <Text style={styles.commentContentText}>{c.text}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
 
         
       </ScrollView>
@@ -890,6 +1083,102 @@ export default function CaseDetailsScreen() {
         onDeletePhoto={handleDeletePhoto}
         onDeletePost={handleDeletePost}
       />
+
+      <DemoOverlay data={overlayData} onClose={() => setOverlayData(null)} />
+
+      {/* Comment Context Menu Modal */}
+      <Modal
+        visible={showCommentMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => { setShowCommentMenu(false); setIsEditingComment(false); setShowDeleteConfirm(false); }}
+      >
+        <TouchableOpacity
+          style={styles.commentMenuOverlay}
+          activeOpacity={1}
+          onPress={() => { setShowCommentMenu(false); setIsEditingComment(false); setShowDeleteConfirm(false); }}
+        >
+          <View style={styles.commentMenuCard}>
+
+            {/* Режим просмотра */}
+            {!isEditingComment && !showDeleteConfirm && (
+              <>
+                <Text style={styles.commentMenuAuthor} numberOfLines={1}>
+                  {formatShortName(selectedComment?.author || '')}
+                </Text>
+                <Text style={styles.commentMenuText} numberOfLines={3}>{selectedComment?.text}</Text>
+
+                <TouchableOpacity style={styles.commentMenuBtn} onPress={() => handleCopyComment(selectedComment?.text || '')}>
+                  <Text style={styles.commentMenuBtnText}>📋 Копировать</Text>
+                </TouchableOpacity>
+
+                {(selectedComment?.author === currentUserFullName || selectedComment?.author === identity?.name) && (
+                  <TouchableOpacity
+                    style={styles.commentMenuBtn}
+                    onPress={() => { setIsEditingComment(true); setEditingCommentText(selectedComment?.text || ''); }}
+                  >
+                    <Text style={styles.commentMenuBtnText}>✏️ Редактировать</Text>
+                  </TouchableOpacity>
+                )}
+
+                {(selectedComment?.author === currentUserFullName || selectedComment?.author === identity?.name) && (
+                  <TouchableOpacity
+                    style={styles.commentMenuBtn}
+                    onPress={() => setShowDeleteConfirm(true)}
+                  >
+                    <Text style={[styles.commentMenuBtnText, { color: '#ff6b6b' }]}>🗑 Удалить</Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity style={styles.commentMenuCancelBtn} onPress={() => setShowCommentMenu(false)}>
+                  <Text style={styles.commentMenuCancelText}>Закрыть</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Режим редактирования */}
+            {isEditingComment && (
+              <>
+                <Text style={styles.commentMenuAuthor}>Редактировать</Text>
+                <TextInput
+                  style={styles.commentEditInput}
+                  value={editingCommentText}
+                  onChangeText={setEditingCommentText}
+                  multiline
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={styles.commentMenuSaveBtn}
+                  onPress={() => { handleEditComment(selectedComment.id, editingCommentText); setIsEditingComment(false); }}
+                >
+                  <Text style={styles.commentMenuSaveBtnText}>Сохранить</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.commentMenuCancelBtn} onPress={() => setIsEditingComment(false)}>
+                  <Text style={styles.commentMenuCancelText}>Отмена</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Режим подтверждения удаления */}
+            {showDeleteConfirm && (
+              <>
+                <Text style={styles.commentMenuAuthor}>Удалить комментарий?</Text>
+                <Text style={styles.commentMenuText}>Это действие нельзя отменить.</Text>
+                <TouchableOpacity
+                  style={styles.commentMenuDeleteBtn}
+                  onPress={() => { handleDeleteComment(selectedComment.id); setShowDeleteConfirm(false); }}
+                >
+                  <Text style={styles.commentMenuDeleteBtnText}>Удалить</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.commentMenuCancelBtn} onPress={() => setShowDeleteConfirm(false)}>
+                  <Text style={styles.commentMenuCancelText}>Отмена</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </ImageBackground>
   );
 }
@@ -1448,5 +1737,97 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(11, 14, 20, 0.85)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.18)',
+  },
+
+  /* Comment Context Menu */
+  commentMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  commentMenuCard: {
+    backgroundColor: '#1a1f2e',
+    borderRadius: 16,
+    padding: 16,
+    width: '100%',
+    maxWidth: 320,
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.2)',
+  },
+  commentMenuAuthor: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#f2ca50',
+    marginBottom: 4,
+  },
+  commentMenuText: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.55)',
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  commentMenuBtn: {
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.07)',
+  },
+  commentMenuBtnText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.85)',
+  },
+  commentMenuCancelBtn: {
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.12)',
+    marginTop: 4,
+    alignItems: 'center',
+  },
+  commentMenuCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  commentEditInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(242, 202, 80, 0.4)',
+    borderRadius: 10,
+    padding: 12,
+    color: '#ffffff',
+    fontSize: 14,
+    lineHeight: 20,
+    minHeight: 80,
+    marginBottom: 12,
+    marginTop: 8,
+    textAlignVertical: 'top',
+  },
+  commentMenuSaveBtn: {
+    backgroundColor: '#f2ca50',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  commentMenuSaveBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1a1206',
+  },
+  commentMenuDeleteBtn: {
+    backgroundColor: 'rgba(255, 107, 107, 0.15)',
+    borderWidth: 1,
+    borderColor: '#ff6b6b',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  commentMenuDeleteBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#ff6b6b',
   },
 });

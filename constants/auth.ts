@@ -140,3 +140,21 @@ export const isCurrentUserAdmin = async (): Promise<boolean> => {
   const user = await getCurrentUser();
   return user?.isAdmin === true || user?.email === 'dimmonix@gmail.com';
 };
+
+export const verifyEmail = async (email: string, code: string) => {
+  const response = await fetch(`${API_BASE_URL}/auth/verify-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email.trim(), code: code.trim() }),
+  });
+  return _handleResponse(response);
+};
+
+export const resendVerificationCode = async (email: string) => {
+  const response = await fetch(`${API_BASE_URL}/auth/resend-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email.trim() }),
+  });
+  return _handleResponse(response);
+};
