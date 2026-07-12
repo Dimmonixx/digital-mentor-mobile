@@ -1,5 +1,6 @@
 import { DemoOverlay, DemoOverlayData } from '@/components/case-post-actions';
 import { resendVerificationCode, verifyEmail } from '@/constants/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -29,6 +30,12 @@ export default function VerifyEmailScreen() {
     setError('');
     try {
       await verifyEmail(email, code);
+      const raw = await AsyncStorage.getItem('user');
+      if (raw) {
+        const userData = JSON.parse(raw);
+        userData.emailVerified = true;
+        await AsyncStorage.setItem('user', JSON.stringify(userData));
+      }
       router.replace('/(tabs)');
     } catch (e: any) {
       setError(e.message || 'Неверный код подтверждения');
@@ -79,6 +86,9 @@ export default function VerifyEmailScreen() {
         <Text style={styles.subtitle}>
           Мы отправили 6-значный код на{'\n'}{email}
         </Text>
+        <Text style={[styles.subtitle, { color: '#f2ca50', marginTop: -10 }]}>
+          ⚡ Сейчас у вас 2 энергии на пробу.{'\n'}Подтвердите почту — и получите полные 15⚡ в день!
+        </Text>
 
         <TextInput
           style={styles.input}
@@ -106,6 +116,12 @@ export default function VerifyEmailScreen() {
         <TouchableOpacity onPress={handleResend} disabled={resending} style={{ marginTop: 20 }}>
           <Text style={styles.resendText}>
             {resending ? 'Отправляем...' : 'Отправить код заново'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={{ marginTop: 16 }}>
+          <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
+            Пропустить, войти с 2⚡
           </Text>
         </TouchableOpacity>
       </KeyboardAvoidingView>

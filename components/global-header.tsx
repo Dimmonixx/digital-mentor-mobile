@@ -71,7 +71,7 @@ export default function GlobalHeader({
               <Text style={styles.aiCapsuleInfinity}>~</Text>
             ) : (
               <Text style={styles.aiCapsuleText}>
-                {diamonds > 0 ? formatDiamonds(diamonds) : (aiDailyLimit !== undefined ? aiDailyLimit : '—')}
+                {aiDailyLimit !== undefined ? aiDailyLimit : '—'}
               </Text>
             )}
           </View>

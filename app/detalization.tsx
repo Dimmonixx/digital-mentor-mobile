@@ -1,11 +1,17 @@
+import BottomTabBar from '@/components/BottomTabBar';
+import { DemoOverlay, DemoOverlayData } from '@/components/case-post-actions';
 import GlobalHeader from '@/components/global-header';
+import { executeWithAiLimit } from '@/services/aiRequestService';
+import { uploadMediaToServer } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
-import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import * as ExpoOrientation from 'expo-screen-orientation';
 import { StatusBar } from 'expo-status-bar';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     Alert,
     Dimensions,
@@ -16,9 +22,9 @@ import {
     ScrollView,
     StyleSheet,
     Text,
-    TextInput,
     TouchableOpacity,
-    View,
+    useWindowDimensions,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -95,18 +101,18 @@ const buildFilter = (
       break;
     case 'clay':
       grayscale = 1;
-      sepia = 0.3;
-      extraBrightness *= 0.95;
+      sepia = 0.6;
+      extraBrightness *= 1.05;
       break;
     case 'relief':
       grayscale = 1;
-      extraContrast *= 2;
-      extraBrightness *= 1.1;
+      extraContrast *= 1.4;
+      extraBrightness *= 1.15;
       break;
     case 'contour':
       grayscale = 1;
-      extraContrast *= 3;
-      extraBrightness *= 0.8;
+      extraContrast *= 1.7;
+      extraBrightness *= 1.25;
       break;
   }
 
@@ -228,14 +234,39 @@ export default function DetalizationScreen() {
   const [sharpness,   setSharpness]   = useState(0);
   const [viewMode,    setViewMode]    = useState<ViewMode>('normal');
   const [showBefore,  setShowBefore]  = useState(false);
-  const [showMarkers, setShowMarkers] = useState(false);
-  const [markers, setMarkers] = useState<{ x: number; y: number; label: string; id: string }[]>([]);
-  const [pendingMarker, setPendingMarker] = useState<{ x: number; y: number } | null>(null);
-  const [markerLabel,   setMarkerLabel]   = useState('');
   const [magnifier, setMagnifier] = useState<{ x: number; y: number } | null>(null);
-  const [activeTab, setActiveTab] = useState<'sliders' | 'modes' | 'presets' | 'analysis'>('sliders');
+  const [showPanorama, setShowPanorama] = useState(false);
+  const [imgNativeSize, setImgNativeSize] = useState<{ width: number; height: number } | null>(null);
+  const [panoramaHint, setPanoramaHint] = useState<DemoOverlayData>(null);
+  const { width: liveWidth, height: liveHeight } = useWindowDimensions();
+  const [panoramaMagnifier, setPanoramaMagnifier] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (showPanorama) {
+      ExpoOrientation.lockAsync(ExpoOrientation.OrientationLock.LANDSCAPE);
+    } else {
+      ExpoOrientation.lockAsync(ExpoOrientation.OrientationLock.PORTRAIT_UP);
+    }
+
+    return () => {
+      ExpoOrientation.lockAsync(ExpoOrientation.OrientationLock.PORTRAIT_UP);
+    };
+  }, [showPanorama]);
+
+  useEffect(() => {
+    if (!photoUri) return;
+    Image.getSize(
+      photoUri,
+      (w, h) => setImgNativeSize({ width: w, height: h }),
+      () => setImgNativeSize(null)
+    );
+  }, [photoUri]);
+
+  const [activeTab, setActiveTab] = useState<'inspect' | 'analysis'>('inspect');
+  const [activeSubTab, setActiveSubTab] = useState<'sliders' | 'modes'>('sliders');
   const [opticalResult, setOpticalResult] = useState<any>(null);
   const [opticalLoading, setOpticalLoading] = useState(false);
+  const [activePresetName, setActivePresetName] = useState<string>('Сброс');
 
   const filterString = buildFilter(brightness, contrast, saturation, sharpness, viewMode);
   const imageHeight  = SCREEN_WIDTH * 0.75;
@@ -270,11 +301,12 @@ export default function DetalizationScreen() {
     setContrast(preset.contrast);
     setSaturation(preset.saturation);
     setSharpness(preset.sharpness);
+    setActivePresetName(preset.name);
   };
 
   const savePhoto = async () => {
     try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
+      const { status } = await MediaLibrary.requestPermissionsAsync(false, ['photo']);
       if (status !== 'granted') {
         Alert.alert('Нет доступа', 'Разрешите доступ к галерее в настройках');
         return;
@@ -308,19 +340,28 @@ export default function DetalizationScreen() {
       const rawUser = await AsyncStorage.getItem('user');
       const user = rawUser ? JSON.parse(rawUser) : null;
       const userId = user?.id || user?.email || 'unknown';
-      const response = await fetch('http://62.238.13.160:8000/analysis/optical', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userId,
-          image_url: imageUrl,
-          parameters: {
-            texture: 'natural',
-            transparency: 'high',
-            macro_relief: 'pronounced',
-          },
-        }),
+      const userEmail = user?.email || '';
+
+      const result = await executeWithAiLimit(userEmail, async () => {
+        const response = await fetch('http://62.238.13.160:8000/analysis/optical', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            image_url: imageUrl,
+            view_mode: viewMode,
+            preset_name: activePresetName,
+          }),
+        });
+        return response;
       });
+
+      if (!result) {
+        setOpticalLoading(false);
+        return;
+      }
+
+      const response = result;
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         Alert.alert('Ошибка', data.detail || 'Не удалось выполнить анализ');
@@ -342,24 +383,22 @@ export default function DetalizationScreen() {
     onPanResponderRelease: () => setTimeout(() => setMagnifier(null), 300),
   })).current;
 
-  const handleImageTap = (e: any) => {
-    if (!showMarkers) return;
-    setPendingMarker({ x: e.nativeEvent.locationX, y: e.nativeEvent.locationY });
-    setMarkerLabel('');
-  };
-
-  const confirmMarker = () => {
-    if (!pendingMarker) return;
-    setMarkers(prev => [...prev, { ...pendingMarker, label: markerLabel || 'Метка', id: Date.now().toString() }]);
-    setPendingMarker(null);
-  };
+  const panoramaPanResponder = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant:  (e) => setPanoramaMagnifier({ x: e.nativeEvent.locationX, y: e.nativeEvent.locationY }),
+    onPanResponderMove:   (e) => setPanoramaMagnifier({ x: e.nativeEvent.locationX, y: e.nativeEvent.locationY }),
+    onPanResponderRelease: () => setTimeout(() => setPanoramaMagnifier(null), 300),
+    onPanResponderTerminate: () => setPanoramaMagnifier(null),
+  })).current;
 
   const VIEW_MODES: { key: ViewMode; label: string; icon: string; hint: string }[] = [
     { key: 'normal',  label: 'Нормальный', icon: 'eye-outline',      hint: 'Оригинал без изменений'                        },
-    { key: 'mono',    label: 'Монохром',   icon: 'contrast-outline',  hint: 'Убирает цвет — только форма и рельеф'          },
-    { key: 'clay',    label: 'Глиняный',   icon: 'ellipse-outline',   hint: 'Имитация воска — тёплый серо-коричневый'       },
-    { key: 'relief',  label: 'Рельеф',     icon: 'layers-outline',    hint: 'Максимальный рельеф — все выпуклости видны'    },
-    { key: 'contour', label: 'Контурный',  icon: 'scan-outline',      hint: 'Только границы форм — как на чертеже'         },
+    { key: 'mono',    label: 'Монохром',   icon: 'contrast-outline',  hint: 'Без цвета — видна только форма и рельеф'       },
+    { key: 'clay',    label: 'Глиняный',   icon: 'ellipse-outline',   hint: 'Тёплый оттенок — как восковой макет'           },
+    { key: 'relief',  label: 'Рельеф',     icon: 'layers-outline',    hint: 'Повышенный контраст — видны мамелоны и рельеф' },
+    { key: 'contour', label: 'Контурный',  icon: 'scan-outline',      hint: 'Сильный контраст — подчёркивает границы форм'  },
   ];
 
   if (!photoUri) {
@@ -420,21 +459,19 @@ export default function DetalizationScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#05080f' }}>
+    <ImageBackground
+      source={require('@/assets/images/background.png')}
+      style={{ flex: 1 }}
+      resizeMode="cover"
+    >
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* ── HEADER ── */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      <GlobalHeader diamonds={diamonds} />
+      <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
           <Ionicons name="arrow-back" size={24} color="#f2ca50" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Оптическая диагностика</Text>
-        <TouchableOpacity
-          onPress={() => setShowMarkers(!showMarkers)}
-          style={[styles.headerBtn, showMarkers && styles.headerBtnActive]}
-        >
-          <Ionicons name="pin-outline" size={22} color={showMarkers ? '#f2ca50' : '#555'} />
-        </TouchableOpacity>
         <TouchableOpacity onPress={() => router.push('/detalization-info' as any)} style={styles.headerBtn}>
           <Ionicons name="information-circle-outline" size={22} color="#f2ca50" />
         </TouchableOpacity>
@@ -447,7 +484,6 @@ export default function DetalizationScreen() {
       <View
         style={{ width: SCREEN_WIDTH, height: imageHeight }}
         {...imagePanResponder.panHandlers}
-        onTouchEnd={handleImageTap}
       >
         <Image
           source={{ uri: photoUri }}
@@ -466,6 +502,36 @@ export default function DetalizationScreen() {
           <Text style={styles.beforeBtnText}>{showBefore ? 'ОРИГИНАЛ' : 'УДЕРЖИ — ДО'}</Text>
         </TouchableOpacity>
 
+        {/* Panorama button */}
+        <TouchableOpacity
+          onPress={() => {
+            setShowPanorama(true);
+            setPanoramaHint({
+              title: '🔍 Панорама',
+              message: 'Удерживайте фото пальцем, чтобы увеличить нужную область.',
+              icon: 'information-circle-outline',
+              danger: false,
+              confirmText: 'Понятно',
+              onConfirm: () => setPanoramaHint(null),
+            });
+          }}
+          style={{
+            position: 'absolute',
+            top: 10,
+            right: 12,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            borderRadius: 20,
+            width: 36,
+            height: 36,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderWidth: 1,
+            borderColor: 'rgba(242,202,80,0.5)',
+          }}
+        >
+          <Ionicons name="search" size={18} color="#f2ca50" />
+        </TouchableOpacity>
+
         {/* Mode badge */}
         {viewMode !== 'normal' && (
           <View style={styles.modeBadge}>
@@ -474,22 +540,6 @@ export default function DetalizationScreen() {
             </Text>
           </View>
         )}
-
-        {/* Markers */}
-        {markers.map(marker => (
-          <TouchableOpacity
-            key={marker.id}
-            onLongPress={() => setMarkers(prev => prev.filter(m => m.id !== marker.id))}
-            style={{ position: 'absolute', left: marker.x - 12, top: marker.y - 12 }}
-          >
-            <View style={styles.markerDot}>
-              <Ionicons name="location" size={14} color="#1a0d00" />
-            </View>
-            <View style={styles.markerLabel}>
-              <Text style={styles.markerLabelText}>{marker.label}</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
 
         {/* Magnifier */}
         {magnifier && (
@@ -512,15 +562,13 @@ export default function DetalizationScreen() {
       {/* ── TABS ── */}
       <View style={styles.tabBar}>
         {([
-          { key: 'sliders', label: 'Коррекция' },
-          { key: 'modes',   label: 'Режимы'    },
-          { key: 'presets', label: 'Пресеты'   },
-          { key: 'analysis', label: 'Анализ'   },
+          { key: 'inspect', label: '🔍 Осмотр' },
+          { key: 'analysis', label: '🔬 ИИ-анализ' },
         ] as const).map(tab => (
           <TouchableOpacity
             key={tab.key}
             onPress={() => setActiveTab(tab.key)}
-            style={[styles.tabItem, activeTab === tab.key && styles.tabItemActive]}
+            style={[styles.tabItem, activeTab === tab.key && styles.tabItemActive, { flex: 1 }]}
           >
             <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
               {tab.label}
@@ -532,84 +580,87 @@ export default function DetalizationScreen() {
       {/* ── TAB CONTENT ── */}
       <ScrollView style={{ flex: 1, backgroundColor: '#0a0d14' }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40 }}>
 
-        {activeTab === 'sliders' && (
+        {activeTab === 'inspect' && (
           <>
-            <TouchableOpacity
-              onPress={() => { setBrightness(1); setContrast(1); setSaturation(1); setSharpness(0); }}
-              style={{
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                backgroundColor: '#1a1208', borderRadius: 10,
-                borderWidth: 1, borderColor: 'rgba(242,202,80,0.4)',
-                padding: 10, marginBottom: 16,
-              }}>
-              <Ionicons name="refresh" size={16} color="#f2ca50" style={{ marginRight: 6 }} />
-              <Text style={{ color: '#f2ca50', fontSize: 13, fontWeight: '600' }}>Сбросить все</Text>
-            </TouchableOpacity>
-            <Slider label="Яркость" value={brightness} min={0.3} max={2} resetValue={1} onChange={setBrightness}
-              description="Общая освещённость — для пришеечной области и теневых зон" />
-            <Slider label="Контраст" value={contrast} min={0.5} max={3} resetValue={1} onChange={setContrast}
-              description="Различие светлых и тёмных участков — для макро и микрорельефа" />
-            <Slider label="Насыщенность" value={saturation} min={0} max={3} resetValue={1} onChange={setSaturation}
-              description="Интенсивность цвета — для хроматичности и оттенков дентина" />
-            <Slider label="Детализация" value={sharpness} min={0} max={1} resetValue={0} onChange={setSharpness}
-              description="Локальные переходы — для мамелонов, трещин и границ масс" />
-          </>
-        )}
-
-        {activeTab === 'modes' && (
-          <View style={{ gap: 10 }}>
-            {VIEW_MODES.map(mode => (
-              <TouchableOpacity
-                key={mode.key}
-                onPress={() => setViewMode(mode.key)}
-                style={[styles.modeRow, viewMode === mode.key && styles.modeRowActive]}
-              >
-                <Ionicons
-                  name={mode.icon as any} size={22}
-                  color={viewMode === mode.key ? '#f2ca50' : '#555'}
-                  style={{ marginRight: 12 }}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.modeLabel, viewMode === mode.key && styles.modeLabelActive]}>
-                    {mode.label}
+            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, textAlign: 'center', marginTop: 8, marginBottom: 4 }}>
+              Необязательно — можно сразу перейти к «ИИ-анализ»
+            </Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 12 }}>
+              {([
+                { key: 'sliders', label: 'Коррекция' },
+                { key: 'modes', label: 'Режимы' },
+              ] as const).map(sub => (
+                <TouchableOpacity
+                  key={sub.key}
+                  onPress={() => setActiveSubTab(sub.key)}
+                  style={{
+                    paddingHorizontal: 14,
+                    paddingVertical: 6,
+                    borderRadius: 16,
+                    backgroundColor: activeSubTab === sub.key ? 'rgba(242,202,80,0.2)' : 'rgba(255,255,255,0.05)',
+                    borderWidth: 1,
+                    borderColor: activeSubTab === sub.key ? '#f2ca50' : 'rgba(255,255,255,0.1)',
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: activeSubTab === sub.key ? '#f2ca50' : 'rgba(255,255,255,0.6)' }}>
+                    {sub.label}
                   </Text>
-                  <Text style={styles.modeHint}>{mode.hint}</Text>
-                </View>
-                {viewMode === mode.key && (
-                  <Ionicons name="checkmark-circle" size={20} color="#f2ca50" />
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
+                </TouchableOpacity>
+              ))}
+            </View>
 
-        {activeTab === 'presets' && (
-          <View style={{ gap: 10 }}>
-            {PRESETS.map(preset => (
-              <TouchableOpacity
-                key={preset.name}
-                onPress={() => applyPreset(preset)}
-                style={[
-                  styles.presetRow,
-                  { borderColor: preset.color + '80', borderWidth: 1.5 },
-                ]}
-              >
-                <View style={{
-                  width: 40, height: 40, borderRadius: 20,
-                  backgroundColor: preset.color + '20',
-                  alignItems: 'center', justifyContent: 'center',
-                  marginRight: 12,
-                }}>
-                  <Ionicons name={preset.icon as any} size={20} color={preset.color} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.presetName, { color: preset.color }]}>{preset.name}</Text>
-                  <Text style={styles.presetMeta}>{preset.description}</Text>
-                </View>
-                <Ionicons name="flash-outline" size={16} color={preset.color + '80'} />
-              </TouchableOpacity>
-            ))}
-          </View>
+            {activeSubTab === 'sliders' && (
+              <>
+                <TouchableOpacity
+                  onPress={() => { setBrightness(1); setContrast(1); setSaturation(1); setSharpness(0); }}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: '#1a1208', borderRadius: 10,
+                    borderWidth: 1, borderColor: 'rgba(242,202,80,0.4)',
+                    padding: 10, marginBottom: 16,
+                  }}>
+                  <Ionicons name="refresh" size={16} color="#f2ca50" style={{ marginRight: 6 }} />
+                  <Text style={{ color: '#f2ca50', fontSize: 13, fontWeight: '600' }}>Сбросить все</Text>
+                </TouchableOpacity>
+                <Slider label="Яркость" value={brightness} min={0.3} max={2} resetValue={1} onChange={setBrightness}
+                  description="Общая освещённость — для пришеечной области и теневых зон" />
+                <Slider label="Контраст" value={contrast} min={0.5} max={3} resetValue={1} onChange={setContrast}
+                  description="Различие светлых и тёмных участков — для макро и микрорельефа" />
+                <Slider label="Насыщенность" value={saturation} min={0} max={3} resetValue={1} onChange={setSaturation}
+                  description="Интенсивность цвета — для хроматичности и оттенков дентина" />
+                <Slider label="Детализация" value={sharpness} min={0} max={1} resetValue={0} onChange={setSharpness}
+                  description="Локальные переходы — для мамелонов, трещин и границ масс" />
+              </>
+            )}
+
+            {activeSubTab === 'modes' && (
+              <View style={{ gap: 10 }}>
+                {VIEW_MODES.map(mode => (
+                  <TouchableOpacity
+                    key={mode.key}
+                    onPress={() => setViewMode(mode.key)}
+                    style={[styles.modeRow, viewMode === mode.key && styles.modeRowActive]}
+                  >
+                    <Ionicons
+                      name={mode.icon as any} size={22}
+                      color={viewMode === mode.key ? '#f2ca50' : '#555'}
+                      style={{ marginRight: 12 }}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.modeLabel, viewMode === mode.key && styles.modeLabelActive]}>
+                        {mode.label}
+                      </Text>
+                      <Text style={styles.modeHint}>{mode.hint}</Text>
+                    </View>
+                    {viewMode === mode.key && (
+                      <Ionicons name="checkmark-circle" size={20} color="#f2ca50" />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+          </>
         )}
 
         {activeTab === 'analysis' && (
@@ -648,35 +699,103 @@ export default function DetalizationScreen() {
 
       </ScrollView>
 
-      {/* ── MARKER MODAL ── */}
-      <Modal visible={!!pendingMarker} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Название метки</Text>
-            <TextInput
-              value={markerLabel}
-              onChangeText={setMarkerLabel}
-              placeholder="Мамелон, трещина, граница..."
-              placeholderTextColor="#555"
-              style={styles.modalInput}
-              autoFocus
-            />
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <TouchableOpacity
-                onPress={() => setPendingMarker(null)}
-                style={styles.modalBtnCancel}
+      {/* ── PANORAMA MODAL ── */}
+      <Modal visible={showPanorama} animationType="fade" onRequestClose={() => setShowPanorama(false)}>
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+          {(() => {
+            const imgW = imgNativeSize?.width || liveWidth;
+            const imgH = imgNativeSize?.height || liveHeight;
+            const scale = Math.min(liveWidth / imgW, liveHeight / imgH);
+            const displayWidth = imgW * scale;
+            const displayHeight = imgH * scale;
+            const offsetX = (liveWidth - displayWidth) / 2;
+            const offsetY = (liveHeight - displayHeight) / 2;
+
+            const magnifyFactor = 3.5;
+            const lensSize = 220;
+            const half = lensSize / 2;
+
+            let lensLeft = 0;
+            let lensTop = 0;
+
+            if (panoramaMagnifier) {
+              lensLeft = panoramaMagnifier.x - half;
+              lensTop = panoramaMagnifier.y - 130;
+              if (lensLeft < 10) lensLeft = 10;
+              if (lensLeft + lensSize > liveWidth - 10) lensLeft = liveWidth - lensSize - 10;
+              if (lensTop < 10) lensTop = 10;
+              if (lensTop + lensSize > liveHeight - 10) lensTop = liveHeight - lensSize - 10;
+            }
+
+            const relX = panoramaMagnifier ? panoramaMagnifier.x - offsetX : 0;
+            const relY = panoramaMagnifier ? panoramaMagnifier.y - offsetY : 0;
+
+            return (
+              <View
+                style={{ flex: 1 }}
+                {...panoramaPanResponder.panHandlers}
               >
-                <Text style={{ color: '#888' }}>Отмена</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={confirmMarker} style={styles.modalBtnConfirm}>
-                <Text style={{ color: '#1a0d00', fontWeight: '700' }}>Добавить</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+                <Image
+                  source={{ uri: photoUri }}
+                  style={[
+                    {
+                      position: 'absolute',
+                      left: offsetX, top: offsetY,
+                      width: displayWidth, height: displayHeight,
+                    },
+                    { filter: filterString } as any,
+                  ]}
+                />
+
+                {panoramaMagnifier && (
+                  <View pointerEvents="none" style={[styles.magnifier, {
+                    left: lensLeft, top: lensTop,
+                    width: lensSize, height: lensSize, borderRadius: half,
+                    overflow: 'hidden',
+                  }]}>
+                    <Image
+                      source={{ uri: photoUri }}
+                      style={{
+                        width: displayWidth * magnifyFactor,
+                        height: displayHeight * magnifyFactor,
+                        position: 'absolute',
+                        left: -(relX * magnifyFactor - half),
+                        top: -(relY * magnifyFactor - half),
+                        filter: filterString,
+                      } as any}
+                    />
+                  </View>
+                )}
+              </View>
+            );
+          })()}
+
+          <TouchableOpacity
+            onPress={() => setShowPanorama(false)}
+            style={{
+              position: 'absolute',
+              top: 50,
+              right: 20,
+              backgroundColor: 'rgba(0,0,0,0.6)',
+              borderRadius: 20,
+              width: 40,
+              height: 40,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 1,
+              borderColor: 'rgba(242,202,80,0.6)',
+            }}
+          >
+            <Ionicons name="close" size={22} color="#f2ca50" />
+          </TouchableOpacity>
+
         </View>
       </Modal>
 
-    </View>
+
+      <DemoOverlay data={panoramaHint} onClose={() => setPanoramaHint(null)} />
+      <BottomTabBar />
+    </ImageBackground>
   );
 }
 
@@ -737,14 +856,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#05080f',
   },
   headerBtn:       { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerBtnActive: { backgroundColor: 'rgba(242,202,80,0.12)', borderRadius: 20 },
   headerTitle:     { flex: 1, color: '#f2ca50', fontSize: 18, fontWeight: '700', marginLeft: 4 },
 
   beforeBtn: {
     position: 'absolute', bottom: 10, left: 12,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: 'rgba(0,0,0,0.35)',
     borderRadius: 16, paddingHorizontal: 12, paddingVertical: 5,
-    borderWidth: 1, borderColor: '#f2ca50',
+    borderWidth: 1, borderColor: 'rgba(242,202,80,0.5)',
   },
   beforeBtnText: { color: '#f2ca50', fontSize: 11, fontWeight: '700' },
 
@@ -756,17 +874,6 @@ const styles = StyleSheet.create({
   },
   modeBadgeText: { color: '#f2ca50', fontSize: 11 },
 
-  markerDot: {
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: '#f2ca50', alignItems: 'center', justifyContent: 'center',
-  },
-  markerLabel: {
-    position: 'absolute', top: -22, left: -20,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
-    borderWidth: 1, borderColor: 'rgba(242,202,80,0.4)',
-  },
-  markerLabelText: { color: '#f2ca50', fontSize: 10 },
 
   magnifier: {
     position: 'absolute',
@@ -913,6 +1020,7 @@ const styles = StyleSheet.create({
     color: '#031427',
     fontSize: 15,
     fontWeight: '700',
+    textAlign: 'center',
   },
   opticalResultCard: {
     backgroundColor: 'rgba(10, 16, 30, 0.92)',

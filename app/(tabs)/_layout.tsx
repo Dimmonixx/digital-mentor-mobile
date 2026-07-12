@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { Redirect, Tabs } from 'expo-router';
+import { Redirect, Tabs, router } from 'expo-router';
 
 import * as Haptics from 'expo-haptics';
 
@@ -12,7 +12,7 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 import React, { useEffect, useRef, useState } from 'react';
 
-import { Dimensions, ImageBackground, StatusBar, StyleSheet, View } from 'react-native';
+import { Animated, Dimensions, ImageBackground, StatusBar, StyleSheet, View } from 'react-native';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -23,6 +23,7 @@ import { HapticTab } from '@/components/haptic-tab';
 import GlobalHeader from '@/components/global-header';
 
 import AiLimitModal from '@/components/AiLimitModal';
+import { DemoOverlay, DemoOverlayData } from '@/components/case-post-actions';
 import DrawerMenu from '@/components/DrawerMenu';
 import { emailToKey } from '@/constants/auth';
 
@@ -31,6 +32,36 @@ import { HeaderHeightProvider } from '../../context/HeaderHeightContext';
 import { playSuccessSound } from '../../utils/audio';
 
 
+
+const PulsingDot = () => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scale, { toValue: 1.4, duration: 700, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        top: -2,
+        right: -4,
+        width: 9,
+        height: 9,
+        borderRadius: 4.5,
+        backgroundColor: '#ff6b6b',
+        transform: [{ scale }],
+      }}
+    />
+  );
+};
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -90,6 +121,7 @@ export default function TabLayout() {
   const [diamondBalance, setDiamondBalance] = useState<number>(20);
   const diamondBalanceRef = useRef(diamondBalance);
   const [aiDailyLimit, setAiDailyLimit] = useState<number>(15);
+  const [verifyOverlayData, setVerifyOverlayData] = useState<DemoOverlayData>(null);
   const aiDailyLimitRef = useRef(15);
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -178,6 +210,40 @@ export default function TabLayout() {
 
     return () => off(userRef);
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (user.emailVerified === false) {
+      setVerifyOverlayData({
+        title: '✉️ Подтвердите email',
+        message: 'У вас пока 2 энергии на пробу. Подтвердите почту, чтобы получить полные 15⚡ в день!',
+        icon: 'mail-outline',
+        danger: false,
+        confirmText: 'Подтвердить сейчас',
+        onConfirm: () => {
+          setVerifyOverlayData(null);
+          router.push({ pathname: '/verify-email', params: { email: user.email } } as any);
+        },
+      });
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || user.emailVerified !== false) return;
+    if (aiDailyLimit === 0) {
+      setVerifyOverlayData({
+        title: '⚡ Энергия закончилась',
+        message: 'Ваши 2 пробные энергии закончились. Подтвердите почту, чтобы получить полные 15⚡ в день!',
+        icon: 'flash-outline',
+        danger: false,
+        confirmText: 'Подтвердить сейчас',
+        onConfirm: () => {
+          setVerifyOverlayData(null);
+          router.push({ pathname: '/verify-email', params: { email: user.email } } as any);
+        },
+      });
+    }
+  }, [aiDailyLimit, user]);
 
   useEffect(() => {
     (globalThis as any).getDiamondBalance = () => diamondBalanceRef.current;
@@ -665,7 +731,12 @@ export default function TabLayout() {
 
               title: 'Настройки',
 
-              tabBarIcon: ({ color }) => <Ionicons size={22} name="settings" color={color} />,
+              tabBarIcon: ({ color }) => (
+                <View>
+                  <Ionicons size={22} name="settings" color={color} />
+                  {user?.emailVerified === false && <PulsingDot />}
+                </View>
+              ),
 
             }}
 
@@ -756,6 +827,8 @@ export default function TabLayout() {
       </View>
 
         </ImageBackground>
+
+    <DemoOverlay data={verifyOverlayData} onClose={() => setVerifyOverlayData(null)} />
 
         </>
 

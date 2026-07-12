@@ -31,6 +31,7 @@ export default function SettingsScreen() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   const closePasswordModal = () => {
     setShowPasswordModal(false);
@@ -76,6 +77,14 @@ export default function SettingsScreen() {
     AsyncStorage.getItem('@user_push_enabled').then(v => setPushEnabled(v === 'true'));
   }, []);
 
+  useEffect(() => {
+    AsyncStorage.getItem('user').then((raw) => {
+      if (raw) {
+        setCurrentUser(JSON.parse(raw));
+      }
+    });
+  }, []);
+
   const handleSupportPress = async () => {
     try {
       const canOpenDeep = await Linking.canOpenURL(SUPPORT_TG_DEEP);
@@ -114,12 +123,27 @@ export default function SettingsScreen() {
   ];
 
   const SettingRow = ({
-    icon, label, right,
+    icon, label, right, iconColor, showBadge,
   }: {
-    icon: string; label: string; right: React.ReactNode;
+    icon: string; label: string; right: React.ReactNode; iconColor?: string; showBadge?: boolean;
   }) => (
     <View style={[styles.row, { borderBottomColor: theme.border }]}>
-      <Ionicons name={icon as any} size={20} color={theme.accent} style={{ marginRight: 12 }} />
+      <View style={{ marginRight: 12 }}>
+        <Ionicons name={icon as any} size={20} color={iconColor ?? theme.accent} />
+        {showBadge && (
+          <View style={{
+            position: 'absolute',
+            top: -2,
+            right: -2,
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: '#ff6b6b',
+            borderWidth: 1,
+            borderColor: theme.bg ?? '#0b0e14',
+          }} />
+        )}
+      </View>
       <Text style={[styles.rowLabel, { color: theme.text }]}>{label}</Text>
       <View style={styles.rowRight}>{right}</View>
     </View>
@@ -179,6 +203,31 @@ export default function SettingsScreen() {
         {/* SECURITY */}
         <Text style={[styles.sectionTitle, { color: theme.accent }]}>{t('security')}</Text>
         <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+          {currentUser?.emailVerified === false && (
+            <TouchableOpacity
+              onPress={() => router.push({ pathname: '/verify-email', params: { email: currentUser.email } } as any)}
+            >
+              <SettingRow
+                icon="alert-circle"
+                iconColor="#f2ca50"
+                showBadge={true}
+                label="Подтвердите email"
+                right={
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View style={{
+                      backgroundColor: '#f2ca50',
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: 10
+                    }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#0b0e14' }}>Важно</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color={theme.textDim} />
+                  </View>
+                }
+              />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity onPress={() => setShowPasswordModal(true)}>
             <SettingRow
               icon="lock-closed-outline"

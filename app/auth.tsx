@@ -142,6 +142,7 @@ export default function AuthScreen() {
         avatarType: 'preset',
         avatarUrl: '',
         avatarPresetId: 1,
+        emailVerified: false,
       };
       await AsyncStorage.setItem('user', JSON.stringify(userData));
       router.replace({ pathname: '/verify-email', params: { email: email.trim() } } as any);
