@@ -677,6 +677,20 @@ export default function DetalizationScreen() {
               <Text style={styles.analyzeBtnText}>
                 {opticalLoading ? 'Анализ...' : 'Отправить на оптический анализ'}
               </Text>
+              {!opticalLoading && (
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: 'rgba(3,20,39,0.15)',
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: 10,
+                  gap: 3,
+                }}>
+                  <Ionicons name="flash" size={12} color="#031427" />
+                  <Text style={{ color: '#031427', fontSize: 12, fontWeight: '700' }}>1</Text>
+                </View>
+              )}
             </TouchableOpacity>
 
             {opticalResult?.results && (

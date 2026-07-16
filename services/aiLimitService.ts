@@ -1,6 +1,6 @@
 const API_BASE_URL = 'http://62.238.13.160:8000';
 
-export async function checkAndDeductDailyLimit(email: string): Promise<boolean> {
+export async function checkAndDeductDailyLimit(email: string, amount: number = 1): Promise<boolean> {
   if (!email) {
     console.warn('[aiLimitService] email is empty — allowing request');
     return true;
@@ -9,7 +9,7 @@ export async function checkAndDeductDailyLimit(email: string): Promise<boolean> 
     const response = await fetch(`${API_BASE_URL}/ai/verify-and-use`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim() }),
+      body: JSON.stringify({ email: email.trim(), amount }),
     });
 
     const data = await response.json().catch(() => ({}));

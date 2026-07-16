@@ -1,7 +1,8 @@
+import BottomTabBar from '@/components/BottomTabBar';
 import CustomAlert from '@/components/CustomAlert';
-import { ANTHROPIC_API_KEY } from '@/constants/config';
-import { useLanguage } from '@/context/LanguageContext';
+import GlobalHeader from '@/components/global-header';
 import { useTheme } from '@/context/ThemeContext';
+import { executeWithAiLimit } from '@/services/aiRequestService';
 import { uploadMediaToServer } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -11,17 +12,18 @@ import { router } from 'expo-router';
 import LottieView from 'lottie-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Dimensions,
-    Image,
-    ImageBackground,
-    Modal,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Animated,
+  BackHandler,
+  Dimensions,
+  Image,
+  ImageBackground,
+  Modal,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNewOrdersCount } from '../hooks/useNewOrdersCount';
@@ -45,13 +47,13 @@ const WORK_STAGES = [
 ];
 
 const ANALYSIS_TYPES = [
-  "Общий анализ работы",
-  "Проверить цвет и оттенок",
-  "Проверить форму и морфологию",
-  "Оценить симметрию",
-  "Просто похвастаться 😎",
-  "Найти косяки",
-  "Финальная проверка перед сдачей"
+  { label: "Общий анализ работы", cost: 2 },
+  { label: "Проверить цвет и оттенок", cost: 1 },
+  { label: "Проверить форму и морфологию", cost: 1 },
+  { label: "Оценить симметрию", cost: 1 },
+  { label: "Просто похвастаться 😎", cost: 1 },
+  { label: "Найти косяки", cost: 3 },
+  { label: "Финальная проверка перед сдачей", cost: 3 },
 ];
 
 const CONSTRUCTION_TYPES = [
@@ -68,217 +70,124 @@ const UPPER_TEETH = ["18","17","16","15","14","13","12","11",
 const LOWER_TEETH = ["48","47","46","45","44","43","42","41",
                      "31","32","33","34","35","36","37","38"];
 
-const ANALYSIS_PROMPTS = {
-  general: "Ты — Сенсей, критический и бескомпромиссный эксперт в эстетической стоматологии. Оцени работу со всей строгостью. ЖЕСТКОЕ ПРАВИЛО: Забудь про дежурную вежливость и толерантность! Если работа — отстой, пиши прямо и аргументированно. Не пытайся хвалить «для галочки». Проанализируй макро- и микрорельеф, прозрачность, форму и интеграцию. Ищи малейшие изъяны.",
-  color_match: "Ты — Сенсей, жесткий эксперт-колорист. Оцени ТОЛЬКО попадание в заказанный цвет по шкале VITA. ПРАВИЛО: Никакой дипломатии. Если цвет неестественно белый или провалена прозрачность — разнеси эту ошибку профессиональным языком. Сфокусируйся на пришейке, теле и режущем крае. Оценивай ИСКЛЮЧИТЕЛЬНО цвет, игнорируй форму.",
-  morphology: "Ты — Сенсей, суровый профессор анатомии зубов. Сфокусируйся ИСКЛЮЧИТЕЛЬНО на морфологии, макрорельефе, фиссурах. ПРАВИЛО: Никакой жалости. Если мамелоны плоские, валики стерты, а форма зуба квадратная вместо анатомической — укажи на это прямо. Полностью игнорируй цвет и десну.",
-  symmetry: "Ты — Сенсей, челюстно-лицевой архитектор с синдромом идеального порядка. Твоя цель — идеальная геометрия. ПРАВИЛО: Ищи малейшие диспропорции. Наклон осей вбок, смещение зенитов шеек даже на полмиллиметра, разная ширина коронок 11 и 21 зубов — фиксируй всё. Никакой похвалы, только сухие геометрические факты отклонений. Игнорируй цвет.",
-  fun: "Ты — Сенсей, опытный ментор с едким профессиональным юмором. Коллега решил 'просто похвастаться', но если там косяки — потролли его по-дружески, но тонко и по делу, чтобы в следующий раз целился в идеал.",
-  issues: "Ты — Сенсей, злейший инспектор ОТК. Твоя единственная цель — найти технологический брак и косяки. Поры в керамике, наплывы глазури, сколы, черные треугольники, нависающие края, плохой проксимальный контакт. Пиши жестко, хлестко, пунктами, без вступлений и резюме.",
-  final_check: "Ты — Сенсей, главный врач элитной клиники перед фиксацией работы в кресле. Никаких компромиссов, ведь на кону репутация. Если работа сырая — отправляй на переделывать с жестким списком правок. Вынеси финальный вердикт: Фиксация или Доработка."
-};
 
-const ANALYSIS_TYPE_KEYS: Record<string, keyof typeof ANALYSIS_PROMPTS> = {
-  "Общий анализ работы": "general",
-  "Проверить цвет и оттенок": "color_match",
-  "Проверить форму и морфологию": "morphology",
-  "Оценить симметрию": "symmetry",
-  "Просто похвастаться 😎": "fun",
-  "Найти косяки": "issues",
-  "Финальная проверка перед сдачей": "final_check"
-};
 
-const ANALYSIS_PRICES: Record<keyof typeof ANALYSIS_PROMPTS, number> = {
-  general: 1,
-  color_match: 1,
-  morphology: 1,
-  symmetry: 1,
-  fun: 1,
-  issues: 1,
-  final_check: 1,
-};
-
-const ANALYSIS_BUTTON_TITLES: Record<keyof typeof ANALYSIS_PROMPTS, string> = {
-  general: 'общий анализ',
-  color_match: 'проверку цвета',
-  morphology: 'проверку морфологии',
-  symmetry: 'проверку симметрии',
-  fun: 'похвастаться',
-  issues: 'поиск косяков',
-  final_check: 'финальную проверку',
-};
-
-const LOADING_STATUSES = [
-  "Сенсей сканирует макро- и микрорельеф...",
-  "Анализируем соответствие заказанному цвету...",
-  "Сопоставляем геометрию с зубами-антагонистами...",
-  "Формируем финальный экспертный вердикт..."
+const FLOATING_WORDS = [
+  "форму", "цвет", "десну", "симметрию", "края", "полировку", "анатомию", "прозрачность"
 ];
 
-const CLAUDE_MODEL = 'claude-sonnet-4-6';
+const FLOATING_POSITIONS = [
+  { top: 155, left: 220 },
+  { top: 260, left: 185 },
+  { top: 300, left: 100 },
+  { top: 260, left: 15 },
+  { top: 155, left: -20 },
+  { top: 50, left: 15 },
+  { top: 10, left: 100 },
+  { top: 50, left: 185 },
+];
 
-function resolveMimeType(asset: ImagePicker.ImagePickerAsset): 'image/jpeg' | 'image/png' {
-  if (asset.mimeType === 'image/png') return 'image/png';
-  if (asset.mimeType === 'image/jpeg' || asset.mimeType === 'image/jpg') return 'image/jpeg';
-  if (asset.uri.toLowerCase().endsWith('.png')) return 'image/png';
-  return 'image/jpeg';
-}
 
-async function analyzeWithClaude(
-  base64: string,
-  mediaType: 'image/jpeg' | 'image/png',
-  vitaShade: string,
-  workStage: string,
-  analysisType: string,
-  teeth: string,
-  comment: string,
-): Promise<string> {
-  const analysisTypeKey = ANALYSIS_TYPE_KEYS[analysisType] || 'general';
-  const systemPrompt = ANALYSIS_PROMPTS[analysisTypeKey];
 
-  const prompt = `Ты — Сенсей, строгий и опытный зубной техник-наставник с 30-летним стажем. Ты циничен, беспристрастен и не прощаешь брака. Оцени керамическую работу на фото с профессиональной жесткостью.
+const FloatingWord = ({ style, delay }: { style: any; delay: number }) => {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const [wordIndex, setWordIndex] = useState(() => Math.floor(Math.random() * FLOATING_WORDS.length));
 
-ПАРАМЕТРЫ РАБОТЫ:
-- Зубы: ${teeth}
-- Заказанный цвет: ${vitaShade}
-- Этап работы: ${workStage}
-- Тип анализа: ${analysisType}
-- Комментарий: ${comment}
+  useEffect(() => {
+    let isMounted = true;
+    const runCycle = () => {
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.delay(1200),
+        Animated.timing(opacity, { toValue: 0, duration: 600, useNativeDriver: true }),
+        Animated.delay(400),
+      ]).start(() => {
+        if (isMounted) {
+          setWordIndex(prev => (prev + 1) % FLOATING_WORDS.length);
+          runCycle();
+        }
+      });
+    };
+    const timeout = setTimeout(runCycle, delay);
+    return () => { isMounted = false; clearTimeout(timeout); };
+  }, []);
 
-ПРАВИЛО ФИЛЬТРАЦИИ КАТЕГОРИЙ:
-- Если тип анализа "Проверить цвет и оттенок", заполни ТОЛЬКО секцию orderMatch (соответствие цвета). Во всех остальных секциях (anatomy, optics, gumAnalysis) верни строго пустые строки "" или null!
-- Если тип анализа "Проверить форму и морфологию" или "Оценить симметрию", заполни ТОЛЬКО секцию anatomy. Секции цвета (orderMatch) и розовой эстетики (gumAnalysis) верни строго пустыми ""!
-- Если тип анализа "Найти косяки", пиши строго в секцию technicalChecklist, остальные секции оставь пустыми!
-- Если тип анализа "Финальная проверка перед сдачей", заполни все секции как при общем анализе.
-- Если тип анализа "Общий анализ работы", заполни все секции.
-- Запрещено генерировать текст в секциях, которые не относятся к выбранному типу анализа!
-
-ФОРМАТ ОТВЕТА (СТРОГО ТОЛЬКО JSON, без markdown-разметки):
-Верни ТОЛЬКО валидный JSON-объект следующей структуры:
-{
-  "orderMatch": {
-    "status": "КРИТИЧНО | ВАЖНО | НОРМА",
-    "text": "Анализ соответствия заказанному оттенку VITA и учет цвета культи/использования опакера."
-  },
-  "anatomy": {
-    "status": "КРИТИЧНО | ВАЖНО | НОРМА",
-    "neck": "Пришеечная треть: плотность прилегания, анатомический контур, переход цвета, интенсивность.",
-    "body": "Экватор и средняя треть: макроформа, симметрия парных зубов по ISO (избегать зеркального клонирования), вертикальные валики и горизонтальная макротекстура.",
-    "edge": "Режущий край: прозрачность (гало-эффект, опалесценция), индивидуальные особенности, естественная асимметрия углов."
-  },
-  "optics": {
-    "status": "КРИТИЧНО | ВАЖНО | НОРМА",
-    "text": "Оценка равномерности глазури (исключить гиперглазурь, сглаживающую рельеф, и сухие зоны), светоотражение поверхности и внутренние эффекты."
-  },
-  "gumAnalysis": {
-    "status": "КРИТИЧНО | ВАЖНО | НОРМА | НЕ ПРИМЕНИМО",
-    "text": "Розовая эстетика: контур зенитов, форма десневых сосочков, переход керамика-десна. Если десна на фото отсутствует, статус строго 'НЕ ПРИМЕНИМО', а текст пустой."
-  },
-  "technicalChecklist": [
-    {
-      "level": "КРИТИЧЕСКИЙ | ЖЕСТКИЙ | РЕКОМЕНДАЦИЯ | НЕ ОБЯЗАТЕЛЬНО",
-      "criterion": "Краткая емкая формулировка конкретной ошибки или рекомендации (выдать от 3 до 5 динамических критериев на основе дефектов работы)."
-    }
-  ],
-  "finalVerdict": "Общий жесткий, циничный и беспристрастный вывод Сенсея. Прямой вердикт: готова ли работа к сдаче или это хлам, требующий тотального переделывания."
-}
-
-Правила:
-- Используй глубокую стоматологическую терминологию (мамелоны, перикиматий, зениты, опакер, подтон, ISO-нумерация)
-- Замечай малейшие отклонения от идеала
-- Никакой жалости к браку и хламу, только сухие факты и экспертный аудит
-- Статусы: КРИТИЧНО (красный), ВАЖНО (желтый), НОРМА (зеленый), НЕ ПРИМЕНИМО (серый)
-- Верни ТОЛЬКО JSON, без \`\`\`json ... \`\`\`
-- Пиши содержательно, но емко, без лишней "воды", чтобы гарантированно уложиться в лимит ответа и прислать валидный, полностью закрытый JSON-объект`;
-
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 4000,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mediaType,
-                data: base64,
-              },
-            },
-            {
-              type: 'text',
-              text: prompt,
-            },
-          ],
-        },
-      ],
-    }),
-  });
-
-  const data = (await res.json()) as {
-    error?: { message?: string };
-    content?: Array<{ type: string; text?: string }>;
-  };
-
-  if (!res.ok) {
-    const msg = data.error?.message ?? `HTTP ${res.status}`;
-    throw new Error(msg);
-  }
-
-  const textBlock = data.content?.find((c) => c.type === 'text' && c.text);
-  const text = textBlock?.text?.trim() ?? '';
-  if (!text) {
-    throw new Error('Не удалось получить ответ модели. Попробуйте другое фото.');
-  }
-  return text;
-}
+  return (
+    <Animated.View style={[{ position: 'absolute', width: 110, alignItems: 'center' }, style, { opacity }]}>
+      <View style={{
+        backgroundColor: 'rgba(242,202,80,0.12)',
+        borderWidth: 1,
+        borderColor: 'rgba(242,202,80,0.4)',
+        borderRadius: 14,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+      }}>
+        <Text style={{ color: '#f2ca50', fontSize: 12, fontWeight: '600', textAlign: 'center' }}>
+          {FLOATING_WORDS[wordIndex]}
+        </Text>
+      </View>
+    </Animated.View>
+  );
+};
 
 export default function WorkAnalysisScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { t } = useLanguage();
-  const backgroundColor = theme?.bg || '#0a0f1d';
   const scrollViewRef = useRef<ScrollView>(null);
+  const resultSectionY = useRef(0);
   const newOrdersCount = useNewOrdersCount();
   
   const [selectedTeeth, setSelectedTeeth] = useState<string[]>([]);
   const [selectedShade, setSelectedShade] = useState<string>("Не указан");
   const [workStage, setWorkStage] = useState<string>("Не указан");
   const [analysisType, setAnalysisType] = useState<string>("Общий анализ работы");
-  const [notes, setNotes] = useState<string>("");
   const [image, setImage] = useState<string | null>(null);
-  const [imageBase64, setImageBase64] = useState<string | null>(null);
-  const [imageMime, setImageMime] = useState<'image/jpeg' | 'image/png'>('image/jpeg');
+  const [imageAspectRatio, setImageAspectRatio] = useState<number>(1);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
-  const [currentStatusIndex, setCurrentStatusIndex] = useState<number>(0);
   const [isImageModalVisible, setIsImageModalVisible] = useState<boolean>(false);
-  const [resultsY, setResultsY] = useState<number>(0);
   const [alertVisible, setAlertVisible] = useState<boolean>(false);
   const [alertTitle, setAlertTitle] = useState<string>('');
   const [alertMessage, setAlertMessage] = useState<string>('');
+  const [exitConfirmVisible, setExitConfirmVisible] = useState<boolean>(false);
   const [diamondBalance, setDiamondBalance] = useState<number>((globalThis as any).getDiamondBalance?.() ?? 0);
   const [constructionType, setConstructionType] = useState<string>('Коронка');
-  const [critiqueResult, setCritiqueResult] = useState<{ critique_id: string; status: string; rating: number } | null>(null);
-  const [expertModalVisible, setExpertModalVisible] = useState<boolean>(false);
-  const [colorScore, setColorScore] = useState<number>(8);
-  const [anatomyScore, setAnatomyScore] = useState<number>(8);
-  const [marginScore, setMarginScore] = useState<number>(8);
-  const [expertComment, setExpertComment] = useState<string>('');
-  const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
+  const [critiqueResult, setCritiqueResult] = useState<{ score: number; verdict: string; findings: string[]; summary: string } | null>(null);
 
-  const analysisTypeKey = ANALYSIS_TYPE_KEYS[analysisType] || 'general';
-  const analysisPrice = ANALYSIS_PRICES[analysisTypeKey];
-  const analysisButtonTitle = ANALYSIS_BUTTON_TITLES[analysisTypeKey];
+  const resetAnalysisForm = () => {
+    setImage(null);
+    setSelectedTeeth([]);
+    setSelectedShade("Не указан");
+    setWorkStage("Не указан");
+    setConstructionType('Коронка');
+    setAnalysisType("Общий анализ работы");
+    setCritiqueResult(null);
+  };
+
+  useEffect(() => {
+    if (critiqueResult) {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({ y: resultSectionY.current - 20, animated: true });
+      }, 150);
+    }
+  }, [critiqueResult]);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      setExitConfirmVisible(true);
+      return true;
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!image) return;
+    Image.getSize(
+      image,
+      (w, h) => setImageAspectRatio(w / h),
+      () => setImageAspectRatio(1)
+    );
+  }, [image]);
 
   useEffect(() => {
     setDiamondBalance((globalThis as any).getDiamondBalance?.() ?? 0);
@@ -290,30 +199,6 @@ export default function WorkAnalysisScreen() {
     return () => { (globalThis as any).forceDiamondUpdate = prev; };
   }, []);
 
-  // Calculate dynamic cost based on teeth count and analysis type
-  const calculateAnalysisCost = (): number => {
-    const teethCount = selectedTeeth.length;
-    const basePrice = ANALYSIS_PRICES[analysisTypeKey] || 3;
-    
-    // 1 💎: Single tooth, simple analysis
-    if (teethCount <= 1 && (analysisTypeKey === 'color_match' || analysisTypeKey === 'fun')) {
-      return 1;
-    }
-    
-    // 2 💎: Multiple teeth (2-3), or medium complexity analysis
-    if (teethCount <= 3 || analysisTypeKey === 'morphology' || analysisTypeKey === 'symmetry' || analysisTypeKey === 'issues') {
-      return 2;
-    }
-    
-    // 3 💎: Many teeth (4+), or high complexity analysis
-    if (teethCount >= 4 || analysisTypeKey === 'general' || analysisTypeKey === 'final_check') {
-      return 3;
-    }
-    
-    return basePrice;
-  };
-
-  const dynamicCost = calculateAnalysisCost();
 
   const toggleTooth = (tooth: string) => {
     setSelectedTeeth(prev =>
@@ -321,45 +206,16 @@ export default function WorkAnalysisScreen() {
     );
   };
 
-  useEffect(() => {
-    let interval: any;
-    if (isLoading) {
-      setCurrentStatusIndex(0);
-      interval = setInterval(() => {
-        setCurrentStatusIndex(prev => (prev + 1) % LOADING_STATUSES.length);
-      }, 3500);
-    }
-    return () => clearInterval(interval);
-  }, [isLoading]);
 
-  useEffect(() => {
-    if (analysisResult && scrollViewRef.current && resultsY > 0) {
-      setTimeout(() => {
-        scrollViewRef.current?.scrollTo({ y: resultsY, animated: true });
-      }, 300);
-    }
-  }, [analysisResult, resultsY]);
 
   const setImageFromAsset = (asset: ImagePicker.ImagePickerAsset) => {
     setImage(asset.uri);
-    setAnalysisResult(null);
-    const b64 = asset.base64;
-    if (!b64) {
-      setImageBase64(null);
-      setAlertTitle('Ошибка');
-      setAlertMessage('Не удалось получить данные изображения. Попробуйте выбрать фото снова.');
-      setAlertVisible(true);
-      return;
-    }
-    setImageBase64(b64);
-    setImageMime(resolveMimeType(asset));
   };
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
-      aspect: [4, 3],
       quality: 0.8,
       base64: true,
     });
@@ -373,7 +229,6 @@ export default function WorkAnalysisScreen() {
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
-      aspect: [4, 3],
       quality: 0.8,
       base64: true,
     });
@@ -423,7 +278,7 @@ export default function WorkAnalysisScreen() {
       const imageUrl = await uploadWorkImage(image);
       if (!imageUrl) {
         setAlertTitle('Ошибка');
-        setAlertMessage('Не удалось загрузить фото на сервер');
+        setAlertMessage('Не удалось загрузить фото');
         setAlertVisible(true);
         setIsLoading(false);
         return;
@@ -432,147 +287,100 @@ export default function WorkAnalysisScreen() {
       const rawUser = await AsyncStorage.getItem('user');
       const userObj = rawUser ? JSON.parse(rawUser) : null;
       const technicianId = userObj?.id || userObj?.email || '';
+      const userEmail = userObj?.email || '';
       const caseId = selectedTeeth.length > 0 ? selectedTeeth.join('-') : `work-${Date.now()}`;
 
-      const response = await fetch('http://62.238.13.160:8000/analysis/work/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          technician_id: technicianId,
-          case_id: caseId,
-          work_image_url: imageUrl,
-          construction_type: constructionType,
-        }),
-      });
+      const selectedType = ANALYSIS_TYPES.find(t => t.label === analysisType);
+      const cost = selectedType?.cost || 1;
 
+      const result = await executeWithAiLimit(userEmail, async () => {
+        const response = await fetch('http://62.238.13.160:8000/analysis/work/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            technician_id: technicianId,
+            case_id: caseId,
+            work_image_url: imageUrl,
+            construction_type: constructionType,
+            analysis_type: analysisType,
+            ordered_shade: selectedShade !== 'Не указан' ? selectedShade : '',
+            work_stage: workStage,
+          }),
+        });
+        return response;
+      }, cost);
+
+      if (!result) {
+        setIsLoading(false);
+        return;
+      }
+
+      const response = result;
       const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
         setAlertTitle('Ошибка');
-        setAlertMessage(data.detail || `Ошибка сервера ${response.status}`);
+        setAlertMessage(data.detail || 'Не удалось выполнить анализ');
         setAlertVisible(true);
         setIsLoading(false);
         return;
       }
 
-      setCritiqueResult({
-        critique_id: data.critique_id || '',
-        status: 'pending',
-        rating: 0,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Не удалось отправить работу';
+      setCritiqueResult(data.result);
+    } catch (e) {
+      console.error(e);
       setAlertTitle('Ошибка');
-      setAlertMessage(message);
+      setAlertMessage('Не удалось связаться с сервером');
       setAlertVisible(true);
-      console.error(error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const submitExpertEvaluation = async () => {
-    if (!critiqueResult?.critique_id) return;
-    setIsEvaluating(true);
-    try {
-      const rawUser = await AsyncStorage.getItem('user');
-      const userObj = rawUser ? JSON.parse(rawUser) : null;
-      const expertId = userObj?.id || userObj?.email || '';
 
-      const response = await fetch('http://62.238.13.160:8000/analysis/work/evaluate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          critique_id: critiqueResult.critique_id,
-          expert_id: expertId,
-          color_score: colorScore,
-          anatomy_score: anatomyScore,
-          margin_score: marginScore,
-          comment: expertComment.trim(),
-        }),
-      });
-
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setAlertTitle('Ошибка');
-        setAlertMessage(data.detail || `Ошибка сервера ${response.status}`);
-        setAlertVisible(true);
-        setIsEvaluating(false);
-        return;
-      }
-
-      setCritiqueResult(prev => prev ? { ...prev, status: data.status || 'reviewed', rating: data.rating || 0 } : null);
-      setExpertModalVisible(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Не удалось отправить оценку';
-      setAlertTitle('Ошибка');
-      setAlertMessage(message);
-      setAlertVisible(true);
-    } finally {
-      setIsEvaluating(false);
-    }
-  };
-
-  const parseAnalysisResult = (result: string) => {
-    try {
-      // Remove markdown code blocks if present
-      const cleaned = result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      const parsed = JSON.parse(cleaned);
-      return parsed;
-    } catch (error) {
-      console.error('Failed to parse JSON:', error);
-      console.log('Сырой ответ от Claude:', result);
-      return null;
-    }
-  };
 
   const renderCritiqueResult = () => {
     if (!critiqueResult) return null;
 
-    const isReviewed = critiqueResult.status === 'reviewed';
-
     return (
-      <View style={styles.resultContainer}>
+      <View
+        style={styles.resultContainer}
+        onLayout={(e) => { resultSectionY.current = e.nativeEvent.layout.y; }}
+      >
         <View style={styles.critiqueCard}>
           <View style={styles.critiqueHeader}>
             <Ionicons name="scan-outline" size={22} color="#f2ca50" />
-            <Text style={styles.critiqueTitle}>РАБОТА НА РАЗБОРЕ</Text>
+            <Text style={styles.critiqueTitle}>РЕЗУЛЬТАТ АНАЛИЗА</Text>
           </View>
-          <Text style={styles.critiqueId}>ID: {critiqueResult.critique_id}</Text>
-          <View style={[styles.critiqueStatusBadge, isReviewed && styles.critiqueStatusBadgeReviewed]}>
-            <Text style={styles.critiqueStatusText}>
-              {isReviewed ? 'РАЗОБРАНО' : 'ОЖИДАЕТ ЭКСПЕРТА'}
-            </Text>
+
+          <View style={styles.ratingBlock}>
+            <Text style={styles.ratingValue}>{critiqueResult.score}/10</Text>
           </View>
-          {isReviewed && (
-            <View style={styles.ratingBlock}>
-              <Text style={styles.ratingValue}>{critiqueResult.rating.toFixed(1)}</Text>
-              <Text style={styles.ratingLabel}>средний балл</Text>
+
+          <Text style={{ color: '#f2ca50', fontSize: 15, fontWeight: '700', marginTop: 8, textAlign: 'center' }}>
+            {critiqueResult.verdict}
+          </Text>
+
+          {critiqueResult.findings && critiqueResult.findings.length > 0 && (
+            <View style={{ marginTop: 14, width: '100%' }}>
+              {critiqueResult.findings.map((finding, idx) => (
+                <View key={idx} style={{ flexDirection: 'row', marginBottom: 6, gap: 6 }}>
+                  <Text style={{ color: '#f2ca50' }}>•</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, flex: 1 }}>{finding}</Text>
+                </View>
+              ))}
             </View>
           )}
-          <TouchableOpacity
-            style={styles.expertBtn}
-            onPress={() => setExpertModalVisible(true)}
-          >
-            <Text style={styles.expertBtnText}>Оценить как эксперт</Text>
-          </TouchableOpacity>
+
+          <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(242,202,80,0.2)', width: '100%' }}>
+            <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13, lineHeight: 19 }}>
+              {critiqueResult.summary}
+            </Text>
+          </View>
         </View>
       </View>
     );
   };
-
-  const renderScoreSelector = (value: number, onSelect: (v: number) => void) => (
-    <View style={styles.scoreRow}>
-      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((s) => (
-        <TouchableOpacity
-          key={s}
-          style={[styles.scoreBtn, value === s && styles.scoreBtnActive]}
-          onPress={() => onSelect(s)}
-        >
-          <Text style={[styles.scoreBtnText, value === s && styles.scoreBtnTextActive]}>{s}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -584,93 +392,43 @@ export default function WorkAnalysisScreen() {
         <View style={{ flex: 1, backgroundColor: 'transparent' }}>
       {isLoading ? (
         <View style={styles.fullScreenLoader}>
-          <LottieView
-            source={require('@/assets/images/cyber_head.json')}
-            autoPlay
-            loop
-            style={styles.loaderAnimation}
-          />
+          <View style={{ width: 340, height: 340, alignItems: 'center', justifyContent: 'center' }}>
+            <LottieView
+              source={require('@/assets/images/cyber_head.json')}
+              autoPlay
+              loop
+              style={styles.loaderAnimation}
+            />
+            {FLOATING_POSITIONS.map((pos, idx) => (
+              <FloatingWord key={idx} style={pos} delay={idx * 500} />
+            ))}
+          </View>
           <Text style={styles.loaderStatusText}>
-            {LOADING_STATUSES[currentStatusIndex]}
+            🧠 Сенсей анализирует...
           </Text>
         </View>
       ) : (
         <>
           {/* DiLabs Header */}
-          <View style={[styles.headerContainer, { paddingTop: insets.top }]}>
-            <View style={styles.leftContainer}>
-              <TouchableOpacity style={styles.burgerButton}>
-                <Ionicons name="menu-outline" size={28} color="#f2ca50" />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.absoluteCenter}>
-              <Image
-                source={require('@/assets/images/header-logo.png')}
-                style={styles.headerLogo}
-                resizeMode="contain"
-              />
-            </View>
-            <View style={styles.rightContainer}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(13,15,20,0.65)', borderWidth: 1, borderColor: '#bda15d', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 5 }}>
-                <Ionicons name="diamond" size={12} color="#bda15d" />
-                <Text style={{ color: '#bda15d', fontSize: 12, fontWeight: '600' }}>{diamondBalance}</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.bellButton}
-                onPress={() => { router.push('/(tabs)/search'); }}
-              >
-                <Ionicons name="notifications" size={16} color="#bda15d" />
-                {newOrdersCount > 0 && (
-                  <View style={styles.notificationBadge}>
-                    <Text style={styles.notificationBadgeText}>
-                      {newOrdersCount > 99 ? '99+' : newOrdersCount.toString()}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
+          <GlobalHeader diamonds={diamondBalance} />
 
       {/* Local Header */}
       <View style={styles.localHeader}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => setExitConfirmVisible(true)} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color="#f2ca50" />
         </TouchableOpacity>
         <Text style={styles.localTitle}>Анализ работы</Text>
         <View style={styles.backBtn} />
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} ref={scrollViewRef}>
-        {image === null ? (
-          <>
-            {/* Стартовое меню - если фото не выбрано */}
-            <View style={styles.actions}>
-              <TouchableOpacity style={styles.primaryBtn} onPress={takePhoto} activeOpacity={0.85}>
-                <Ionicons name="camera-outline" size={22} color="#031427" />
-                <Text style={styles.primaryBtnText}>Сфотографировать</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.secondaryBtn} onPress={pickImage} activeOpacity={0.85}>
-                <Ionicons name="images-outline" size={22} color="#f2ca50" />
-                <Text style={styles.secondaryBtnText}>Из галереи</Text>
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity
-              style={styles.recommendationsBtn}
-              onPress={() => {
-                setAlertTitle('Рекомендации для точного результата');
-                setAlertMessage('Фотографируйте работу при естественном освещении. Избегайте бликов и теней. Располагайте камеру перпендикулярно поверхности работы.');
-                setAlertVisible(true);
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.recommendationsBtnText}>
-                💡 Рекомендации для точного результата
-              </Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            {/* Форма с параметрами - если фото выбрано */}
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        ref={scrollViewRef}
+        contentContainerStyle={{ paddingBottom: 110 }}
+      >
+        <>
+            {/* Форма с параметрами */}
             {/* 1-й БЛОК: Фото работы */}
             <View style={styles.cardBlock}>
               <Text style={styles.blockHeader}>📷 Фото работы</Text>
@@ -687,7 +445,10 @@ export default function WorkAnalysisScreen() {
 
               {image && (
                 <TouchableOpacity onPress={() => setIsImageModalVisible(true)}>
-                  <Image source={{ uri: image }} style={styles.previewImageCompact} />
+                  <Image
+                    source={{ uri: image }}
+                    style={[styles.previewImageCompact, { aspectRatio: imageAspectRatio, resizeMode: 'contain' }]}
+                  />
                 </TouchableOpacity>
               )}
             </View>
@@ -701,6 +462,27 @@ export default function WorkAnalysisScreen() {
                     <Text style={styles.clearTeethText}>Очистить</Text>
                   </TouchableOpacity>
                 )}
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+                <TouchableOpacity
+                  onPress={() => setSelectedTeeth([...UPPER_TEETH, ...LOWER_TEETH])}
+                  style={styles.quickSelectBtn}
+                >
+                  <Text style={styles.quickSelectBtnText}>Тотал</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setSelectedTeeth([...UPPER_TEETH])}
+                  style={styles.quickSelectBtn}
+                >
+                  <Text style={styles.quickSelectBtnText}>Верхняя челюсть</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setSelectedTeeth([...LOWER_TEETH])}
+                  style={styles.quickSelectBtn}
+                >
+                  <Text style={styles.quickSelectBtnText}>Нижняя челюсть</Text>
+                </TouchableOpacity>
               </View>
 
               <ScrollView
@@ -765,7 +547,10 @@ export default function WorkAnalysisScreen() {
           
           {/* Блок: Заказанный цвет */}
           <View style={styles.parameterBlock}>
-            <Text style={styles.parameterBlockLabel}>Заказанный цвет</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginBottom: 8 }}>
+              <Ionicons name="color-palette-outline" size={13} color="#f2ca50" />
+              <Text style={[styles.parameterBlockLabel, { marginBottom: 0 }]}>Заказанный цвет</Text>
+            </View>
             <View style={styles.pickerContainer}>
               {["Не указан", ...VITA_SHADES].map(shade => (
                 <TouchableOpacity
@@ -787,7 +572,10 @@ export default function WorkAnalysisScreen() {
 
           {/* Блок: Этап работы */}
           <View style={styles.parameterBlock}>
-            <Text style={styles.parameterBlockLabel}>Этап работы</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginBottom: 8 }}>
+              <Ionicons name="layers-outline" size={13} color="#f2ca50" />
+              <Text style={[styles.parameterBlockLabel, { marginBottom: 0 }]}>Этап работы</Text>
+            </View>
             <View style={styles.pickerContainer}>
               {WORK_STAGES.map(stage => (
                 <TouchableOpacity
@@ -809,7 +597,10 @@ export default function WorkAnalysisScreen() {
 
           {/* Блок: Тип конструкции */}
           <View style={styles.parameterBlock}>
-            <Text style={styles.parameterBlockLabel}>Тип конструкции</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginBottom: 8 }}>
+              <Ionicons name="construct-outline" size={13} color="#f2ca50" />
+              <Text style={[styles.parameterBlockLabel, { marginBottom: 0 }]}>Тип конструкции</Text>
+            </View>
             <View style={styles.pickerContainer}>
               {CONSTRUCTION_TYPES.map(type => (
                 <TouchableOpacity
@@ -828,6 +619,49 @@ export default function WorkAnalysisScreen() {
               ))}
             </View>
           </View>
+
+          {/* Блок: Тип анализа */}
+          <View style={styles.parameterBlock}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginBottom: 8 }}>
+              <Ionicons name="analytics-outline" size={13} color="#f2ca50" />
+              <Text style={[styles.parameterBlockLabel, { marginBottom: 0 }]}>Тип анализа</Text>
+            </View>
+            <View style={styles.pickerContainer}>
+              {ANALYSIS_TYPES.map(item => (
+                <TouchableOpacity
+                  key={item.label}
+                  style={[
+                    styles.pickerItemCompact,
+                    analysisType === item.label && styles.pickerItemSelected
+                  ]}
+                  onPress={() => setAnalysisType(item.label)}
+                >
+                  <Text style={[
+                    styles.pickerTextCompact,
+                    analysisType === item.label && styles.pickerTextSelected
+                  ]}>{item.label}</Text>
+                  <View style={{
+                    marginTop: 4,
+                    alignSelf: 'center',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: analysisType === item.label ? 'rgba(3,20,39,0.15)' : 'rgba(242,202,80,0.15)',
+                    paddingHorizontal: 6,
+                    paddingVertical: 2,
+                    borderRadius: 8,
+                    gap: 2,
+                  }}>
+                    <Ionicons name="flash" size={10} color={analysisType === item.label ? '#031427' : '#f2ca50'} />
+                    <Text style={{
+                      fontSize: 10,
+                      fontWeight: '700',
+                      color: analysisType === item.label ? '#031427' : '#f2ca50',
+                    }}>{item.cost}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
             </View>
 
             {/* Кнопка запуска */}
@@ -836,31 +670,36 @@ export default function WorkAnalysisScreen() {
               onPress={submitWork}
               disabled={isLoading}
             >
-              {isLoading ? (
-                <View style={styles.fullScreenLoader}>
-                  <LottieView
-                    source={require('@/assets/images/cyber_head.json')}
-                    autoPlay
-                    loop
-                    style={styles.loaderAnimation}
-                  />
-                  <Text style={styles.loaderStatusText}>
-                    {LOADING_STATUSES[currentStatusIndex]}
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.buttonContent}>
-                  <Ionicons name="cloud-upload-outline" size={20} color="#0a0f1d" />
-                  <Text style={styles.analyzeButtonText} numberOfLines={1} adjustsFontSizeToFit>
-                    Отправить на экспертный разбор
-                  </Text>
-                </View>
-              )}
+              <View style={styles.buttonContent}>
+                <Ionicons name="cloud-upload-outline" size={20} color="#0a0f1d" />
+                <Text style={styles.analyzeButtonText} numberOfLines={1} adjustsFontSizeToFit>
+                  Отправить на экспертный разбор
+                </Text>
+              </View>
             </TouchableOpacity>
 
+            {critiqueResult && (
+              <TouchableOpacity
+                onPress={resetAnalysisForm}
+                style={{
+                  marginTop: 10,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  paddingVertical: 10,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: 'rgba(242,202,80,0.4)',
+                }}
+              >
+                <Ionicons name="refresh-outline" size={16} color="#f2ca50" />
+                <Text style={{ color: '#f2ca50', fontSize: 13, fontWeight: '600' }}>Повторить анализ</Text>
+              </TouchableOpacity>
+            )}
+
             {renderCritiqueResult()}
-          </>
-        )}
+        </>
       </ScrollView>
 
       <Modal
@@ -884,52 +723,6 @@ export default function WorkAnalysisScreen() {
         </TouchableOpacity>
       </Modal>
 
-      <Modal
-        visible={expertModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setExpertModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.expertModalContent}>
-            <View style={styles.expertModalHeader}>
-              <Text style={styles.expertModalTitle}>Экспертная оценка</Text>
-              <TouchableOpacity onPress={() => setExpertModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#f2ca50" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.scoreLabel}>Цвет</Text>
-              {renderScoreSelector(colorScore, setColorScore)}
-
-              <Text style={styles.scoreLabel}>Анатомия и морфология</Text>
-              {renderScoreSelector(anatomyScore, setAnatomyScore)}
-
-              <Text style={styles.scoreLabel}>Прилегание и маргинальный край</Text>
-              {renderScoreSelector(marginScore, setMarginScore)}
-
-              <TextInput
-                style={styles.expertCommentInput}
-                multiline
-                numberOfLines={4}
-                textAlignVertical="top"
-                placeholder="Комментарий эксперта..."
-                placeholderTextColor="rgba(255,255,255,0.4)"
-                value={expertComment}
-                onChangeText={setExpertComment}
-              />
-
-              <TouchableOpacity
-                style={[styles.expertSubmitBtn, isEvaluating && styles.expertSubmitBtnDisabled]}
-                onPress={submitExpertEvaluation}
-                disabled={isEvaluating}
-              >
-                <Text style={styles.expertSubmitBtnText}>Отправить оценку</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
 
       <CustomAlert
         visible={alertVisible}
@@ -937,6 +730,17 @@ export default function WorkAnalysisScreen() {
         message={alertMessage}
         onClose={() => setAlertVisible(false)}
       />
+      <CustomAlert
+        visible={exitConfirmVisible}
+        title="Выйти из анализа?"
+        message="Все несохранённые данные будут потеряны."
+        onClose={() => setExitConfirmVisible(false)}
+        buttons={[
+          { text: 'Остаться', onPress: () => setExitConfirmVisible(false), style: 'cancel' },
+          { text: 'Выйти', onPress: () => { setExitConfirmVisible(false); router.back(); }, style: 'destructive' },
+        ]}
+      />
+      <BottomTabBar />
     </>
       )}
     </View>
@@ -948,84 +752,6 @@ export default function WorkAnalysisScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  dilabsHeader: {
-    backgroundColor: 'transparent',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 50,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f2ca50',
-  },
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f2ca50',
-  },
-  leftContainer: {
-    width: 100,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-  },
-  rightContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'flex-end',
-    gap: 8,
-    width: 100,
-  },
-  absoluteCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  burgerButton: {
-    padding: 4,
-  },
-  headerLogo: {
-    width: 180,
-    height: 56,
-  },
-  bellButton: {
-    backgroundColor: 'rgba(13, 15, 20, 0.65)',
-    borderWidth: 1,
-    borderColor: '#bda15d',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  notificationBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: '#c0392b',
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(13,15,20,0.8)',
-  },
-  notificationBadgeText: {
-    color: '#ffffff',
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
   },
   localHeader: {
     flexDirection: 'row',
@@ -1041,55 +767,6 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  actions: {
-    gap: 12,
-  },
-  primaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: '#f2ca50',
-    paddingVertical: 16,
-    borderRadius: 14,
-  },
-  primaryBtnText: {
-    color: '#031427',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  secondaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: '#0a1628',
-    paddingVertical: 16,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: '#f2ca50',
-  },
-  secondaryBtnText: {
-    color: '#f2ca50',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  recommendationsBtn: {
-    alignSelf: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderWidth: 1,
-    borderColor: '#f2ca5060',
-    borderRadius: 20,
-    backgroundColor: 'transparent',
-    marginTop: 40,
-  },
-  recommendationsBtnText: {
-    color: '#f2ca50',
-    fontSize: 13,
-    opacity: 0.7,
-    textAlign: 'center',
   },
   localTitle: {
     fontSize: 20,
@@ -1187,11 +864,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#ffffff',
     marginBottom: 8,
+    textAlign: 'center',
   },
   pickerContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 4,
+    justifyContent: 'center',
   },
   pickerScroll: {
     marginBottom: 2,
@@ -1202,10 +881,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#f2ca5050',
     borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   pickerTextCompact: {
     fontSize: 11,
     color: '#f2ca50',
+    textAlign: 'center',
   },
   // Teeth compact
   teethScrollContent: {
@@ -1246,6 +928,19 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#f2ca50',
   },
+  quickSelectBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(242,202,80,0.4)',
+    backgroundColor: 'rgba(242,202,80,0.08)',
+  },
+  quickSelectBtnText: {
+    fontSize: 11,
+    color: '#f2ca50',
+    fontWeight: '600',
+  },
   selectedTeethText: {
     fontSize: 11,
     color: '#4fc3f7',
@@ -1274,18 +969,7 @@ const styles = StyleSheet.create({
   },
   previewImageCompact: {
     width: '100%',
-    height: 120,
     borderRadius: 6,
-  },
-  // Text input
-  textInput: {
-    height: 50,
-    borderWidth: 1,
-    borderColor: '#f2ca5050',
-    borderRadius: 6,
-    padding: 8,
-    color: '#ffffff',
-    fontSize: 12,
   },
   // Analyze button
   analyzeButton: {
@@ -1558,135 +1242,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-  critiqueId: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 13,
-    marginBottom: 12,
-  },
-  critiqueStatusBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(242, 202, 80, 0.15)',
-    borderWidth: 1,
-    borderColor: '#f2ca50',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginBottom: 12,
-  },
-  critiqueStatusBadgeReviewed: {
-    backgroundColor: '#f2ca50',
-  },
-  critiqueStatusText: {
-    color: '#f2ca50',
-    fontSize: 12,
-    fontWeight: '700',
-  },
   ratingBlock: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
+    alignItems: 'center',
     marginBottom: 12,
   },
   ratingValue: {
     color: '#f2ca50',
     fontSize: 32,
     fontWeight: '800',
-  },
-  ratingLabel: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  expertBtn: {
-    backgroundColor: 'rgba(242, 202, 80, 0.15)',
-    borderWidth: 1,
-    borderColor: '#f2ca50',
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  expertBtnText: {
-    color: '#f2ca50',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  expertModalContent: {
-    backgroundColor: '#0a0f1d',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#f2ca50',
-    margin: 20,
-    padding: 20,
-    maxHeight: '80%',
-  },
-  expertModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  expertModalTitle: {
-    color: '#f2ca50',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  scoreLabel: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  scoreRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  scoreBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(242, 202, 80, 0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scoreBtnActive: {
-    backgroundColor: '#f2ca50',
-    borderColor: '#f2ca50',
-  },
-  scoreBtnText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  scoreBtnTextActive: {
-    color: '#0a0f1d',
-  },
-  expertCommentInput: {
-    height: 90,
-    borderWidth: 1,
-    borderColor: 'rgba(242, 202, 80, 0.4)',
-    borderRadius: 12,
-    padding: 12,
-    color: '#ffffff',
-    fontSize: 14,
-    marginTop: 16,
-    textAlignVertical: 'top',
-  },
-  expertSubmitBtn: {
-    backgroundColor: '#f2ca50',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  expertSubmitBtnDisabled: {
-    opacity: 0.5,
-  },
-  expertSubmitBtnText: {
-    color: '#0a0f1d',
-    fontSize: 15,
-    fontWeight: '700',
   },
 });
