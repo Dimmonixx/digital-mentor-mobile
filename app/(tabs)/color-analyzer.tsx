@@ -1,7 +1,7 @@
 import { DemoOverlay, DemoOverlayData } from '@/components/case-post-actions';
 import { getFirebaseDB } from '@/constants/firebase';
 import { executeWithAiLimit } from '@/services/aiRequestService';
-import { saveToArchive, uploadMediaToServer } from '@/utils/saveToArchive';
+import { saveToArchive, updateArchiveItem, uploadMediaToServer } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
@@ -10,9 +10,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { ref as dbRef, get } from 'firebase/database';
+import LottieView from 'lottie-react-native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
+    Animated,
     Dimensions,
     Image,
     ImageBackground,
@@ -21,6 +23,7 @@ import {
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
     useWindowDimensions
@@ -32,6 +35,21 @@ import { ANTHROPIC_API_KEY } from '../../constants/config';
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
 const COLOR_ANALYSIS_PRICE = 1;
 const API_BASE_URL = 'http://62.238.13.160:8000';
+
+const FLOATING_WORDS = [
+  "оттенок", "зоны", "прозрачность", "яркость", "насыщенность", "эффекты", "текстуру", "субтоны"
+];
+
+const FLOATING_POSITIONS = [
+  { top: 155, left: 220 },
+  { top: 260, left: 185 },
+  { top: 300, left: 100 },
+  { top: 260, left: 15 },
+  { top: 155, left: -20 },
+  { top: 50, left: 15 },
+  { top: 10, left: 100 },
+  { top: 50, left: 185 },
+];
 
 // Кэш для анализа VITA
 const CACHE_PREFIX = 'vita_analysis_cache_';
@@ -274,6 +292,47 @@ A5 (виртуальный эталон) = экстремальный, «нек�
   return parsed;
 }
 
+const FloatingWord = ({ style, delay }: { style: any; delay: number }) => {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const [wordIndex, setWordIndex] = useState(() => Math.floor(Math.random() * FLOATING_WORDS.length));
+
+  useEffect(() => {
+    let isMounted = true;
+    const runCycle = () => {
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.delay(1200),
+        Animated.timing(opacity, { toValue: 0, duration: 600, useNativeDriver: true }),
+        Animated.delay(400),
+      ]).start(() => {
+        if (isMounted) {
+          setWordIndex(prev => (prev + 1) % FLOATING_WORDS.length);
+          runCycle();
+        }
+      });
+    };
+    const timeout = setTimeout(runCycle, delay);
+    return () => { isMounted = false; clearTimeout(timeout); };
+  }, []);
+
+  return (
+    <Animated.View style={[{ position: 'absolute', width: 110, alignItems: 'center' }, style, { opacity }]}>
+      <View style={{
+        backgroundColor: 'rgba(242,202,80,0.12)',
+        borderWidth: 1,
+        borderColor: 'rgba(242,202,80,0.4)',
+        borderRadius: 14,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+      }}>
+        <Text style={{ color: '#f2ca50', fontSize: 12, fontWeight: '600', textAlign: 'center' }}>
+          {FLOATING_WORDS[wordIndex]}
+        </Text>
+      </View>
+    </Animated.View>
+  );
+};
+
 
 export default function ColorAnalyzerScreen() {
   const insets = useSafeAreaInsets();
@@ -377,6 +436,22 @@ export default function ColorAnalyzerScreen() {
     mime: 'image/jpeg' | 'image/png';
   } | null>(null);
   const [loading, setLoading] = useState(false);
+  const textOpacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (loading) {
+      const blinkAnimation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(textOpacity, { toValue: 0.3, duration: 500, useNativeDriver: true }),
+          Animated.timing(textOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+        ])
+      );
+      blinkAnimation.start();
+      return () => blinkAnimation.stop();
+    } else {
+      textOpacity.setValue(1);
+    }
+  }, [loading]);
   const [error, setError] = useState<string | null>(null);
   const [jaw, setJaw] = useState<'upper' | 'lower' | null>(null);
   const [showJawModal, setShowJawModal] = useState(false);
@@ -400,6 +475,7 @@ export default function ColorAnalyzerScreen() {
   const [shareOverlayData, setShareOverlayData] = useState<DemoOverlayData>(null);
   const [patientName, setPatientName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [noteFinalized, setNoteFinalized] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -614,6 +690,7 @@ const reset = useCallback(() => {
         });
         if (success) {
           setShowSaveModal(false);
+          setNoteFinalized(true);
         }
       } else {
         const savedId = await saveToArchive(
@@ -669,6 +746,10 @@ const reset = useCallback(() => {
     setError(null);
     setResult(null);
     setLoading(false);
+    setShareArchiveId(null);
+    setUserNote('');
+    setPatientName('');
+    setNoteFinalized(false);
     // Нормализуем ориентацию фото (устраняем рассинхрон EXIF-поворота 
     // между тем, что видно на экране, и тем, что реально обрезается)
     try {
@@ -1060,9 +1141,14 @@ const reset = useCallback(() => {
                 )}
               </View>
               {loading ? (
-                <View style={styles.loadingBox}>
-                  <ActivityIndicator size="large" color="#f2ca50" />
-                  <Text style={styles.loadingText}>Анализирую...</Text>
+                <View style={[styles.loadingBox, { alignItems: 'center' }]}>
+                  <LottieView
+                    source={require('@/assets/images/cyber_head.json')}
+                    autoPlay
+                    loop
+                    style={{ width: 180, height: 180 }}
+                  />
+                  <Animated.Text style={[styles.loadingText, { opacity: textOpacity }]}>Анализирую...</Animated.Text>
                 </View>
               ) : null}
               {result ? (
@@ -1264,24 +1350,22 @@ const reset = useCallback(() => {
 {/* ── Action Row ── */}
 {result && !fromOrderContext && (
   <View style={styles.actionRow}>
-    <TouchableOpacity
-      style={[styles.homeBtn, shareArchiveId && { opacity: 0.5 }]}
-      onPress={() => setShowSaveModal(true)}
-      disabled={!!shareArchiveId}
-    >
-      <Ionicons name={shareArchiveId ? "checkmark-circle" : "save-outline"} size={18} color="#031427" />
-      <Text style={styles.homeBtnText}>{shareArchiveId ? 'Сохранено' : 'Сохранить'}</Text>
-    </TouchableOpacity>
-    <TouchableOpacity style={styles.shareBtn} onPress={() => { loadPartners(); setShareModalVisible(true); }}>
-      <Ionicons name="share-social-outline" size={18} color="#031427" />
-      <Text style={styles.shareBtnText}>Переслать коллеге</Text>
-    </TouchableOpacity>
+    {/* Кнопка Сохранить */}
+<TouchableOpacity
+  style={[styles.homeBtn, { flexDirection: 'column', gap: 4 }, noteFinalized && { opacity: 0.5 }]}
+  onPress={() => setShowSaveModal(true)}
+  disabled={noteFinalized}
+>
+  <Ionicons name={noteFinalized ? "checkmark-circle" : shareArchiveId ? "create-outline" : "save-outline"} size={18} color="#031427" />
+  <Text style={[styles.homeBtnText, { textAlign: 'center' }]}>{noteFinalized ? 'Сохранено' : shareArchiveId ? 'Добавить заметку' : 'Сохранить'}</Text>
+</TouchableOpacity>
+
+{/* Кнопка Переслать коллеге */}
+<TouchableOpacity style={[styles.shareBtn, { flexDirection: 'column', gap: 4, backgroundColor: 'rgba(242,202,80,0.35)' }]} onPress={() => { loadPartners(); setShareModalVisible(true); }}>
+  <Ionicons name="share-social-outline" size={18} color="#031427" />
+  <Text style={[styles.shareBtnText, { textAlign: 'center' }]}>Переслать коллеге</Text>
+</TouchableOpacity>
   </View>
-)}
-{result && !fromOrderContext && (
-  <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={{ alignSelf: 'center', marginTop: 10 }}>
-    <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>На главную</Text>
-  </TouchableOpacity>
 )}
               {result && fromOrderContext && (
                 <TouchableOpacity
@@ -1682,6 +1766,83 @@ const reset = useCallback(() => {
             </View>
           </View>
         </Modal>
+
+        {/* Модалка сохранения в архив */}
+        <Modal
+          visible={showSaveModal}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowSaveModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.shareModal}>
+              <View style={styles.shareModalHeader}>
+                <Ionicons name="save-outline" size={22} color="#f2ca50" />
+                <Text style={styles.shareModalTitle}>Сохранить в архив</Text>
+                <TouchableOpacity onPress={() => setShowSaveModal(false)}>
+                  <Ionicons name="close" size={22} color="rgba(255,255,255,0.5)" />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.shareModalSub}>Анализ цвета VITA</Text>
+
+              <TextInput
+                value={patientName}
+                onChangeText={setPatientName}
+                placeholder="Имя пациента (необязательно)"
+                placeholderTextColor="rgba(255,255,255,0.4)"
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.05)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(242,202,80,0.3)',
+                  borderRadius: 10,
+                  padding: 12,
+                  color: '#fff',
+                  fontSize: 14,
+                  marginTop: 16,
+                }}
+              />
+
+              <TextInput
+                value={userNote}
+                onChangeText={setUserNote}
+                placeholder="Ваша заметка к этому анализу..."
+                placeholderTextColor="rgba(255,255,255,0.4)"
+                multiline
+                numberOfLines={4}
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.05)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(242,202,80,0.3)',
+                  borderRadius: 10,
+                  padding: 12,
+                  color: '#fff',
+                  fontSize: 14,
+                  marginTop: 10,
+                  minHeight: 90,
+                  textAlignVertical: 'top',
+                }}
+              />
+
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#f2ca50',
+                  borderRadius: 12,
+                  paddingVertical: 14,
+                  alignItems: 'center',
+                  marginTop: 16,
+                  opacity: isSaving ? 0.6 : 1,
+                }}
+                onPress={handleSaveToArchive}
+                disabled={isSaving}
+              >
+                <Text style={{ color: '#031427', fontSize: 15, fontWeight: '700' }}>
+                  {isSaving ? 'Сохраняем...' : 'Сохранить'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
         <DemoOverlay data={shareOverlayData} onClose={() => setShareOverlayData(null)} />
       </View>
     </ImageBackground>
