@@ -2,7 +2,7 @@
 import { ArchiveItem, ArchiveItemData, ArchiveItemType } from '@/types/archive';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, doc, updateDoc } from 'firebase/firestore';
 import { Alert } from 'react-native';
 
 export const ARCHIVE_COLLECTION = 'archives';
@@ -142,6 +142,40 @@ export async function saveToArchive(
   } catch (e) {
     console.error('[saveToArchive] error:', e);
     return null;
+  }
+}
+
+export async function updateArchiveItem(
+  docId: string,
+  updates: { patientName?: string; notes?: string },
+): Promise<boolean> {
+  try {
+    const updateData: Record<string, any> = {};
+    if (updates.patientName !== undefined) updateData.patientName = updates.patientName;
+    if (updates.notes !== undefined) updateData['data.notes'] = updates.notes;
+
+    await updateDoc(doc(getFirebaseFirestore(), ARCHIVE_COLLECTION, docId), updateData);
+
+    // Обновляем и локальный кэш
+    const localRaw = await AsyncStorage.getItem(LOCAL_ARCHIVE_KEY);
+    if (localRaw) {
+      const localList = JSON.parse(localRaw);
+      const updatedList = localList.map((it: any) =>
+        it.id === docId
+          ? {
+              ...it,
+              ...(updates.patientName !== undefined ? { patientName: updates.patientName } : {}),
+              data: { ...it.data, ...(updates.notes !== undefined ? { notes: updates.notes } : {}) },
+            }
+          : it
+      );
+      await AsyncStorage.setItem(LOCAL_ARCHIVE_KEY, JSON.stringify(updatedList));
+    }
+
+    return true;
+  } catch (e) {
+    console.error('[updateArchiveItem] error:', e);
+    return false;
   }
 }
 

@@ -1,4 +1,5 @@
 import { getFirebaseDB } from '@/constants/firebase';
+import { useNewOrdersCount } from '@/hooks/useNewOrdersCount';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -53,7 +54,7 @@ export default function OrderDetailsScreen() {
   const [user, setUser] = useState<any>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
-  const [newOrdersCount, setNewOrdersCount] = useState(0);
+  const newOrdersCount = useNewOrdersCount();
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [isVitaExpanded, setIsVitaExpanded] = useState(false);
@@ -78,25 +79,6 @@ export default function OrderDetailsScreen() {
     });
     return () => unsubscribe();
   }, [orderId]);
-
-  // Слушатель для подсчёта новых нарядов
-  useEffect(() => {
-    const ordersRef = ref(getFirebaseDB(), 'orders');
-    const unsubscribe = onValue(ordersRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const ordersList = Object.entries(data).map(([id, order]: any) => ({
-          id,
-          ...order,
-        }));
-        const currentNewOrdersCount = ordersList.filter(order => order.status === 'new').length;
-        setNewOrdersCount(currentNewOrdersCount);
-      } else {
-        setNewOrdersCount(0);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
 
   const updateStatus = async (newStatus: string) => {
     await update(ref(getFirebaseDB(), `orders/${orderId}`), { 
@@ -1127,7 +1109,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -2,
     right: -2,
-    backgroundColor: '#E2BD75',
+    backgroundColor: '#e74c3c',
     borderRadius: 10,
     minWidth: 20,
     height: 20,
@@ -1137,7 +1119,7 @@ const styles = StyleSheet.create({
     borderColor: '#031427',
   },
   notificationBadgeText: {
-    color: '#031427',
+    color: '#ffffff',
     fontSize: 11,
     fontWeight: 'bold',
     paddingHorizontal: 4,

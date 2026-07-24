@@ -185,12 +185,14 @@ export default function DrawerMenu({ visible, onClose, onRoleSwitch, unreadAnaly
               {user?.role && (
                 <Text style={styles.roleText}>{getRoleLabel(user.role)}</Text>
               )}
-              {user?.diamondBalance !== undefined && (
-                <View style={styles.diamondRow}>
-                  <Ionicons name="flash" size={13} color="#f2ca50" />
-                  <Text style={styles.diamondText}>{user.diamondBalance} зарядов ИИ</Text>
-                </View>
-              )}
+              {(() => {
+  const aiLimit = (globalThis as any).getAiDailyLimit?.();
+  return aiLimit !== undefined ? (
+    <View style={styles.diamondRow}>
+      <Text style={styles.diamondText}>{aiLimit >= 999000 ? '∞' : aiLimit} зарядов ИИ</Text>
+    </View>
+  ) : null;
+})()}
             </View>
           </View>
 

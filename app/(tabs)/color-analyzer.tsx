@@ -1,4 +1,5 @@
-import { getFirebaseFirestore } from '@/constants/firebase';
+import { DemoOverlay, DemoOverlayData } from '@/components/case-post-actions';
+import { getFirebaseDB } from '@/constants/firebase';
 import { executeWithAiLimit } from '@/services/aiRequestService';
 import { saveToArchive, uploadMediaToServer } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -6,23 +7,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { ref as dbRef, get } from 'firebase/database';
-import { arrayUnion, doc, updateDoc } from 'firebase/firestore';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     Dimensions,
     Image,
     ImageBackground,
     Modal,
+    PanResponder,
     ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View
+    View,
+    useWindowDimensions
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DraggableZones, { Zone } from '../../components/DraggableZones';
@@ -30,6 +31,7 @@ import { ANTHROPIC_API_KEY } from '../../constants/config';
 
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
 const COLOR_ANALYSIS_PRICE = 1;
+const API_BASE_URL = 'http://62.238.13.160:8000';
 
 // Кэш для анализа VITA
 const CACHE_PREFIX = 'vita_analysis_cache_';
@@ -276,6 +278,100 @@ A5 (виртуальный эталон) = экстремальный, «нек�
 export default function ColorAnalyzerScreen() {
   const insets = useSafeAreaInsets();
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [rawImageUri, setRawImageUri] = useState<string | null>(null);
+  const [rawImageSize, setRawImageSize] = useState<{ width: number; height: number } | null>(null);
+  const [showCropScreen, setShowCropScreen] = useState(false);
+  const [cropBox, setCropBox] = useState({ x: 40, y: 100, width: 250, height: 250 });
+  const { width: liveWidth, height: liveHeight } = useWindowDimensions();
+  const cropDisplayRef = useRef({ width: 0, height: 0 });
+  const cropDragRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  const cropBoxRef = useRef(cropBox);
+  const MIN_CROP_SIZE = 60;
+  const CROP_CONTAINER_SIZE = Math.min(liveWidth - 40, 400);
+
+  useEffect(() => {
+    cropBoxRef.current = cropBox;
+  }, [cropBox]);
+
+  useEffect(() => {
+    if (showCropScreen && rawImageSize) {
+      const scale = Math.min(
+        CROP_CONTAINER_SIZE / rawImageSize.width,
+        CROP_CONTAINER_SIZE / rawImageSize.height
+      );
+      const displayWidth = rawImageSize.width * scale;
+      const displayHeight = rawImageSize.height * scale;
+      cropDisplayRef.current = { width: displayWidth, height: displayHeight };
+
+      const initSize = Math.min(displayWidth, displayHeight) * 0.7;
+      setCropBox({
+        x: (displayWidth - initSize) / 2,
+        y: (displayHeight - initSize) / 2,
+        width: initSize,
+        height: initSize,
+      });
+    }
+  }, [showCropScreen, rawImageSize]);
+
+  const movePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        cropDragRef.current = { ...cropBoxRef.current };
+      },
+      onPanResponderMove: (e, gesture) => {
+        const { width: dw, height: dh } = cropDisplayRef.current;
+        let newX = cropDragRef.current.x + gesture.dx;
+        let newY = cropDragRef.current.y + gesture.dy;
+        newX = Math.max(0, Math.min(newX, dw - cropDragRef.current.width));
+        newY = Math.max(0, Math.min(newY, dh - cropDragRef.current.height));
+        setCropBox(prev => ({ ...prev, x: newX, y: newY }));
+      },
+    })
+  ).current;
+
+  const resizeResponders = useRef<any>(null);
+  if (!resizeResponders.current) {
+    const makeResizeResponder = (corner: 'tl' | 'tr' | 'bl' | 'br') =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => {
+          cropDragRef.current = { ...cropBoxRef.current };
+        },
+        onPanResponderMove: (e, gesture) => {
+          const { width: dw, height: dh } = cropDisplayRef.current;
+          const { x, y, width, height } = cropDragRef.current;
+          let newX = x, newY = y, newWidth = width, newHeight = height;
+
+          if (corner === 'br') {
+            newWidth = Math.max(MIN_CROP_SIZE, Math.min(width + gesture.dx, dw - x));
+            newHeight = Math.max(MIN_CROP_SIZE, Math.min(height + gesture.dy, dh - y));
+          } else if (corner === 'bl') {
+            newWidth = Math.max(MIN_CROP_SIZE, Math.min(width - gesture.dx, x + width));
+            newX = x + width - newWidth;
+            newHeight = Math.max(MIN_CROP_SIZE, Math.min(height + gesture.dy, dh - y));
+          } else if (corner === 'tr') {
+            newWidth = Math.max(MIN_CROP_SIZE, Math.min(width + gesture.dx, dw - x));
+            newHeight = Math.max(MIN_CROP_SIZE, Math.min(height - gesture.dy, y + height));
+            newY = y + height - newHeight;
+          } else if (corner === 'tl') {
+            newWidth = Math.max(MIN_CROP_SIZE, Math.min(width - gesture.dx, x + width));
+            newX = x + width - newWidth;
+            newHeight = Math.max(MIN_CROP_SIZE, Math.min(height - gesture.dy, y + height));
+            newY = y + height - newHeight;
+          }
+
+          setCropBox({ x: newX, y: newY, width: newWidth, height: newHeight });
+        },
+      });
+
+    resizeResponders.current = {
+      tl: makeResizeResponder('tl'),
+      tr: makeResizeResponder('tr'),
+      bl: makeResizeResponder('bl'),
+      br: makeResizeResponder('br'),
+    };
+  }
   const [pendingPayload, setPendingPayload] = useState<{
     base64: string;
     mime: 'image/jpeg' | 'image/png';
@@ -291,21 +387,27 @@ export default function ColorAnalyzerScreen() {
     const [result, setResult] = useState<VitaAnalysis | null>(null);
   const [tipsModalVisible, setTipsModalVisible] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
-  const [fromOrderContext, setFromOrderContext] = useState(false);
+  const { fromOrder } = useLocalSearchParams<{ fromOrder?: string }>();
+  const fromOrderContext = fromOrder === 'true';
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [shareSuccessVisible, setShareSuccessVisible] = useState(false);
   const [partners, setPartners] = useState<{ id: string; name: string }[]>([]);
   const [sharingId, setSharingId] = useState<string | null>(null);
   const [shareArchiveId, setShareArchiveId] = useState<string | null>(null);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [userNote, setUserNote] = useState('');
+  const [shareOverlayData, setShareOverlayData] = useState<DemoOverlayData>(null);
+  const [patientName, setPatientName] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem('scrollToVitaOnReturn').then((val) => {
-        setFromOrderContext(val === 'true');
-      });
       AsyncStorage.getItem('user').then((raw) => {
-        if (raw) setCurrentUser(JSON.parse(raw));
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          setCurrentUser(parsed);
+        }
       });
       return () => {
         setSelectedImage(null);
@@ -470,14 +572,17 @@ const reset = useCallback(() => {
 
       setResult(analysis);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const savedId = await saveToArchive(
+
+      // Автосохранение сразу после анализа
+      const autoSavedId = await saveToArchive(
         'color_analysis',
         'Анализ цвета VITA',
         {
           imageUri: selectedImage ?? '',
           vitaShade: analysis.primary_range ?? '',
           confidence: typeof analysis.confidence === 'number' ? analysis.confidence : 0,
-          notes: analysis.body ?? '',
+          notes: '',
+          aiDescription: analysis.body ?? '',
           neck: analysis.neck ?? '',
           edge: analysis.edge ?? '',
           photo_quality: analysis.photo_quality ?? '',
@@ -488,7 +593,7 @@ const reset = useCallback(() => {
           layering_recipe: analysis.layering_recipe ?? {},
         } as any,
       );
-      if (savedId) setShareArchiveId(savedId);
+      if (autoSavedId) setShareArchiveId(autoSavedId);
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Ошибка запроса';
       setError(message);
@@ -497,6 +602,50 @@ const reset = useCallback(() => {
       setLoading(false);
     }
   }, [selectedImage, jaw, zones, containerSize]);
+
+  const handleSaveToArchive = async () => {
+    if (!result) return;
+    setIsSaving(true);
+    try {
+      if (shareArchiveId) {
+        const success = await updateArchiveItem(shareArchiveId, {
+          patientName: patientName.trim() || 'Анализ цвета VITA',
+          notes: userNote.trim(),
+        });
+        if (success) {
+          setShowSaveModal(false);
+        }
+      } else {
+        const savedId = await saveToArchive(
+          'color_analysis',
+          patientName.trim() || 'Анализ цвета VITA',
+          {
+            imageUri: selectedImage ?? '',
+            vitaShade: result.primary_range ?? '',
+            confidence: typeof result.confidence === 'number' ? result.confidence : 0,
+            notes: userNote.trim(),
+            aiDescription: result.body ?? '',
+            neck: result.neck ?? '',
+            edge: result.edge ?? '',
+            photo_quality: result.photo_quality ?? '',
+            zones: result.zones ?? {},
+            secondary_subtones: result.secondary_subtones ?? '',
+            effects: result.effects ?? '',
+            features: result.features ?? '',
+            layering_recipe: result.layering_recipe ?? {},
+          } as any,
+        );
+        if (savedId) {
+          setShareArchiveId(savedId);
+          setShowSaveModal(false);
+        }
+      }
+    } catch (e) {
+      console.error('[handleSaveToArchive] error:', e);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleAnalyze = useCallback(async () => {
     if (!pendingPayload) return;
@@ -520,7 +669,22 @@ const reset = useCallback(() => {
     setError(null);
     setResult(null);
     setLoading(false);
-    setSelectedImage(asset.uri);
+    // Нормализуем ориентацию фото (устраняем рассинхрон EXIF-поворота 
+    // между тем, что видно на экране, и тем, что реально обрезается)
+    try {
+      const normalized = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: asset.width } }],
+        { format: ImageManipulator.SaveFormat.JPEG, compress: 1 }
+      );
+      setRawImageUri(normalized.uri);
+      setRawImageSize({ width: normalized.width, height: normalized.height });
+    } catch (e) {
+      console.error('[pickAsset] normalize error:', e);
+      setRawImageUri(asset.uri);
+      setRawImageSize({ width: asset.width, height: asset.height });
+    }
+    setShowCropScreen(true);
     // Сохраняем base64 обрезанного фото
     // для передачи в Claude
     const b64 = asset.base64;
@@ -540,11 +704,52 @@ const reset = useCallback(() => {
     setPendingPayload({ base64: b64, mime });
   }, []);
 
+  const applyCrop = useCallback(async () => {
+    if (!rawImageUri || !rawImageSize) return;
+    const { width: dw, height: dh } = cropDisplayRef.current;
+    const scale = rawImageSize.width / dw;
+
+    const realX = Math.round(cropBox.x * scale);
+    const realY = Math.round(cropBox.y * scale);
+    const realWidth = Math.round(cropBox.width * scale);
+    const realHeight = Math.round(cropBox.height * scale);
+
+    console.log('=== CROP DEBUG ===', {
+      rawImageSize,
+      displayWidth: dw,
+      displayHeight: dh,
+      cropBox,
+      scale,
+      realX, realY, realWidth, realHeight,
+    });
+
+    try {
+      const cropped = await ImageManipulator.manipulateAsync(
+        rawImageUri,
+        [{ crop: { originX: realX, originY: realY, width: realWidth, height: realHeight } }],
+        { compress: 1, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+
+      setSelectedImage(cropped.uri);
+      setPendingPayload({ base64: cropped.base64 || '', mime: 'image/jpeg' });
+      setShowCropScreen(false);
+    } catch (e) {
+      console.error('[applyCrop] error:', e);
+      setError('Не удалось обрезать фото. Попробуйте ещё раз.');
+    }
+  }, [rawImageUri, rawImageSize, cropBox]);
+
+  const cancelCrop = useCallback(() => {
+    setShowCropScreen(false);
+    setRawImageUri(null);
+    setRawImageSize(null);
+  }, []);
+
   
   const launchCamera = useCallback(async () => {
     const res = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
+      allowsEditing: false,
       quality: 1,
       exif: false,
       base64: true,
@@ -556,7 +761,7 @@ const reset = useCallback(() => {
   const launchGallery = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
+      allowsEditing: false,
       quality: 0.75,
       base64: true,
     });
@@ -589,57 +794,81 @@ const reset = useCallback(() => {
   };
 
   const shareAnalysis = async (colleagueId: string) => {
-    if (!shareArchiveId) {
-      Alert.alert('Ошибка', 'Анализ ещё сохраняется, попробуйте через секунду');
-      return;
+  if (!currentUser) return;
+  setSharingId(colleagueId);
+  try {
+    const myUid: string = currentUser.uid || currentUser.id;
+    const doctorId = currentUser.role === 'doctor' ? myUid : colleagueId;
+    const technicianId = currentUser.role === 'doctor' ? colleagueId : myUid;
+
+    const chatResponse = await fetch(`${API_BASE_URL}/chat/get-or-create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ doctor_id: doctorId, technician_id: technicianId }),
+    });
+    const chatData = await chatResponse.json().catch(() => ({}));
+    if (!chatResponse.ok || !chatData.chat_id) {
+      throw new Error(chatData.detail || 'Не удалось найти чат');
     }
-    setSharingId(colleagueId);
-    try {
-      const docRef = doc(getFirebaseFirestore(), 'archives', shareArchiveId);
 
-      // Загружаем фото на сервер вместо base64 для получателя
-      let finalImageUri = '';
-      const localUri: string = selectedImage ?? '';
-      if (localUri && (localUri.startsWith('file://') || localUri.startsWith('content://'))) {
-        finalImageUri = await uploadMediaToServer(localUri);
-        if (!finalImageUri) {
-          console.log('[shareAnalysis] upload failed');
-        }
-      } else if (localUri.startsWith('http://') || localUri.startsWith('https://')) {
-        finalImageUri = localUri;
-      }
-
-      const patch: any = { sharedWith: arrayUnion(colleagueId) };
-      if (finalImageUri) patch.imageUri = finalImageUri;
-      // Дописываем полные данные анализа (zones и т.д.) если result есть
-      if (result) {
-        patch['data.vitaShade'] = result.primary_range ?? '';
-        patch['data.confidence'] = typeof result.confidence === 'number' ? result.confidence : 0;
-        patch['data.notes'] = result.body ?? '';
-        patch['data.neck'] = result.neck ?? '';
-        patch['data.edge'] = result.edge ?? '';
-        patch['data.photo_quality'] = result.photo_quality ?? '';
-        patch['data.zones'] = result.zones ?? {};
-        patch['data.secondary_subtones'] = result.secondary_subtones ?? '';
-        patch['data.effects'] = result.effects ?? '';
-        patch['data.features'] = result.features ?? '';
-        patch['data.layering_recipe'] = result.layering_recipe ?? {};
-      }
-
-      await updateDoc(docRef, patch);
-      setShareModalVisible(false);
-      setShareSuccessVisible(true);
-    } catch (err) {
-      console.error('[shareAnalysis]', err);
-      Alert.alert('Ошибка', 'Не удалось отправить. Проверьте соединение.');
-    } finally {
-      setSharingId(null);
+    let finalImageUri = '';
+    const localUri: string = selectedImage ?? '';
+    if (localUri && (localUri.startsWith('file://') || localUri.startsWith('content://'))) {
+      finalImageUri = await uploadMediaToServer(localUri);
+    } else if (localUri.startsWith('http://') || localUri.startsWith('https://')) {
+      finalImageUri = localUri;
     }
-  };
+
+    const analysisData = {
+      vitaShade: result?.primary_range ?? '',
+      confidence: typeof result?.confidence === 'number' ? result.confidence : 0,
+      photo_quality: result?.photo_quality ?? '',
+      neck: result?.neck ?? '',
+      body: result?.body ?? '',
+      edge: result?.edge ?? '',
+      effects: result?.effects ?? '',
+      features: result?.features ?? '',
+      secondary_subtones: result?.secondary_subtones ?? '',
+      zones: result?.zones ?? {},
+    };
+
+    const sendResponse = await fetch(`${API_BASE_URL}/chat/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatData.chat_id,
+        sender_id: myUid,
+        text: '',
+        message_type: 'color_analysis',
+        image_uri: finalImageUri,
+        analysis_data: analysisData,
+      }),
+    });
+    const sendData = await sendResponse.json().catch(() => ({}));
+    if (!sendResponse.ok) {
+      throw new Error(sendData.detail || 'Не удалось отправить сообщение');
+    }
+
+    setShareModalVisible(false);
+    setShareSuccessVisible(true);
+  } catch (err) {
+    console.error('[shareAnalysis]', err);
+    setShareOverlayData({
+  title: 'Ошибка',
+  message: 'Не удалось отправить. Проверьте соединение.',
+  icon: 'alert-circle-outline',
+  danger: true,
+  confirmText: 'Понятно',
+  onConfirm: () => setShareOverlayData(null),
+});
+  } finally {
+    setSharingId(null);
+  }
+};
 
   const takePhoto = async () => {
   const result = await ImagePicker.launchCameraAsync({
-    allowsEditing: true,
+    allowsEditing: false,
     quality: 1,
     base64: true,
   });
@@ -653,7 +882,7 @@ const reset = useCallback(() => {
   const pickFromGallery = async () => {
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    allowsEditing: true,
+    allowsEditing: false,
     quality: 1,
     base64: true,
   });
@@ -824,9 +1053,8 @@ const reset = useCallback(() => {
                     onPress={handleAnalyze}
                     activeOpacity={0.88}
                   >
-                    <Ionicons name="diamond" size={16} color="#1a1a2e" />
                     <Text style={styles.analyzeBtnText} numberOfLines={1} adjustsFontSizeToFit>
-                      Запустить анализ цвета (1)
+                      Запустить анализ цвета ⚡1
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -1033,30 +1261,28 @@ const reset = useCallback(() => {
                 </View>
               ) : null}
 
-              
-                            {result && !fromOrderContext && (
-                <View style={styles.actionRow}>
-                  <TouchableOpacity
-                    style={styles.homeBtn}
-                    onPress={() => router.replace('/(tabs)')}
-                    activeOpacity={0.85}
-                  >
-                    <Ionicons name="home-outline" size={18} color="#031427" />
-                    <Text style={styles.homeBtnText}>На главную</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.shareBtn}
-                    onPress={() => {
-                      loadPartners();
-                      setShareModalVisible(true);
-                    }}
-                    activeOpacity={0.85}
-                  >
-                    <Ionicons name="share-social-outline" size={18} color="#f2ca50" />
-                    <Text style={styles.shareBtnText}>Поделиться</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+{/* ── Action Row ── */}
+{result && !fromOrderContext && (
+  <View style={styles.actionRow}>
+    <TouchableOpacity
+      style={[styles.homeBtn, shareArchiveId && { opacity: 0.5 }]}
+      onPress={() => setShowSaveModal(true)}
+      disabled={!!shareArchiveId}
+    >
+      <Ionicons name={shareArchiveId ? "checkmark-circle" : "save-outline"} size={18} color="#031427" />
+      <Text style={styles.homeBtnText}>{shareArchiveId ? 'Сохранено' : 'Сохранить'}</Text>
+    </TouchableOpacity>
+    <TouchableOpacity style={styles.shareBtn} onPress={() => { loadPartners(); setShareModalVisible(true); }}>
+      <Ionicons name="share-social-outline" size={18} color="#031427" />
+      <Text style={styles.shareBtnText}>Переслать коллеге</Text>
+    </TouchableOpacity>
+  </View>
+)}
+{result && !fromOrderContext && (
+  <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={{ alignSelf: 'center', marginTop: 10 }}>
+    <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>На главную</Text>
+  </TouchableOpacity>
+)}
               {result && fromOrderContext && (
                 <TouchableOpacity
                   onPress={async () => {
@@ -1270,6 +1496,10 @@ const reset = useCallback(() => {
           visible={showJawModal}
           transparent
           animationType="fade"
+          onRequestClose={() => {
+            setShowJawModal(false);
+            reset();
+          }}
         >
           <View style={{
             flex: 1,
@@ -1286,6 +1516,15 @@ const reset = useCallback(() => {
               borderWidth: 1,
               borderColor: 'rgba(242,202,80,0.3)',
             }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowJawModal(false);
+                  reset();
+                }}
+                style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, padding: 6 }}
+              >
+                <Ionicons name="close" size={22} color="rgba(255,255,255,0.5)" />
+              </TouchableOpacity>
               <Text style={{
                 color: '#f2ca50',
                 fontSize: 20,
@@ -1369,6 +1608,81 @@ const reset = useCallback(() => {
             </View>
           </View>
         </Modal>
+
+        {/* ── Экран обрезки фото ── */}
+        <Modal visible={showCropScreen} animationType="fade" onRequestClose={cancelCrop}>
+          <View style={{ flex: 1, backgroundColor: '#0a0f1d', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: '#f2ca50', fontSize: 16, fontWeight: '700', marginBottom: 16 }}>
+              Выделите область для анализа
+            </Text>
+
+            <View style={{
+              width: cropDisplayRef.current.width || CROP_CONTAINER_SIZE,
+              height: cropDisplayRef.current.height || CROP_CONTAINER_SIZE,
+              backgroundColor: '#000',
+            }}>
+              {rawImageUri && (
+                <Image
+                  source={{ uri: rawImageUri }}
+                  style={{ width: '100%', height: '100%' }}
+                  resizeMode="contain"
+                />
+              )}
+
+              <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: cropBox.y, backgroundColor: 'rgba(0,0,0,0.6)' }} />
+              <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, top: cropBox.y + cropBox.height, backgroundColor: 'rgba(0,0,0,0.6)' }} />
+              <View pointerEvents="none" style={{ position: 'absolute', top: cropBox.y, left: 0, width: cropBox.x, height: cropBox.height, backgroundColor: 'rgba(0,0,0,0.6)' }} />
+              <View pointerEvents="none" style={{ position: 'absolute', top: cropBox.y, left: cropBox.x + cropBox.width, right: 0, height: cropBox.height, backgroundColor: 'rgba(0,0,0,0.6)' }} />
+
+              <View
+                {...movePanResponder.panHandlers}
+                style={{
+                  position: 'absolute',
+                  left: cropBox.x,
+                  top: cropBox.y,
+                  width: cropBox.width,
+                  height: cropBox.height,
+                  borderWidth: 2,
+                  borderColor: '#f2ca50',
+                }}
+              >
+                {(['tl', 'tr', 'bl', 'br'] as const).map(corner => (
+                  <View
+                    key={corner}
+                    {...resizeResponders.current[corner].panHandlers}
+                    style={{
+                      position: 'absolute',
+                      width: 28,
+                      height: 28,
+                      backgroundColor: '#f2ca50',
+                      borderRadius: 14,
+                      top: corner.startsWith('t') ? -14 : undefined,
+                      bottom: corner.startsWith('b') ? -14 : undefined,
+                      left: corner.endsWith('l') ? -14 : undefined,
+                      right: corner.endsWith('r') ? -14 : undefined,
+                    }}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 16, marginTop: 24 }}>
+              <TouchableOpacity
+                onPress={cancelCrop}
+                style={{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(242,202,80,0.4)' }}
+              >
+                <Text style={{ color: '#f2ca50', fontSize: 14 }}>Отмена</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={applyCrop}
+                style={{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 10, backgroundColor: '#f2ca50' }}
+              >
+                <Text style={{ color: '#031427', fontSize: 14, fontWeight: '700' }}>Применить</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+        <DemoOverlay data={shareOverlayData} onClose={() => setShareOverlayData(null)} />
       </View>
     </ImageBackground>
   );
@@ -1601,7 +1915,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   analyzeBtn: {
-    backgroundColor: '#f2ca50',
+    backgroundColor: '#8b6914',
     opacity: 1,
     borderRadius: 16,
     paddingVertical: 16,
@@ -1616,7 +1930,7 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   analyzeBtnText: {
-    color: '#1a1a2e',
+    color: '#ffffff',
     fontSize: 18,
     fontWeight: '700',
   },

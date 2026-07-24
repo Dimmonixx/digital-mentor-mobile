@@ -4,20 +4,21 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { get, off, onValue, ref, remove, set } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  AppState,
-  Clipboard,
-  FlatList,
-  Image,
-  ImageBackground,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    AppState,
+    Clipboard,
+    FlatList,
+    Image,
+    ImageBackground,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -38,6 +39,20 @@ interface ChatMessage {
   senderId: string;
   text: string;
   timestamp: number;
+  messageType?: string;
+  imageUri?: string;
+  analysisData?: {
+    vitaShade?: string;
+    confidence?: number;
+    photo_quality?: string;
+    neck?: string;
+    body?: string;
+    edge?: string;
+    effects?: string;
+    features?: string;
+    secondary_subtones?: string;
+    zones?: any;
+  };
 }
 
 const formatTime = (ts: number) => {
@@ -71,6 +86,8 @@ export default function PartnerChatScreen() {
     avatarUrl?: string;
   }>({});
   const [partnerLastSeen, setPartnerLastSeen] = useState<number>(0);
+  const [fullscreenImageUri, setFullscreenImageUri] = useState<string | null>(null);
+  const [expandedAnalysisIds, setExpandedAnalysisIds] = useState<Set<string>>(new Set());
   const appState = useRef(AppState.currentState);
   const flatListRef = useRef<FlatList>(null);
   const localLastSeenTimestamp = useRef(Date.now());
@@ -162,6 +179,9 @@ export default function PartnerChatScreen() {
         senderId: value.senderId || '',
         text: value.text || '',
         timestamp: value.timestamp || 0,
+        messageType: value.messageType || 'text',
+        imageUri: value.imageUri || '',
+        analysisData: value.analysisData || undefined,
       }));
       list.sort((a, b) => a.timestamp - b.timestamp);
       
@@ -332,12 +352,12 @@ export default function PartnerChatScreen() {
   };
 
   const renderMessage = ({ item }: { item: ChatMessage }) => {
-    const isMe = item.senderId === currentUserId;
-    
-    // Статус прочтения для своих сообщений: звёздочка всегда показывается
-    const chatOpenedAt = (globalThis as any)[`chatOpenedAt_${chatId}`] || 0;
-    const isRead = isMe && partnerLastSeen > 0 && item.timestamp < partnerLastSeen && partnerLastSeen > chatOpenedAt;
-    
+  const isMe = item.senderId === currentUserId;
+  const chatOpenedAt = (globalThis as any)[`chatOpenedAt_${chatId}`] || 0;
+  const isRead = isMe && partnerLastSeen > 0 && item.timestamp < partnerLastSeen && partnerLastSeen > chatOpenedAt;
+  const isAnalysis = item.messageType === 'color_analysis';
+
+  if (isAnalysis) {
     return (
       <View style={[styles.messageRow, isMe ? styles.myRow : styles.partnerRow]}>
         <TouchableOpacity
@@ -348,9 +368,165 @@ export default function PartnerChatScreen() {
           }}
           delayLongPress={500}
           activeOpacity={1}
-          style={{ flex: 1 }}
+          style={{ maxWidth: '78%' }}
         >
-          <View style={[styles.bubble, isMe ? styles.myBubble : styles.partnerBubble]}>
+          <View style={{
+            backgroundColor: '#0d0f14',
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: 'rgba(242,202,80,0.4)',
+            overflow: 'hidden',
+          }}>
+            {!isMe && (
+              <Text style={[styles.messageSenderName, { paddingHorizontal: 12, paddingTop: 10 }]}>
+                {getShortName()}
+              </Text>
+            )}
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingTop: 8 }}>
+              <Ionicons name="color-palette-outline" size={16} color="#f2ca50" />
+              <Text style={{ color: '#f2ca50', fontSize: 13, fontWeight: '700' }}>Анализ цвета VITA</Text>
+            </View>
+
+            {!!item.imageUri && (
+              <TouchableOpacity onPress={() => setFullscreenImageUri(item.imageUri!)} activeOpacity={0.9}>
+                <Image
+                  source={{ uri: item.imageUri }}
+                  style={{ width: '100%', height: 140, marginTop: 8 }}
+                  resizeMode="cover"
+                />
+              </TouchableOpacity>
+            )}
+
+            <View style={{ padding: 12 }}>
+              <Text style={{ color: '#fff', fontSize: 20, fontWeight: '700' }}>
+                {item.analysisData?.vitaShade || '—'}
+              </Text>
+              {typeof item.analysisData?.confidence === 'number' && (
+                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 }}>
+                  Уверенность: {item.analysisData.confidence}%
+                </Text>
+              )}
+              {!!item.analysisData?.photo_quality && (
+                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 }}>
+                  Качество фото: {item.analysisData.photo_quality}
+                </Text>
+              )}
+
+              {expandedAnalysisIds.has(item.id) && (
+                <View style={{ marginTop: 10, gap: 10 }}>
+                  {!!item.analysisData?.neck && (
+                    <View>
+                      <Text style={{ color: '#f2ca50', fontSize: 11, fontWeight: '700', textTransform: 'uppercase' }}>
+                        Шейка (Пришеечная зона)
+                      </Text>
+                      <Text style={{ color: '#fff', fontSize: 13, lineHeight: 18, marginTop: 2 }}>
+                        {item.analysisData.neck}
+                      </Text>
+                    </View>
+                  )}
+                  {!!item.analysisData?.body && (
+                    <View>
+                      <Text style={{ color: '#f2ca50', fontSize: 11, fontWeight: '700', textTransform: 'uppercase' }}>
+                        Тело зуба (Центральная часть)
+                      </Text>
+                      <Text style={{ color: '#fff', fontSize: 13, lineHeight: 18, marginTop: 2 }}>
+                        {item.analysisData.body}
+                      </Text>
+                    </View>
+                  )}
+                  {!!item.analysisData?.edge && (
+                    <View>
+                      <Text style={{ color: '#f2ca50', fontSize: 11, fontWeight: '700', textTransform: 'uppercase' }}>
+                        Режущий край
+                      </Text>
+                      <Text style={{ color: '#fff', fontSize: 13, lineHeight: 18, marginTop: 2 }}>
+                        {item.analysisData.edge}
+                      </Text>
+                    </View>
+                  )}
+                  {!!item.analysisData?.effects && (
+                    <View>
+                      <Text style={{ color: '#f2ca50', fontSize: 11, fontWeight: '700', textTransform: 'uppercase' }}>
+                        Интенсивность и эффекты
+                      </Text>
+                      <Text style={{ color: '#fff', fontSize: 13, lineHeight: 18, marginTop: 2 }}>
+                        {item.analysisData.effects}
+                      </Text>
+                    </View>
+                  )}
+                  {!!item.analysisData?.features && (
+                    <View>
+                      <Text style={{ color: '#f2ca50', fontSize: 11, fontWeight: '700', textTransform: 'uppercase' }}>
+                        Особенности
+                      </Text>
+                      <Text style={{ color: '#fff', fontSize: 13, lineHeight: 18, marginTop: 2 }}>
+                        {item.analysisData.features}
+                      </Text>
+                    </View>
+                  )}
+                  {!!item.analysisData?.secondary_subtones && (
+                    <View>
+                      <Text style={{ color: '#f2ca50', fontSize: 11, fontWeight: '700', textTransform: 'uppercase' }}>
+                        Сопутствующие субтоны
+                      </Text>
+                      <Text style={{ color: '#fff', fontSize: 13, lineHeight: 18, marginTop: 2 }}>
+                        {item.analysisData.secondary_subtones}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {!!(item.analysisData?.body || item.analysisData?.neck || item.analysisData?.edge) && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setExpandedAnalysisIds(prev => {
+                      const next = new Set(prev);
+                      if (next.has(item.id)) {
+                        next.delete(item.id);
+                      } else {
+                        next.add(item.id);
+                      }
+                      return next;
+                    });
+                  }}
+                  style={{ marginTop: 10 }}
+                >
+                  <Text style={{ color: '#f2ca50', fontSize: 12, fontWeight: '600' }}>
+                    {expandedAnalysisIds.has(item.id) ? 'Свернуть' : 'Показать полное описание'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <View style={[styles.timeRow, { paddingHorizontal: 12, paddingBottom: 8 }]}>
+              <Text style={styles.timeText}>{formatTime(item.timestamp)}</Text>
+              {isMe && (
+                <Text style={[styles.readStatus, isRead ? styles.readStatusRead : styles.readStatusSent]}>
+                  {isRead ? '★' : '✦'}
+                </Text>
+              )}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.messageRow, isMe ? styles.myRow : styles.partnerRow]}>
+      <TouchableOpacity
+        onLongPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          setSelectedMessage(item);
+          setShowMenu(true);
+        }}
+        delayLongPress={500}
+        activeOpacity={1}
+        style={{ flex: 1 }}
+      >
+        <View style={[styles.bubble, isMe ? styles.myBubble : styles.partnerBubble]}>
           {!isMe && (
             <Text style={styles.messageSenderName}>{getShortName()}</Text>
           )}
@@ -588,6 +764,30 @@ export default function PartnerChatScreen() {
               </View>
             </View>
           )}
+
+          {/* ── Полноэкранный просмотр фото ── */}
+          <Modal
+            visible={!!fullscreenImageUri}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setFullscreenImageUri(null)}
+          >
+            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' }}>
+              <TouchableOpacity
+                style={{ position: 'absolute', top: 50, right: 20, zIndex: 10, padding: 10 }}
+                onPress={() => setFullscreenImageUri(null)}
+              >
+                <Ionicons name="close" size={28} color="#fff" />
+              </TouchableOpacity>
+              {!!fullscreenImageUri && (
+                <Image
+                  source={{ uri: fullscreenImageUri }}
+                  style={{ width: '100%', height: '80%' }}
+                  resizeMode="contain"
+                />
+              )}
+            </View>
+          </Modal>
 
           <View
             onLayout={(e) => setInputAreaHeight(e.nativeEvent.layout.height)}

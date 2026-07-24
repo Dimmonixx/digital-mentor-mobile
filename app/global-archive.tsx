@@ -1025,9 +1025,7 @@ export default function GlobalArchiveScreen() {
   const [activeTab, setActiveTab] = useState<ArchiveItemType>(
     (params.tab && params.tab !== 'incoming') ? params.tab : 'golden_proportion'
   );
-  const [filterMode, setFilterMode] = useState<FilterMode>(
-    params.tab === 'incoming' ? 'incoming' : 'mine'
-  );
+  const [filterMode, setFilterMode] = useState<FilterMode>('mine');
   const [allItems, setAllItems] = useState<ArchiveItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -1433,30 +1431,6 @@ export default function GlobalArchiveScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Мои / Входящие */}
-          <View style={styles.filterRow}>
-            {(['mine', 'incoming'] as FilterMode[]).map((m) => (
-              <TouchableOpacity
-                key={m}
-                style={[styles.filterBtn, filterMode === m && styles.filterBtnActive]}
-                onPress={() => setFilterMode(m)}
-              >
-                <Ionicons
-                  name={m === 'mine' ? 'person-outline' : 'download-outline'}
-                  size={13}
-                  color={filterMode === m ? '#031427' : 'rgba(242,202,80,0.7)'}
-                />
-                <Text style={[styles.filterBtnText, filterMode === m && styles.filterBtnTextActive]}>
-                  {m === 'mine' ? 'Мои анализы' : 'Входящие'}
-                </Text>
-                {m === 'incoming' && unreadCount > 0 && (
-                  <View style={styles.filterBadge}>
-                    <Text style={styles.filterBadgeText}>{unreadCount}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
 
           {/* Dropdown категории */}
           <CategoryDropdown

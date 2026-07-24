@@ -87,19 +87,6 @@ export default function HomeScreen() {
     { id: 'ceramics', label: 'Визуализатор масс', icon: 'book-outline', active: false },
   ];
 
-  const DOCTOR_ITEMS = [
-    { id: 'chat', label: 'КЕЙС КЛУБ', icon: 'chatbubble-outline', active: true, route: '/(tabs)/case-club', col: 0, row: 0 },
-    { id: 'new-order', label: 'НОВЫЙ\nНАРЯД', icon: 'add-circle-outline', active: true, route: '/new-order', center: true },
-    { id: 'color', label: 'АНАЛИЗ\nЦВЕТА', icon: 'color-palette-outline', active: true, route: '/(tabs)/color-analyzer', col: 1, row: 0 },
-    { id: 'work', label: 'АНАЛИЗ\nРАБОТЫ', icon: 'analytics-outline', active: true, route: '/work-analysis', col: 0, row: 1 },
-    { id: 'techmap', label: 'Оптическая\nдиагностика', icon: 'layers-outline', active: true, route: '/detalization', col: 1, row: 2 },
-    { id: 'premium', label: 'Анатомия зубов', icon: 'diamond-outline', active: false, col: 0, row: 3, route: '/(tabs)/balance' },
-    { id: 'etalon', label: 'Эталонный замер', icon: 'options-outline', active: false },
-    { id: 'detail', label: 'Детализация', icon: 'list-outline', active: false },
-    { id: 'golden', label: 'Проектирование\nулыбки', icon: 'git-network-outline', active: true, route: '/golden-proportion' },
-    { id: 'ceramics', label: 'Гид по керамике', icon: 'book-outline', active: false },
-  ];
-
   const HexCell = ({ item, variant = 'side', onPress }: any) => {
     const isCenter = variant === 'center';
     const width = isCenter ? 152 : 142;
@@ -650,27 +637,21 @@ export default function HomeScreen() {
         <Animated.View style={{ opacity: fadeAnim }}>
           <View style={styles.cardsContainer}>
             {(() => {
-              const items = TECHNICIAN_ITEMS; // TODO: restore role-based items after grid test
-              const isDoctor = false; // TODO: restore user?.role === 'doctor' after grid test
+              const items = TECHNICIAN_ITEMS;
               return (
                 <View style={styles.hexGridContainer}>
                   <InvertedTrapezoidButton />
                   <View style={styles.rowTop}>
                     <HexCell item={items[0]} onPress={() => items[0].active && items[0].route && router.push(items[0].route as any)} />
                     <View style={styles.topRightHex}>
-                      <HexCell item={isDoctor ? items[2] : items[1]} onPress={() => (isDoctor ? items[2] : items[1]).active && (isDoctor ? items[2] : items[1]).route && router.push((isDoctor ? items[2] : items[1]).route as any)} />
+                      <HexCell item={items[1]} onPress={() => items[1].active && items[1].route && router.push(items[1].route as any)} />
                     </View>
                   </View>
                   <View style={styles.rowCenter}>
-                    <HexCell item={isDoctor ? items[1] : items[2]} variant="center" onPress={() => (isDoctor ? items[1] : items[2]).active && (isDoctor ? items[1] : items[2]).route && router.push((isDoctor ? items[1] : items[2]).route as any)} />
+                    <HexCell item={items[2]} variant="center" onPress={() => items[2].active && items[2].route && router.push(items[2].route as any)} />
                   </View>
-                  {isDoctor && (
-                    <View style={styles.rowBottom}>
-                      <HexCell item={items[3]} onPress={() => items[3].active && items[3].route && router.push(items[3].route as any)} />
-                    </View>
-                  )}
-                  <TechMapPanel item={isDoctor ? items[4] : items[6]} onPress={() => (isDoctor ? items[4] : items[6]).active && (isDoctor ? items[4] : items[6]).route && router.push((isDoctor ? items[4] : items[6]).route as any)} style={{ marginBottom: 4 }} />
-                  <TechMapPanel item={isDoctor ? items[8] : items[9]} onPress={() => (isDoctor ? items[8] : items[9]).active && (isDoctor ? items[8] : items[9]).route && router.push((isDoctor ? items[8] : items[9]).route as any)} />
+                  <TechMapPanel item={items[6]} onPress={() => items[6].active && items[6].route && router.push(items[6].route as any)} style={{ marginBottom: 4 }} />
+                  <TechMapPanel item={items[9]} onPress={() => items[9].active && items[9].route && router.push(items[9].route as any)} />
                   {/* Временно скрыты неактивные кнопки: Морфология, Рецепты, Анатомия зубов, Эталонный замер, Золотое сечение, Визуализатор масс */}
                   {/* <View style={styles.soonFeaturesList}>
                     {items.filter((item: any) => !item.active && item.id !== 'techmap').map((item: any) => (
