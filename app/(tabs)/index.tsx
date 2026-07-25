@@ -6,9 +6,9 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import LottieView from 'lottie-react-native';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -49,12 +49,46 @@ const playGlobalBell = async () => {
   }
 };
 
+const PulsingCommentDot = () => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scale, { toValue: 1.4, duration: 700, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        top: 36,
+        right: 63,
+        width: 15,
+        height: 15,
+        borderRadius: 7.5,
+        backgroundColor: '#ff0000',
+        borderWidth: 2,
+        borderColor: '#ffffff',
+        transform: [{ scale }],
+        zIndex: 1000,
+      }}
+    />
+  );
+};
+
 export default function HomeScreen() {
   const [fontsLoaded] = useFonts({
     Audiowide_400Regular,
   });
   const { theme } = useTheme();
   const { t } = useLanguage();
+  const [hasNewComments, setHasNewComments] = useState(() => (globalThis as any).hasNewComments || false);
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<{ firstName?: string; lastName?: string; patronymic?: string } | null>(null);
   const [serverProfile, setServerProfile] = useState<{ name?: string; role?: string; diamonds?: number; mastery?: { score: number; level: string } } | null>(null);
@@ -87,7 +121,7 @@ export default function HomeScreen() {
     { id: 'ceramics', label: 'Визуализатор масс', icon: 'book-outline', active: false },
   ];
 
-  const HexCell = ({ item, variant = 'side', onPress }: any) => {
+  const HexCell = ({ item, variant = 'side', onPress, showDot }: any) => {
     const isCenter = variant === 'center';
     const width = isCenter ? 152 : 142;
     const height = isCenter ? 136 : 128;
@@ -99,17 +133,19 @@ export default function HomeScreen() {
       : '41,10 101,10 132,64 101,118 41,118 10,64';
 
     return (
-      <TouchableOpacity
-        activeOpacity={item.active ? 0.78 : 1}
-        onPress={onPress}
-        style={[
-          styles.hexCell,
-          { width, height },
-          item.active ? styles.hexCellActiveShadow : styles.hexCellInactiveShadow,
-          isCenter && styles.hexCellCenter,
-        ]}
-      >
-        <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={StyleSheet.absoluteFill}>
+      <View style={{ position: 'relative', width, height }}>
+        {showDot && <PulsingCommentDot />}
+        <TouchableOpacity
+          activeOpacity={item.active ? 0.78 : 1}
+          onPress={onPress}
+          style={[
+            styles.hexCell,
+            { width, height },
+            item.active ? styles.hexCellActiveShadow : styles.hexCellInactiveShadow,
+            isCenter && styles.hexCellCenter,
+          ]}
+        >
+          <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={StyleSheet.absoluteFill}>
           <Defs>
             {isCenter ? (
               <SvgLinearGradient id="hexGradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -145,6 +181,7 @@ export default function HomeScreen() {
           </Text>
         </View>
       </TouchableOpacity>
+      </View>
     );
   };
 
@@ -312,6 +349,15 @@ export default function HomeScreen() {
       setChatBadge(count);
     };
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      setHasNewComments((globalThis as any).hasNewComments || false);
+      (globalThis as any).updateHasNewComments = () => {
+        setHasNewComments((globalThis as any).hasNewComments || false);
+      };
+    }, [])
+  );
 
   useEffect(() => {
     Animated.loop(
@@ -642,7 +688,7 @@ export default function HomeScreen() {
                 <View style={styles.hexGridContainer}>
                   <InvertedTrapezoidButton />
                   <View style={styles.rowTop}>
-                    <HexCell item={items[0]} onPress={() => items[0].active && items[0].route && router.push(items[0].route as any)} />
+                    <HexCell item={items[0]} onPress={() => items[0].active && items[0].route && router.push(items[0].route as any)} showDot={hasNewComments} />
                     <View style={styles.topRightHex}>
                       <HexCell item={items[1]} onPress={() => items[1].active && items[1].route && router.push(items[1].route as any)} />
                     </View>

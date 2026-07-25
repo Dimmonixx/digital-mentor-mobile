@@ -20,7 +20,7 @@ export default function IncomingArchiveWatcher() {
       const uid = rawUid.replace(/\./g, '_');
       if (!uid) return;
 
-      console.log('ROOT_WATCHER: Запуск сквозного слушателя входящих. uid =', uid);
+      if (__DEV__) console.log('ROOT_WATCHER: Запуск сквозного слушателя входящих. uid =', uid);
 
       const q = query(
         collection(getFirebaseFirestore(), 'archives'),
@@ -34,10 +34,10 @@ export default function IncomingArchiveWatcher() {
           const readBy: Record<string, boolean> = data.readBy || {};
           return !readBy[uid];
         }).length;
-        console.log('ROOT_WATCHER: unread =', current, '| prev =', prevCountRef.current);
+        if (__DEV__) console.log('ROOT_WATCHER: unread =', current, '| prev =', prevCountRef.current);
 
         if (prevCountRef.current !== -1 && current > prevCountRef.current) {
-          console.log('ROOT_WATCHER: Новый входящий анализ — играем звук!');
+          if (__DEV__) console.log('ROOT_WATCHER: Новый входящий анализ — играем звук!');
           try {
             await Audio.setAudioModeAsync({
               playsInSilentModeIOS: true,

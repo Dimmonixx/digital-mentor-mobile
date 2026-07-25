@@ -105,6 +105,10 @@ export default function TabLayout() {
 
   const [unreadChatsCount, setUnreadChatsCount] = useState(0);
 
+  const [hasNewCommentsState, setHasNewCommentsState] = useState(false);
+
+  const prevHasNewCommentsRef = useRef(false);
+
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
   const [incomingArchiveCount, setIncomingArchiveCount] = useState(0);
@@ -219,7 +223,7 @@ export default function TabLayout() {
         message: 'У вас пока 2 энергии на пробу. Подтвердите почту, чтобы получить полные 15⚡ в день!',
         icon: 'mail-outline',
         danger: false,
-        confirmText: 'Подтвердить сейчас',
+        confirmText: 'Подтвердить',
         onConfirm: () => {
           setVerifyOverlayData(null);
           router.push({ pathname: '/verify-email', params: { email: user.email } } as any);
@@ -236,7 +240,7 @@ export default function TabLayout() {
         message: 'Ваши 2 пробные энергии закончились. Подтвердите почту, чтобы получить полные 15⚡ в день!',
         icon: 'flash-outline',
         danger: false,
-        confirmText: 'Подтвердить сейчас',
+        confirmText: 'Подтвердить',
         onConfirm: () => {
           setVerifyOverlayData(null);
           router.push({ pathname: '/verify-email', params: { email: user.email } } as any);
@@ -406,7 +410,6 @@ export default function TabLayout() {
       (snapshot) => {
 
         const data = snapshot.val();
-        console.log('=== CONNECTION REQUESTS ===', JSON.stringify(data));
         let pendingCount = 0;
 
 
@@ -425,7 +428,6 @@ export default function TabLayout() {
 
         }
 
-        console.log('=== PENDING COUNT ===', pendingCount);
 
         setPendingRequestsCount(pendingCount);
 
@@ -538,6 +540,51 @@ export default function TabLayout() {
       chatUnsubscribesRef.current.forEach(unsub => unsub());
       chatUnsubscribesRef.current.clear();
     };
+  }, [user]);
+
+  // Глобальный слушатель новых комментариев под своими постами в Кейс-Клубе
+  useEffect(() => {
+    console.log('=== COMMENTS LISTENER STARTING ===');
+    if (!user) return;
+    const userId = user.uid || user.id;
+    if (!userId) return;
+
+    const postsRef = ref(getFirebaseDB(), 'case_club');
+    const unsub = onValue(postsRef, async (snapshot) => {
+      const data = snapshot.val();
+      if (!data) {
+        setHasNewCommentsState(false);
+        return;
+      }
+
+      const myPosts = Object.entries(data).filter(
+        ([, post]: [string, any]) => post?.authorId === userId
+      );
+
+      const seenRaw = await AsyncStorage.getItem('seenCommentsCounts');
+      const seenCounts: Record<string, number> = seenRaw ? JSON.parse(seenRaw) : {};
+
+      const anyNew = myPosts.some(([postId, post]: [string, any]) => {
+        const currentCount = post.commentsCount || 0;
+        const seenCount = seenCounts[postId] ?? currentCount;
+        return currentCount > seenCount;
+      });
+
+      if (anyNew && !prevHasNewCommentsRef.current) {
+        if ((globalThis as any).isInCaseClub) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } else {
+          playSuccessSound();
+        }
+      }
+      prevHasNewCommentsRef.current = anyNew;
+
+      setHasNewCommentsState(anyNew);
+      (globalThis as any).hasNewComments = anyNew;
+      (globalThis as any).updateHasNewComments?.();
+    });
+
+    return () => unsub();
   }, [user]);
 
   // Экспортируем функцию для обновления lastSeenTimestamp (используется в partner-chat)

@@ -1,6 +1,7 @@
-﻿import { DemoOverlay, DemoOverlayData } from '@/components/case-post-actions';
+import { DemoOverlay, DemoOverlayData } from '@/components/case-post-actions';
 import { API_BASE_URL } from '@/constants/config';
 import { getFirebaseDB } from '@/constants/firebase';
+import { useNewCommentsWatcher } from '@/hooks/useNewCommentsWatcher';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
@@ -8,17 +9,17 @@ import { router } from 'expo-router';
 import { get, onValue, ref, remove, set } from 'firebase/database';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Dimensions,
-    FlatList,
-    Image,
-    Modal,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Dimensions,
+  FlatList,
+  Image,
+  Modal,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import ImageView from 'react-native-image-viewing';
 
@@ -49,10 +50,7 @@ function toArray<T>(val: any): T[] {
 
 function mapBackendCases(raw: any): any[] {
   if (!raw || typeof raw !== 'object') return [];
-  return Object.entries(raw).map(([id, c]: [string, any], index) => {
-    if (index === 0) {
-      console.log('=== MAP CASE ===', { id, commentsCount: c.commentsCount, commentsList: c.commentsList });
-    }
+  return Object.entries(raw).map(([id, c]: [string, any]) => {
     return {
     id,
     authorId: c.authorId || '',
@@ -147,6 +145,8 @@ const PostCard = ({
   onDislike,
   userEnergy,
   setOverlayData,
+  hasNewComment,
+  onMarkCommentsSeen,
 }: {
   post: any;
   currentEmail: string;
@@ -154,11 +154,13 @@ const PostCard = ({
   menuPostId: string | null;
   setMenuPostId: (id: string | null) => void;
   onDelete: (id: string) => void;
-  onDeletePhoto: (id: string) => void;
+  onDeletePhoto: (id: string, photoIndex: number) => void;
   onLike: (id: string) => void;
   onDislike: (id: string) => void;
   userEnergy: number;
   setOverlayData: (data: DemoOverlayData) => void;
+  hasNewComment?: boolean;
+  onMarkCommentsSeen?: () => void;
 }) => {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showSenseiModal, setShowSenseiModal] = useState(false);
@@ -182,7 +184,7 @@ const PostCard = ({
       setIsGenerating(false);
       AsyncStorage.removeItem(`sensei_generating_${post.id}`);
     }
-  }, [post.aiReview]);
+  }, [post.aiReview, post.id]);
   const senseiState = verdictText ? 'ready' : (isGenerating || (post.aiReviewTotal || 0) >= 5) ? 'processing' : 'pending';
   const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 60 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
@@ -312,14 +314,20 @@ const PostCard = ({
         <View style={styles.dropdown}>
           <TouchableOpacity
             style={styles.dropdownItem}
-            onPress={() => { router.push(`/edit-case?id=${post.id}` as any); setMenuPostId(null); }}
-          >
-            <Ionicons name="create-outline" size={16} color="#f2ca50" />
-            <Text style={styles.dropdownText}>Редактировать пост</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.dropdownItem}
-            onPress={() => { onDeletePhoto(post.id); setMenuPostId(null); }}
+            onPress={() => {
+              setMenuPostId(null);
+              setOverlayData({
+                title: 'Удалить фото?',
+                message: 'Это действие нельзя отменить. Фото будет удалено навсегда.',
+                icon: 'image-outline',
+                danger: true,
+                confirmText: 'Удалить',
+                onConfirm: () => {
+                  setOverlayData(null);
+                  onDeletePhoto(post.id, photoIndex);
+                },
+              });
+            }}
           >
             <Ionicons name="image-outline" size={16} color="#f2ca50" />
             <Text style={styles.dropdownText}>Удалить фото</Text>
@@ -422,9 +430,27 @@ const PostCard = ({
           </TouchableOpacity>
         </View>
         <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}
-          onPress={() => router.push({ pathname: '/case-details', params: { id: post.id } } as any)}
+          onPress={() => {
+            onMarkCommentsSeen?.();
+            router.push({ pathname: '/case-details', params: { id: post.id } } as any);
+          }}
         >
-          <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.45)" />
+          <View style={{ position: 'relative' }}>
+            <Ionicons name="chatbubble-outline" size={20} color="rgba(255,255,255,0.45)" />
+            {hasNewComment && (
+              <View style={{
+                position: 'absolute',
+                top: 6,
+                right:6,
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: '#ff6b6b',
+                borderWidth: 1,
+                borderColor: '#0a0d14',
+              }} />
+            )}
+          </View>
           <Text style={styles.actionCount}>{post.commentsCount || 0}</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -562,6 +588,7 @@ export default function CaseClubScreen() {
   const [menuPostId, setMenuPostId] = useState<string | null>(null);
   const [overlayData, setOverlayData] = useState<DemoOverlayData>(null);
   const unsubRef = useRef<(() => void) | null>(null);
+  const { newCommentPostIds, markPostCommentsSeen } = useNewCommentsWatcher();
 
   useFocusEffect(
     useCallback(() => {
@@ -594,6 +621,7 @@ export default function CaseClubScreen() {
                   avatarType: profile.avatarType,
                   avatarPresetId: profile.avatarPresetId,
                   avatarUrl: profile.avatarUrl,
+                  role: profile.role || updated.role,
                 };
               }
             } catch (e) {
@@ -641,13 +669,28 @@ export default function CaseClubScreen() {
     });
   }, []);
 
-  const deletePhoto = useCallback(async (postId: string) => {
+  const deletePhoto = useCallback(async (postId: string, photoIndex: number) => {
     try {
-      await set(ref(getFirebaseDB(), `case_club/${postId}/media`), []);
+      const post = posts.find(p => p.id === postId);
+      if (!post) return;
+
+      const allUrls: string[] = [
+        ...(post.media || []).map((m: any) => m.uri),
+      ];
+
+      if (photoIndex < 0 || photoIndex >= allUrls.length) return;
+
+      allUrls.splice(photoIndex, 1);
+
+      const newImageUrl = allUrls[0] || '';
+      const newAdditionalImages = allUrls.slice(1);
+
+      await set(ref(getFirebaseDB(), `case_club/${postId}/imageUrl`), newImageUrl);
+      await set(ref(getFirebaseDB(), `case_club/${postId}/additionalImages`), newAdditionalImages);
     } catch (e) {
       console.warn('[CaseClub] Ошибка удаления фото:', e);
     }
-  }, []);
+  }, [posts]);
 
   const handleLike = useCallback(async (postId: string) => {
     if (!currentUserId) return;
@@ -725,6 +768,8 @@ export default function CaseClubScreen() {
             onDislike={handleDislike}
             userEnergy={(globalThis as any).getAiDailyLimit?.() ?? 15}
             setOverlayData={setOverlayData}
+            hasNewComment={newCommentPostIds.has(item.id)}
+            onMarkCommentsSeen={() => markPostCommentsSeen(item.id, item.commentsCount || 0)}
           />
         )}
       />

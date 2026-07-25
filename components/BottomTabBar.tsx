@@ -4,7 +4,7 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const TABS = [
-  { label: 'Главная', icon: 'home' as const, route: '/(tabs)/index' },
+  { label: 'Главная', icon: 'home' as const, route: '/(tabs)' },
   { label: 'Наряды', icon: 'clipboard-outline' as const, route: '/(tabs)/search' },
   { label: 'Настройки', icon: 'settings' as const, route: '/(tabs)/settings' },
   { label: 'Профиль', icon: 'person-outline' as const, route: '/(tabs)/profile' },

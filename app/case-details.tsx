@@ -78,7 +78,7 @@ const AuthorAvatar = ({ source, size = 48 }: { source: ImageSourcePropType | nul
 };
 
 /* ---------------- Media carousel ---------------- */
-const MediaCarousel = ({ media: rawMedia, onPressPhoto }: { media: CaseMedia[]; onPressPhoto: (i: number) => void }) => {
+const MediaCarousel = ({ media: rawMedia, onPressPhoto, onActiveIndexChange }: { media: CaseMedia[]; onPressPhoto: (i: number) => void; onActiveIndexChange?: (i: number) => void }) => {
   const media: CaseMedia[] = Array.isArray(rawMedia)
     ? rawMedia
     : (rawMedia && typeof rawMedia === 'object' ? Object.values(rawMedia as any) : []);
@@ -86,7 +86,11 @@ const MediaCarousel = ({ media: rawMedia, onPressPhoto }: { media: CaseMedia[]; 
   const [activeIndex, setActiveIndex] = useState(0);
   const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 60 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) setActiveIndex(viewableItems[0].index ?? 0);
+    if (viewableItems.length > 0) {
+      const idx = viewableItems[0].index ?? 0;
+      setActiveIndex(idx);
+      onActiveIndexChange?.(idx);
+    }
   }).current;
 
   return (
@@ -298,16 +302,13 @@ const AiReviewBlock = ({
   showVoteModal: boolean;
   setShowVoteModal: (show: boolean) => void;
 }) => {
-  console.log('=== AIBLOCK RENDER ===', { caseId, currentUserId });
   const [total, setTotal] = useState(initialTotal);
   const [aiReview, setAiReview] = useState(initialReview);
   const [showVerdictModal, setShowVerdictModal] = useState(false);
   const [selectedEnergy, setSelectedEnergy] = useState(1);
   const [loading, setLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  console.log('=== SENSEI STATE CHECK ===', { aiReview: !!aiReview, isGenerating, total, senseiState: aiReview ? 'ready' : (isGenerating || total >= 5) ? 'processing' : 'pending' });
   const senseiState = aiReview ? 'ready' : (isGenerating || total >= 5) ? 'processing' : 'pending';
-  console.log('=== SENSEI STATE ===', { total, aiReview: aiReview?.slice(0, 50), senseiState });
 
   useEffect(() => {
     if (!caseId) return;
@@ -323,7 +324,6 @@ const AiReviewBlock = ({
 
     const unsubReview = onValue(reviewRef, (snap) => {
       const review = snap.val() || '';
-      console.log('=== REVIEW UPDATED ===', review);
       setAiReview(review);
       if (review) {
         AsyncStorage.removeItem(`sensei_generating_${caseId}`);
@@ -575,6 +575,7 @@ export default function CaseDetailsScreen() {
   const [diamonds, setDiamonds] = useState<number>(() => (globalThis as any).getDiamondBalance?.() ?? 0);
   const [menuVisible, setMenuVisible] = useState(false);
   const [localCase, setLocalCase] = useState<ClinicalCase | null>(null);
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
   const [editedDescription, setEditedDescription] = useState('');
   const [commentText, setCommentText] = useState('');
@@ -586,6 +587,12 @@ export default function CaseDetailsScreen() {
   const [currentFullName, setCurrentFullName] = useState<string>('');
   const [currentUserFullName, setCurrentUserFullName] = useState<string>('');
   const [authorProfileName, setAuthorProfileName] = useState<string>('');
+  const [authorProfileAvatar, setAuthorProfileAvatar] = useState<{
+    avatarType?: string;
+    avatarUrl?: string;
+    avatarPresetId?: number;
+  } | null>(null);
+  const [authorProfileRole, setAuthorProfileRole] = useState<string>('');
   const [showVoteModal, setShowVoteModal] = useState(false);
   const [selectedComment, setSelectedComment] = useState<any>(null);
   const [showCommentMenu, setShowCommentMenu] = useState(false);
@@ -655,7 +662,6 @@ export default function CaseDetailsScreen() {
           setLocalCase({ ...found });
           setEditedDescription(found.fullDescription);
           setComments(found.commentsList ?? []);
-          console.log('=== COMMENTS LOADED ===', { id, commentsList: found?.commentsList });
           
           // Загружаем профиль автора для актуального имени
           if ((found as any).authorId) {
@@ -665,6 +671,14 @@ export default function CaseDetailsScreen() {
                 const profile = profileSnap.val();
                 if (profile.name) {
                   setAuthorProfileName(profile.name);
+                }
+                setAuthorProfileAvatar({
+                  avatarType: profile.avatarType,
+                  avatarUrl: profile.avatarUrl,
+                  avatarPresetId: profile.avatarPresetId,
+                });
+                if (profile.role) {
+                  setAuthorProfileRole(profile.role);
                 }
               }
             } catch (e) {
@@ -694,6 +708,43 @@ export default function CaseDetailsScreen() {
       const commentsData = snapshot.val();
       const commentsList = Array.isArray(commentsData) ? commentsData : Object.values(commentsData);
       setComments(commentsList);
+
+      // Отмечаем комментарии этого поста как просмотренные
+      try {
+        const seenRaw = await AsyncStorage.getItem('seenCommentsCounts');
+        const seenCounts: Record<string, number> = seenRaw ? JSON.parse(seenRaw) : {};
+        seenCounts[id as string] = commentsList.length;
+        await AsyncStorage.setItem('seenCommentsCounts', JSON.stringify(seenCounts));
+
+        // Обновляем globalThis.hasNewComments, чтобы точка исчезла на главном экране
+        const rawUser = await AsyncStorage.getItem('user');
+        if (rawUser) {
+          const user = JSON.parse(rawUser);
+          const userId = user.id || user.email || user.uid;
+          if (userId) {
+            const postsRef = ref(getFirebaseDB(), 'case_club');
+            const snapshot = await get(postsRef);
+            const data = snapshot.val();
+            if (data) {
+              const myPosts = Object.entries(data).filter(
+                ([, post]: [string, any]) => post?.authorId === userId
+              );
+              const anyNew = myPosts.some(([postId, post]: [string, any]) => {
+                const currentCount = post.commentsCount || 0;
+                const seenCount = seenCounts[postId] ?? currentCount;
+                return currentCount > seenCount;
+              });
+              (globalThis as any).hasNewComments = anyNew;
+              (globalThis as any).updateHasNewComments?.();
+            } else {
+              (globalThis as any).hasNewComments = false;
+              (globalThis as any).updateHasNewComments?.();
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[CaseDetails] Ошибка сохранения seenCommentsCounts:', e);
+      }
 
       const uniqueAuthorIds = [...new Set(
         commentsList
@@ -766,7 +817,7 @@ export default function CaseDetailsScreen() {
       d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   };
 
-  const resolvedRole = isOwn && identity?.role ? identity.role : ((item as any).role ?? '');
+  const resolvedRole = isOwn && identity?.role ? identity.role : (authorProfileRole || (item as any).role || '');
   const isTech = resolvedRole === 'Техник' || resolvedRole === 'Зубной техник' || resolvedRole === 'technician';
   const roleDisplay = isTech ? 'Зубной техник' : 'Врач';
 
@@ -775,6 +826,12 @@ export default function CaseDetailsScreen() {
   const avatarSource: ImageSourcePropType | null = (() => {
     if (isAnon) return null;
     if (isOwn && identity?.avatarSource) return identity.avatarSource;
+    if (authorProfileAvatar?.avatarType === 'custom' && authorProfileAvatar?.avatarUrl) {
+      return { uri: authorProfileAvatar.avatarUrl };
+    }
+    if (authorProfileAvatar?.avatarType === 'preset' && authorProfileAvatar?.avatarPresetId) {
+      return PRESET_AVATARS[(authorProfileAvatar.avatarPresetId - 1) % PRESET_AVATARS.length];
+    }
     if (item.avatar && item.avatar.startsWith('http')) return { uri: item.avatar };
     if ((item as any).avatarPresetId) {
       return PRESET_AVATARS[((item as any).avatarPresetId - 1) % PRESET_AVATARS.length];
@@ -806,11 +863,11 @@ export default function CaseDetailsScreen() {
   };
 
   const handleAddComment = async () => {
-    console.log('=== ADD COMMENT ===', { itemId: item?.id, id });
+    if (__DEV__) console.log('=== ADD COMMENT ===', { itemId: item?.id, id });
     const text = commentText.trim();
     if (!text) return;
     const authorName = currentUserFullName || identity?.name || 'Анонимный';
-    console.log('=== AUTHOR NAME ===', { currentUserFullName, identityName: identity?.name, authorName });
+    if (__DEV__) console.log('=== AUTHOR NAME ===', { currentUserFullName, identityName: identity?.name, authorName });
     const newComment: CaseComment = {
       id: Date.now().toString(),
       author: authorName,
@@ -866,15 +923,47 @@ export default function CaseDetailsScreen() {
 
   const handleDeletePhoto = () => {
     setMenuVisible(false);
-    if (localCase && localCase.media.length > 0) {
-      const updatedMedia = localCase.media.slice(1);
-      setLocalCase({ ...localCase, media: updatedMedia });
-      // Update the original CASES array
-      const index = CASES.findIndex(c => c.id === localCase.id);
-      if (index !== -1) {
-        CASES[index].media = updatedMedia;
-      }
-    }
+
+    const rawMedia = localCase?.media ?? item?.media;
+    const normMedia: any[] = Array.isArray(rawMedia)
+      ? rawMedia
+      : (rawMedia && typeof rawMedia === 'object' ? Object.values(rawMedia) : []);
+
+    if (normMedia.length === 0) return;
+
+    setOverlayData({
+      title: 'Удалить фото?',
+      message: 'Это действие нельзя отменить. Фото будет удалено навсегда.',
+      icon: 'image-outline',
+      danger: true,
+      confirmText: 'Удалить',
+      onConfirm: async () => {
+        setOverlayData(null);
+        try {
+          const allUrls: string[] = normMedia.map((m: any) => m.uri);
+          if (activePhotoIndex < 0 || activePhotoIndex >= allUrls.length) return;
+
+          allUrls.splice(activePhotoIndex, 1);
+
+          const newImageUrl = allUrls[0] || '';
+          const newAdditionalImages = allUrls.slice(1);
+
+          await set(ref(getFirebaseDB(), `case_club/${id}/imageUrl`), newImageUrl);
+          await set(ref(getFirebaseDB(), `case_club/${id}/additionalImages`), newAdditionalImages);
+
+          // Обновляем локальное состояние сразу, чтобы фото исчезло мгновенно,
+          // не дожидаясь перезахода на экран
+          const newMediaArr = [
+            ...(newImageUrl ? [{ uri: newImageUrl, stage: 'Обложка' }] : []),
+            ...newAdditionalImages.map((url: string, i: number) => ({ uri: url, stage: `Фото ${i + 2}` })),
+          ];
+          setLocalCase(prev => prev ? { ...prev, media: newMediaArr } : prev);
+          setActivePhotoIndex(0);
+        } catch (e) {
+          console.error('[CaseDetails] Ошибка удаления фото:', e);
+        }
+      },
+    });
   };
 
   const handleDeletePost = () => {
@@ -943,7 +1032,7 @@ export default function CaseDetailsScreen() {
             : (rawMedia && typeof rawMedia === 'object' ? Object.values(rawMedia) as any[] : []))
             .filter((m: any) => m?.uri?.startsWith('https://') || m?.uri?.startsWith('data:'));
           return normMedia.length > 0
-            ? <MediaCarousel media={normMedia} onPressPhoto={(i) => setViewer({ media: normMedia, index: i })} />
+            ? <MediaCarousel media={normMedia} onPressPhoto={(i) => setViewer({ media: normMedia, index: i })} onActiveIndexChange={setActivePhotoIndex} />
             : null;
         })()}
 
@@ -1005,11 +1094,16 @@ export default function CaseDetailsScreen() {
           <View style={styles.commentsList}>
             {comments.map((c) => (
               <TouchableOpacity
-                key={c.id}
-                style={styles.commentItem}
-                activeOpacity={0.85}
-                onLongPress={() => { setSelectedComment(c); setShowCommentMenu(true); }}
-              >
+              key={c.id}
+              style={[
+                styles.commentItem,
+                (c as any).authorId === currentUserId
+                  ? { backgroundColor: 'rgba(242,202,80,0.10)', borderLeftWidth: 3, borderLeftColor: '#f2ca50' }
+                  : { backgroundColor: 'rgba(93,173,226,0.08)', borderLeftWidth: 3, borderLeftColor: '#5dade2' },
+              ]}
+              activeOpacity={0.85}
+              onLongPress={() => { setSelectedComment(c); setShowCommentMenu(true); }}
+            >
                 <View style={styles.commentAvatar}>
                   {(() => {
                     const authorProfile = (c as any).authorId ? commentAuthorAvatars[(c as any).authorId] : null;
@@ -1030,7 +1124,10 @@ export default function CaseDetailsScreen() {
                 </View>
                 <View style={styles.commentBody}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Text style={styles.commentAuthorText}>{formatShortName(c.author)}</Text>
+                    <Text style={[
+                    styles.commentAuthorText,
+                    (c as any).authorId !== currentUserId && { color: '#5dade2' },
+                  ]}>{formatShortName(c.author)}</Text>
                     {(c as any).createdAt ? (
                       <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginLeft: 8 }}>
                         {formatCommentTime((c as any).createdAt)}
