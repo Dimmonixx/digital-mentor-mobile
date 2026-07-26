@@ -9,7 +9,6 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     FlatList,
     Image,
     ImageBackground,
@@ -118,7 +117,6 @@ export default function ProfileScreen() {
   const [partnerCode, setPartnerCode] = useState<string>('');
   const [linkingLoading, setLinkingLoading] = useState(false);
   const [linkedPartners, setLinkedPartners] = useState<LinkedPartner[]>([]);
-  const [recommendedPartners, setRecommendedPartners] = useState<LinkedPartner[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<ConnectionRequest[]>([]);
   const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{ visible: boolean; message: string }>({ visible: false, message: '' });
@@ -134,6 +132,18 @@ export default function ProfileScreen() {
     message: '',
     type: 'success',
     buttonLabel: 'Отлично',
+  });
+
+  const [confirmModal, setConfirmModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
   });
 
   const showFeedback = (
@@ -161,7 +171,6 @@ export default function ProfileScreen() {
     const unsubscribe = onValue(partnershipsRef, (snapshot) => {
       if (!snapshot.exists()) {
         setLinkedPartners([]);
-        loadRecommendedPartners(userId, userRole, []);
         return;
       }
 
@@ -200,70 +209,11 @@ export default function ProfileScreen() {
       });
 
       setLinkedPartners(partners);
-      loadRecommendedPartners(userId, userRole, partners);
     }, (error) => {
       console.log("=== Партнёры: ошибка слушателя ===", error.message);
     });
 
     return unsubscribe;
-  };
-
-  const loadRecommendedPartners = async (userId: string, userRole: string, directPartners: LinkedPartner[]) => {
-    try {
-      if (directPartners.length === 0) {
-        setRecommendedPartners([]);
-        return;
-      }
-
-      const partnershipsRef = dbRef(getFirebaseDB(), 'partnerships');
-      const snapshot = await get(partnershipsRef);
-
-      if (!snapshot.exists()) {
-        setRecommendedPartners([]);
-        return;
-      }
-
-      const partnershipsData = snapshot.val() as Record<string, {
-        doctorUid?: string;
-        doctorName?: string;
-        technicianUid?: string;
-        technicianName?: string;
-      }>;
-
-      const recommended: LinkedPartner[] = [];
-      const seenIds = new Set<string>(directPartners.map(p => p.id));
-      seenIds.add(userId);
-
-      Object.values(partnershipsData).forEach((p) => {
-        if (!p) return;
-
-        // Check if this partnership involves one of our direct partners (mutual connection)
-        const partnerId = userRole === 'doctor' ? p.technicianUid : p.doctorUid;
-        const targetId = userRole === 'doctor' ? p.doctorUid : p.technicianUid;
-        const targetName = userRole === 'doctor' ? p.doctorName : p.technicianName;
-        const targetRole = userRole === 'doctor' ? 'Врач' : 'Техник';
-
-        // Only include if partnership exists for both directions (mutual)
-        const reverseKey = `${targetId}_${partnerId}`;
-        const isMutual = partnershipsData[reverseKey] !== undefined;
-
-        if (partnerId && directPartners.some(dp => dp.id === partnerId) && targetId && isMutual) {
-          if (!seenIds.has(targetId)) {
-            seenIds.add(targetId);
-            recommended.push({
-              id: targetId,
-              name: targetName || 'Коллега',
-              role: targetRole,
-            });
-          }
-        }
-      });
-
-      setRecommendedPartners(recommended);
-      console.log("=== Рукопожатия: список обновлен ===");
-    } catch (error) {
-      console.log("=== Рукопожатия: ошибка загрузки ===", (error as any)?.message);
-    }
   };
 
   useEffect(() => {
@@ -551,39 +501,31 @@ export default function ProfileScreen() {
   };
 
   const handleRemovePartner = async (partnerId: string) => {
-    Alert.alert(
-      'Удаление коллеги',
-      'Вы уверены, что хотите удалить этого пользователя из списка коллег?',
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Удалить',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const storedUser = await AsyncStorage.getItem('user');
-              const currentUser = storedUser ? JSON.parse(storedUser) : null;
-              const userId = currentUser?.uid || user?.uid || currentUser?.id || user?.id;
-              if (!userId) return;
+    setConfirmModal({
+      visible: true,
+      title: 'Удаление коллеги',
+      message: 'Вы уверены, что хотите удалить этого пользователя из списка коллег?',
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, visible: false }));
+        try {
+          const storedUser = await AsyncStorage.getItem('user');
+          const currentUser = storedUser ? JSON.parse(storedUser) : null;
+          const userId = currentUser?.uid || user?.uid || currentUser?.id || user?.id;
+          if (!userId) return;
 
-              // Remove both partnership keys (mutual deletion)
-              const key1 = `${userId}_${partnerId}`;
-              const key2 = `${partnerId}_${userId}`;
+          const key1 = `${userId}_${partnerId}`;
+          const key2 = `${partnerId}_${userId}`;
 
-              const ref1 = dbRef(getFirebaseDB(), `partnerships/${key1}`);
-              const ref2 = dbRef(getFirebaseDB(), `partnerships/${key2}`);
+          const ref1 = dbRef(getFirebaseDB(), `partnerships/${key1}`);
+          const ref2 = dbRef(getFirebaseDB(), `partnerships/${key2}`);
 
-              await remove(ref1);
-              await remove(ref2);
-
-              console.log("=== Коллега успешно удален ===");
-            } catch (error) {
-              console.log("=== Удаление коллеги: ошибка ===", (error as any)?.message);
-            }
-          },
-        },
-      ]
-    );
+          await remove(ref1);
+          await remove(ref2);
+        } catch (error) {
+          console.log("=== Удаление коллеги: ошибка ===", (error as any)?.message);
+        }
+      },
+    });
   };
 
   const loadIncomingRequests = () => {
@@ -1038,44 +980,7 @@ export default function ProfileScreen() {
             ))
           )}
 
-          {recommendedPartners.length > 0 && (
-            <>
-              <Text style={styles.partnersSectionTitle}>Коллеги ваших партнеров</Text>
-              {recommendedPartners.map((partner) => (
-                <View key={partner.id} style={styles.partnerCard}>
-                  <View style={styles.partnerAvatar}>
-                    <Ionicons
-                      name={partner.role === 'Врач' ? 'medical' : 'construct'}
-                      size={20}
-                      color={GOLD}
-                    />
-                  </View>
-                  <Text style={styles.partnerName} numberOfLines={2}>
-                    {partner.name}
-                  </Text>
-                  <View style={styles.partnerRoleBadge}>
-                    <Text style={styles.partnerRoleText}>{partner.role}</Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => {
-                      setPartnerCode(partner.id);
-                      handleLinkPartner();
-                    }}
-                    style={styles.addPartnerButton}
-                  >
-                    <Ionicons name="add-circle-outline" size={24} color={GOLD} />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </>
-          )}
         </View>
-
-        {toast.visible && (
-          <View style={styles.toastContainer}>
-            <Text style={styles.toastText}>{toast.message}</Text>
-          </View>
-        )}
 
         {/* 4. Professional data + save (accordion) — временно скрыто
         <View style={styles.blockCard}>
@@ -1148,6 +1053,12 @@ export default function ProfileScreen() {
           <Text style={styles.logoutButtonText}>Выйти из аккаунта</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {toast.visible && (
+        <View style={styles.toastContainer}>
+          <Text style={styles.toastText}>{toast.message}</Text>
+        </View>
+      )}
 
       {/* Avatar Modal */}
       <Modal
@@ -1244,6 +1155,38 @@ export default function ProfileScreen() {
             >
               <Text style={styles.feedbackButtonText}>{feedbackModal.buttonLabel}</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Confirm Modal (два действия) */}
+      <Modal
+        visible={confirmModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmModal(prev => ({ ...prev, visible: false }))}
+      >
+        <View style={styles.feedbackOverlay}>
+          <View style={styles.feedbackCard}>
+            <View style={[styles.feedbackIconWrap, styles.feedbackIconWrapError]}>
+              <Ionicons name="trash-outline" size={36} color="#f2ca50" />
+            </View>
+            <Text style={styles.feedbackTitle}>{confirmModal.title}</Text>
+            <Text style={styles.feedbackMessage}>{confirmModal.message}</Text>
+            <View style={{ flexDirection: 'row', gap: 10, width: '100%', marginTop: 12 }}>
+              <TouchableOpacity
+                style={[styles.feedbackButton, { flex: 1, backgroundColor: 'rgba(255,255,255,0.08)' }]}
+                onPress={() => setConfirmModal(prev => ({ ...prev, visible: false }))}
+              >
+                <Text style={[styles.feedbackButtonText, { color: 'rgba(255,255,255,0.8)' }]}>Отмена</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.feedbackButton, { flex: 1, backgroundColor: '#ff6b6b' }]}
+                onPress={confirmModal.onConfirm}
+              >
+                <Text style={[styles.feedbackButtonText, { color: '#fff' }]}>Удалить</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

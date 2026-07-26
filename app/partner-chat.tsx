@@ -1,4 +1,4 @@
-﻿import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { get, off, onValue, ref, remove, set } from 'firebase/database';
@@ -217,7 +217,7 @@ export default function PartnerChatScreen() {
       (globalThis as any).clearPartnerUnread?.(partnerId);
       off(messagesRef, 'value', unsubscribe);
     };
-  }, [chatId, currentUserId, userScrolledUp]);
+  }, [chatId, currentUserId, doctorId, technicianId]);
 
   // AppState listener
   useEffect(() => {

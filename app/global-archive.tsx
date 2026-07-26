@@ -349,21 +349,38 @@ function ArchiveCard({
               const d = item.data as any;
               return (
                 <>
+                  {d.viewMode ? (
+                    <View style={cardStyles.detailRow}>
+                      <Text style={cardStyles.detailLabel}>Режим просмотра</Text>
+                      <Text style={cardStyles.detailValue}>{d.viewMode}</Text>
+                    </View>
+                  ) : null}
+                  {[
+                    { key: 'texture', label: 'Текстура' },
+                    { key: 'transparency', label: 'Прозрачность' },
+                    { key: 'macroRelief', label: 'Макрорельеф' },
+                  ].map(({ key, label }) => {
+                    const param = d[key];
+                    if (!param || !param.verdict) return null;
+                    return (
+                      <View key={key} style={cardStyles.aiBlock}>
+                        <View style={cardStyles.aiBlockHeader}>
+                          <Ionicons name="eye-outline" size={13} color="#a855f7" />
+                          <Text style={cardStyles.aiBlockTitle}>{label} {param.score ? `— ${param.score}/10` : ''}</Text>
+                        </View>
+                        <Text style={cardStyles.aiBlockText}>{param.verdict}</Text>
+                      </View>
+                    );
+                  })}
                   {d.textureNotes ? (
                     <View style={cardStyles.aiBlock}>
                       <View style={cardStyles.aiBlockHeader}>
-                        <Ionicons name="eye-outline" size={13} color="#a855f7" />
-                        <Text style={cardStyles.aiBlockTitle}>Оптический анализ</Text>
+                        <Ionicons name="document-text-outline" size={13} color="#f2ca50" />
+                        <Text style={cardStyles.aiBlockTitle}>Итоговый вывод</Text>
                       </View>
                       <Text style={cardStyles.aiBlockText}>{d.textureNotes}</Text>
                     </View>
                   ) : null}
-                  <View style={cardStyles.detailRow}>
-                    <Text style={cardStyles.detailLabel}>Трещины</Text>
-                    <Text style={[cardStyles.detailValue, { color: d.cracksDetected ? '#ff5252' : '#4caf50' }]}>
-                      {d.cracksDetected ? 'Обнаружены' : 'Не обнаружены'}
-                    </Text>
-                  </View>
                 </>
               );
             })()}

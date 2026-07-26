@@ -29,8 +29,6 @@ import {
 import Markdown from 'react-native-markdown-display';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const ADMIN_USERNAME = 'Dimmonix';
-
 // Функция для сравнения дат (один и тот же день)
 const isSameDay = (timestamp1: number, timestamp2: number): boolean => {
   const date1 = new Date(timestamp1);
@@ -90,7 +88,7 @@ const AnimatedMessage = ({ children }: { children: React.ReactNode }) => {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [opacity, translateY]);
 
   return (
     <Animated.View style={{ opacity, transform: [{ translateY }] }}>
@@ -113,7 +111,7 @@ export default function ChatScreen() {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const [currentDiamonds, setCurrentDiamonds] = useState((globalThis as any).getDiamondBalance?.() ?? 0);
   const [aiDailyLimit, setAiDailyLimit] = useState<number>(() => (globalThis as any).getAiDailyLimit?.() ?? 0);
-  const [onlineUsersCount, setOnlineUsersCount] = useState(0);
+  const [, setOnlineUsersCount] = useState(0);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [sessionTimeLeft, setSessionTimeLeft] = useState<number>(0);
@@ -133,7 +131,7 @@ export default function ChatScreen() {
         Animated.timing(pulseAnim, { toValue: 1, duration: 1500, useNativeDriver: true }),
       ])
     ).start();
-  }, []);
+  }, [pulseAnim]);
   
   useEffect(() => {
     if (aiThinking) {
@@ -154,12 +152,10 @@ export default function ChatScreen() {
     } else {
       thinkingOpacity.setValue(1);
     }
-  }, [aiThinking]);
+  }, [aiThinking, thinkingOpacity]);
 
   // Логика сессии AI чата - вынесена в отдельную функцию
   const checkSession = async () => {
-    console.log('=== CHECK SESSION START ===', { userId, userEmail: user?.email, aiRole });
-    console.log('=== CHECK SESSION ===', { userId, aiRole, sessionTimeLeft });
     const sessionKey = `ai_chat_session_${userId}_${aiRole}`;
     const lastSessionStr = await AsyncStorage.getItem(sessionKey);
     const lastSession = lastSessionStr ? parseInt(lastSessionStr, 10) : 0;
@@ -173,7 +169,6 @@ export default function ChatScreen() {
         await AsyncStorage.setItem(sessionKey, String(now));
         return true;
       });
-      console.log('=== EXECUTE RESULT ===', { allowed });
       (globalThis as any).forceDiamondUpdate?.();
       if (!allowed) {
         return false;
@@ -275,7 +270,7 @@ export default function ChatScreen() {
     cleanupOldUsers();
 
     // Подписываемся на изменения списка активных пользователей
-    const unsubscribe = onValue(activeUsersRef, (snapshot: any) => {
+    onValue(activeUsersRef, (snapshot: any) => {
       const data = snapshot.val();
       if (data) {
         const activeUsers = Object.keys(data).length;
@@ -329,9 +324,8 @@ export default function ChatScreen() {
   };
 
   const setupFirebaseListener = () => {
-    console.log('DEBUG userId:', userId, 'aiRole:', aiRole);
     const messagesRef = ref(getFirebaseDB(), `global_chat/${userId}/${aiRole || 'technician'}`);
-    const unsubscribe = onValue(messagesRef, (snapshot: any) => {
+    onValue(messagesRef, (snapshot: any) => {
       const data = snapshot.val();
       if (data) {
         const messageList: Message[] = Object.entries(data).map(([key, value]: [string, any]) => ({
@@ -382,7 +376,6 @@ export default function ChatScreen() {
 
       if (aiRole === 'doctor' || aiRole === 'technician') {
         // Проверяем сессию перед отправкой запроса к ИИ
-        console.log('=== SEND MESSAGE SESSION CHECK ===', { sessionTimeLeft });
         if (sessionTimeLeft <= 0) {
           const allowed = await checkSession();
           if (!allowed) {
@@ -461,7 +454,6 @@ export default function ChatScreen() {
         });
         
         const data = await response.json();
-        console.log('ImgBB response:', JSON.stringify(data));
         const photoURL = data.data?.url;
         
         if (!photoURL) {
@@ -553,8 +545,6 @@ export default function ChatScreen() {
                       borderRadius: 12
                     }}
                     resizeMode="cover"
-                    onError={(e) => console.log('Image error:', e.nativeEvent.error)}
-                    onLoad={() => console.log('Image loaded!')}
                   />
                 </TouchableOpacity>
                 <Text style={{

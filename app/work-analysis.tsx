@@ -1,7 +1,6 @@
 import BottomTabBar from '@/components/BottomTabBar';
 import CustomAlert from '@/components/CustomAlert';
 import GlobalHeader from '@/components/global-header';
-import { useTheme } from '@/context/ThemeContext';
 import { executeWithAiLimit } from '@/services/aiRequestService';
 import { uploadMediaToServer } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -14,7 +13,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   BackHandler,
-  Dimensions,
   Image,
   ImageBackground,
   Modal,
@@ -25,10 +23,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNewOrdersCount } from '../hooks/useNewOrdersCount';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const VITA_SHADES = [
   "A1", "A2", "A3", "A3.5", "A4",
@@ -110,7 +105,7 @@ const FloatingWord = ({ style, delay }: { style: any; delay: number }) => {
     };
     const timeout = setTimeout(runCycle, delay);
     return () => { isMounted = false; clearTimeout(timeout); };
-  }, []);
+  }, [delay, opacity]);
 
   return (
     <Animated.View style={[{ position: 'absolute', width: 110, alignItems: 'center' }, style, { opacity }]}>
@@ -131,8 +126,6 @@ const FloatingWord = ({ style, delay }: { style: any; delay: number }) => {
 };
 
 export default function WorkAnalysisScreen() {
-  const insets = useSafeAreaInsets();
-  const { theme } = useTheme();
   const scrollViewRef = useRef<ScrollView>(null);
   const resultSectionY = useRef(0);
   const newOrdersCount = useNewOrdersCount();

@@ -1,0 +1,124 @@
+﻿diff --git a/app/detalization.tsx b/app/detalization.tsx
+index dd906c3..250d97f 100644
+--- a/app/detalization.tsx
++++ b/app/detalization.tsx
+@@ -2,7 +2,7 @@ import BottomTabBar from '@/components/BottomTabBar';
+ import { DemoOverlay, DemoOverlayData } from '@/components/case-post-actions';
+ import GlobalHeader from '@/components/global-header';
+ import { executeWithAiLimit } from '@/services/aiRequestService';
+-import { uploadMediaToServer } from '@/utils/saveToArchive';
++import { saveToArchive, uploadMediaToServer } from '@/utils/saveToArchive';
+ import Ionicons from '@expo/vector-icons/Ionicons';
+ import AsyncStorage from '@react-native-async-storage/async-storage';
+ import * as ImageManipulator from 'expo-image-manipulator';
+@@ -14,6 +14,7 @@ import { StatusBar } from 'expo-status-bar';
+ import React, { useEffect, useRef, useState } from 'react';
+ import {
+     Alert,
++    BackHandler,
+     Dimensions,
+     Image,
+     ImageBackground,
+@@ -227,6 +228,32 @@ export default function DetalizationScreen() {
+   const [photoUri, setPhotoUri] = useState<string | null>(paramUri ?? null);
+   const [pickingPhoto, setPickingPhoto] = useState(false);
+   const [diamonds, setDiamonds] = useState<number>(() => (globalThis as any).getDiamondBalance?.() ?? 0);
++  const [aiDailyLimit, setAiDailyLimit] = useState<number>(() => (globalThis as any).getAiDailyLimit?.() ?? 15);
++  const [exitConfirmData, setExitConfirmData] = useState<DemoOverlayData>(null);
++
++  useEffect(() => {
++    const interval = setInterval(() => {
++      const fresh = (globalThis as any).getAiDailyLimit?.();
++      if (fresh !== undefined) setAiDailyLimit(fresh);
++    }, 1000);
++    return () => clearInterval(interval);
++  }, []);
++
++  useEffect(() => {
++    const onBackPress = () => {
++      setExitConfirmData({
++        title: '╨Т╤Л╨╣╤В╨╕ ╨╕╨╖ ╨┤╨╕╨░╨│╨╜╨╛╤Б╤В╨╕╨║╨╕?',
++        message: '╨Т╤Б╨╡ ╨╜╨╡╤Б╨╛╤Е╤А╨░╨╜╤С╨╜╨╜╤Л╨╡ ╨┤╨░╨╜╨╜╤Л╨╡ ╨▒╤Г╨┤╤Г╤В ╨┐╨╛╤В╨╡╤А╤П╨╜╤Л.',
++        icon: 'exit-outline',
++        danger: true,
++        confirmText: '╨Т╤Л╨╣╤В╨╕',
++        onConfirm: () => { setExitConfirmData(null); router.back(); },
++      });
++      return true;
++    };
++    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
++    return () => subscription.remove();
++  }, []);
+ 
+   const [brightness,  setBrightness]  = useState(1);
+   const [contrast,    setContrast]    = useState(1);
+@@ -368,6 +395,21 @@ export default function DetalizationScreen() {
+         return;
+       }
+       setOpticalResult(data);
++
++      try {
++        await saveToArchive(
++          'optical_diagnosis',
++          '',
++          {
++            imageUri: imageUrl,
++            textureNotes: data?.summary ?? '',
++            cracksDetected: data?.cracks_detected ?? false,
++            translucentZones: data?.translucent_zones ?? [],
++          } as any,
++        );
++      } catch (archiveError) {
++        console.error('[runOpticalAnalysis] saveToArchive error:', archiveError);
++      }
+     } catch (e) {
+       console.error(e);
+       Alert.alert('╨Ю╤И╨╕╨▒╨║╨░', '╨Э╨╡ ╤Г╨┤╨░╨╗╨╛╤Б╤М ╤Б╨▓╤П╨╖╨░╤В╤М╤Б╤П ╤Б ╤Б╨╡╤А╨▓╨╡╤А╨╛╨╝');
+@@ -412,11 +454,18 @@ export default function DetalizationScreen() {
+         <StatusBar style="light" backgroundColor="#0a0a1a" />
+ 
+         {/* тФАтФА ╨У╨Ы╨Ю╨С╨Р╨Ы╨м╨Э╨л╨Щ ╨е╨Х╨Ф╨Х╨а тФАтФА */}
+-        <GlobalHeader diamonds={diamonds} />
++        <GlobalHeader diamonds={diamonds} aiDailyLimit={aiDailyLimit} />
+ 
+         {/* тФАтФА ╨б╨в╨а╨Ю╨Ъ╨Р ╨Э╨Р╨Ч╨Р╨Ф + ╨Ч╨Р╨У╨Ю╨Ы╨Ю╨Т╨Ю╨Ъ тФАтФА */}
+         <View style={styles.subHeader}>
+-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
++          <TouchableOpacity onPress={() => setExitConfirmData({
++            title: '╨Т╤Л╨╣╤В╨╕ ╨╕╨╖ ╨┤╨╕╨░╨│╨╜╨╛╤Б╤В╨╕╨║╨╕?',
++            message: '╨Т╤Б╨╡ ╨╜╨╡╤Б╨╛╤Е╤А╨░╨╜╤С╨╜╨╜╤Л╨╡ ╨┤╨░╨╜╨╜╤Л╨╡ ╨▒╤Г╨┤╤Г╤В ╨┐╨╛╤В╨╡╤А╤П╨╜╤Л.',
++            icon: 'exit-outline',
++            danger: true,
++            confirmText: '╨Т╤Л╨╣╤В╨╕',
++            onConfirm: () => { setExitConfirmData(null); router.back(); },
++          })} style={styles.backBtn}>
+             <Ionicons name="arrow-back" size={24} color="#f2ca50" />
+           </TouchableOpacity>
+           <Text style={styles.subHeaderTitle}>╨Ю╨┐╤В╨╕╤З╨╡╤Б╨║╨░╤П ╨┤╨╕╨░╨│╨╜╨╛╤Б╤В╨╕╨║╨░</Text>
+@@ -466,9 +515,16 @@ export default function DetalizationScreen() {
+     >
+       <Stack.Screen options={{ headerShown: false }} />
+ 
+-      <GlobalHeader diamonds={diamonds} />
++      <GlobalHeader diamonds={diamonds} aiDailyLimit={aiDailyLimit} />
+       <View style={styles.header}>
+-        <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
++        <TouchableOpacity onPress={() => setExitConfirmData({
++          title: '╨Т╤Л╨╣╤В╨╕ ╨╕╨╖ ╨┤╨╕╨░╨│╨╜╨╛╤Б╤В╨╕╨║╨╕?',
++          message: '╨Т╤Б╨╡ ╨╜╨╡╤Б╨╛╤Е╤А╨░╨╜╤С╨╜╨╜╤Л╨╡ ╨┤╨░╨╜╨╜╤Л╨╡ ╨▒╤Г╨┤╤Г╤В ╨┐╨╛╤В╨╡╤А╤П╨╜╤Л.',
++          icon: 'exit-outline',
++          danger: true,
++          confirmText: '╨Т╤Л╨╣╤В╨╕',
++          onConfirm: () => { setExitConfirmData(null); router.back(); },
++        })} style={styles.headerBtn}>
+           <Ionicons name="arrow-back" size={24} color="#f2ca50" />
+         </TouchableOpacity>
+         <Text style={styles.headerTitle}>╨Ю╨┐╤В╨╕╤З╨╡╤Б╨║╨░╤П ╨┤╨╕╨░╨│╨╜╨╛╤Б╤В╨╕╨║╨░</Text>
+@@ -808,6 +864,7 @@ export default function DetalizationScreen() {
+ 
+ 
+       <DemoOverlay data={panoramaHint} onClose={() => setPanoramaHint(null)} />
++      <DemoOverlay data={exitConfirmData} onClose={() => setExitConfirmData(null)} />
+       <BottomTabBar />
+     </ImageBackground>
+   );

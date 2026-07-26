@@ -1,23 +1,21 @@
-﻿import { Ionicons } from '@expo/vector-icons';
+import { getFirebaseDB } from '@/constants/firebase';
+import { useAuth } from '@/hooks/useAuth';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { get, off, onValue, ref } from 'firebase/database';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  FlatList,
-  Image,
-  ImageBackground,
-  Modal,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    FlatList,
+    Image,
+    ImageBackground,
+    Modal,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-import { getFirebaseDB } from '@/constants/firebase';
-import { useAuth } from '@/hooks/useAuth';
 
 const PRESET_AVATARS = [
   require('../../assets/avatars/avatar_1.jpg'),
@@ -35,7 +33,6 @@ interface ChatPartner {
 }
 
 export default function ChatListScreen() {
-  const insets = useSafeAreaInsets();
   const { user, role } = useAuth();
   const [partners, setPartners] = useState<ChatPartner[]>([]);
   const [loading, setLoading] = useState(true);

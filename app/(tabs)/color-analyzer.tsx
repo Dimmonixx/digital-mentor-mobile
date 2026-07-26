@@ -33,23 +33,7 @@ import DraggableZones, { Zone } from '../../components/DraggableZones';
 import { ANTHROPIC_API_KEY } from '../../constants/config';
 
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
-const COLOR_ANALYSIS_PRICE = 1;
 const API_BASE_URL = 'http://62.238.13.160:8000';
-
-const FLOATING_WORDS = [
-  "оттенок", "зоны", "прозрачность", "яркость", "насыщенность", "эффекты", "текстуру", "субтоны"
-];
-
-const FLOATING_POSITIONS = [
-  { top: 155, left: 220 },
-  { top: 260, left: 185 },
-  { top: 300, left: 100 },
-  { top: 260, left: 15 },
-  { top: 155, left: -20 },
-  { top: 50, left: 15 },
-  { top: 10, left: 100 },
-  { top: 50, left: 185 },
-];
 
 // Кэш для анализа VITA
 const CACHE_PREFIX = 'vita_analysis_cache_';
@@ -122,13 +106,6 @@ const shadeOnly = (text: string) => {
   return s;
 };
 
-const getMainShade = (result: any): string => {
-  if (!result) return '';
-  const raw = result?.primary_range || (result?.zones?.cervical ?? '');
-  return raw.split('(')[0].split('—')[0].split('-')[0]
-            .split('/')[0].trim();
-};
-
 const PHOTO_TIPS_STEPS = [
   '⚠️ Делайте захват широко — рамка должна включать десну сверху, боковые грани и краешки соседних зубов (10–15%). Не обводите зуб точно по контуру — чем шире захват, тем точнее результат.',
   '� Пришеечная зона (жёлтая рамка) — у десны, верхние 25–35% зуба. Растяните на всю ширину.',
@@ -175,8 +152,6 @@ function parseVitaJson(raw: string): VitaAnalysis | null {
 }
 
 async function analyzeWithClaude(base64: string, mediaType: 'image/jpeg' | 'image/png', calculatedShade: string): Promise<VitaAnalysis> {
-  console.log('CLAUDE: Математически рассчитанный оттенок:', calculatedShade);
-  
   const vitaPrompt = `
 Ты — профессиональный стоматологический колорист и эксперт по шкале VITA Classic и VITA Bleachguide с огромным опытом работы в зуботехнической лаборатории. 
 Твоя задача — провести независимый визуальный анализ зуба на фотографии и вернуть строго валидный JSON.
@@ -236,8 +211,6 @@ A5 (виртуальный эталон) = экстремальный, «нек�
 ### ТРЕБОВАНИЕ К ПОЛЮ layering_recipe:
 Поле layering_recipe должно быть заполнено строго с точки зрения зубного техника, который будет послойно наносить керамическую массу на каркас. Опирайся на выявленный primary_range и особенности зон зуба. Никакой воды, только четкие технологические ориентиры цветов.`;
   
-  console.log('CLAUDE: отправка в Anthropic API, base64 length =', base64.length);
-
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -272,10 +245,8 @@ A5 (виртуальный эталон) = экстремальный, «нек�
 
   const data = (await res.json()) as {
     error?: { message?: string };
-    content?: Array<{ type: string; text?: string }>;
+    content?: { type: string; text?: string }[];
   };
-
-  console.log('CLAUDE: response status =', res.status);
 
   if (!res.ok) {
     const msg = data.error?.message ?? `HTTP ${res.status}`;
@@ -284,55 +255,12 @@ A5 (виртуальный эталон) = экстремальный, «нек�
   }
 
   const text = data.content?.find((c) => c.type === 'text' && c.text)?.text?.trim() ?? '';
-  console.log('CLAUDE: raw response (first 200):', text.slice(0, 200));
   const parsed = parseVitaJson(text);
   if (!parsed) {
     throw new Error('Не удалось разобрать ответ модели. Попробуйте другое фото.');
   }
   return parsed;
 }
-
-const FloatingWord = ({ style, delay }: { style: any; delay: number }) => {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const [wordIndex, setWordIndex] = useState(() => Math.floor(Math.random() * FLOATING_WORDS.length));
-
-  useEffect(() => {
-    let isMounted = true;
-    const runCycle = () => {
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
-        Animated.delay(1200),
-        Animated.timing(opacity, { toValue: 0, duration: 600, useNativeDriver: true }),
-        Animated.delay(400),
-      ]).start(() => {
-        if (isMounted) {
-          setWordIndex(prev => (prev + 1) % FLOATING_WORDS.length);
-          runCycle();
-        }
-      });
-    };
-    const timeout = setTimeout(runCycle, delay);
-    return () => { isMounted = false; clearTimeout(timeout); };
-  }, []);
-
-  return (
-    <Animated.View style={[{ position: 'absolute', width: 110, alignItems: 'center' }, style, { opacity }]}>
-      <View style={{
-        backgroundColor: 'rgba(242,202,80,0.12)',
-        borderWidth: 1,
-        borderColor: 'rgba(242,202,80,0.4)',
-        borderRadius: 14,
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-      }}>
-        <Text style={{ color: '#f2ca50', fontSize: 12, fontWeight: '600', textAlign: 'center' }}>
-          {FLOATING_WORDS[wordIndex]}
-        </Text>
-      </View>
-    </Animated.View>
-  );
-};
-
 
 export default function ColorAnalyzerScreen() {
   const insets = useSafeAreaInsets();
@@ -341,7 +269,7 @@ export default function ColorAnalyzerScreen() {
   const [rawImageSize, setRawImageSize] = useState<{ width: number; height: number } | null>(null);
   const [showCropScreen, setShowCropScreen] = useState(false);
   const [cropBox, setCropBox] = useState({ x: 40, y: 100, width: 250, height: 250 });
-  const { width: liveWidth, height: liveHeight } = useWindowDimensions();
+  const { width: liveWidth } = useWindowDimensions();
   const cropDisplayRef = useRef({ width: 0, height: 0 });
   const cropDragRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const cropBoxRef = useRef(cropBox);
@@ -370,7 +298,7 @@ export default function ColorAnalyzerScreen() {
         height: initSize,
       });
     }
-  }, [showCropScreen, rawImageSize]);
+  }, [showCropScreen, rawImageSize, CROP_CONTAINER_SIZE]);
 
   const movePanResponder = useRef(
     PanResponder.create({
@@ -451,7 +379,7 @@ export default function ColorAnalyzerScreen() {
     } else {
       textOpacity.setValue(1);
     }
-  }, [loading]);
+  }, [loading, textOpacity]);
   const [error, setError] = useState<string | null>(null);
   const [jaw, setJaw] = useState<'upper' | 'lower' | null>(null);
   const [showJawModal, setShowJawModal] = useState(false);
@@ -610,7 +538,6 @@ const reset = useCallback(() => {
       if (selectedImage) {
         const cachedResult = await getCachedAnalysis(selectedImage);
         if (cachedResult) {
-          console.log('Результат найден в кэше, используем его');
           setResult(cachedResult);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           setLoading(false);
@@ -621,8 +548,6 @@ const reset = useCallback(() => {
       // Шаг 1: математический анализ цвета — получаем calculatedShade как подсказку для Claude
       const mathResult = await analyzeColorWithServer(selectedImage!, zones);
       const calculatedShade = mathResult?.primary_range || 'A2';
-      console.log('HYBRID: math shade =', calculatedShade);
-
       // Шаг 2: сжимаем изображение для передачи в Claude
       const compressed = await ImageManipulator.manipulateAsync(
         selectedImage!,
@@ -630,8 +555,6 @@ const reset = useCallback(() => {
         { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true },
       );
       const compressedBase64 = compressed.base64!;
-      console.log('HYBRID: compressed base64 length =', compressedBase64.length);
-
       // Шаг 3: Claude визуально анализирует зуб, используя calculatedShade как подсказку
       const rawUser = await AsyncStorage.getItem('user');
       const userEmail = rawUser ? JSON.parse(rawUser)?.email || '' : '';
@@ -677,7 +600,7 @@ const reset = useCallback(() => {
     } finally {
       setLoading(false);
     }
-  }, [selectedImage, jaw, zones, containerSize]);
+  }, [selectedImage, zones]);
 
   const handleSaveToArchive = async () => {
     if (!result) return;
@@ -731,7 +654,6 @@ const reset = useCallback(() => {
     if (selectedImage) {
       const cachedResult = await getCachedAnalysis(selectedImage);
       if (cachedResult) {
-        console.log('Результат найден в кэше, не списываем алмаз');
         setResult(cachedResult);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         return;
@@ -787,22 +709,13 @@ const reset = useCallback(() => {
 
   const applyCrop = useCallback(async () => {
     if (!rawImageUri || !rawImageSize) return;
-    const { width: dw, height: dh } = cropDisplayRef.current;
+    const { width: dw } = cropDisplayRef.current;
     const scale = rawImageSize.width / dw;
 
     const realX = Math.round(cropBox.x * scale);
     const realY = Math.round(cropBox.y * scale);
     const realWidth = Math.round(cropBox.width * scale);
     const realHeight = Math.round(cropBox.height * scale);
-
-    console.log('=== CROP DEBUG ===', {
-      rawImageSize,
-      displayWidth: dw,
-      displayHeight: dh,
-      cropBox,
-      scale,
-      realX, realY, realWidth, realHeight,
-    });
 
     try {
       const cropped = await ImageManipulator.manipulateAsync(
@@ -827,29 +740,6 @@ const reset = useCallback(() => {
   }, []);
 
   
-  const launchCamera = useCallback(async () => {
-    const res = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: false,
-      quality: 1,
-      exif: false,
-      base64: true,
-    });
-    if (res.canceled || !res.assets?.[0]) return;
-    await pickAsset(res.assets[0]);
-  }, [pickAsset]);
-
-  const launchGallery = useCallback(async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: false,
-      quality: 0.75,
-      base64: true,
-    });
-    if (res.canceled || !res.assets?.[0]) return;
-    await pickAsset(res.assets[0]);
-  }, [pickAsset]);
-
   const loadPartners = async () => {
     if (!currentUser) return;
     const uid: string = currentUser.uid || currentUser.id || currentUser.email;
@@ -1012,7 +902,7 @@ const reset = useCallback(() => {
 
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 }]}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 40 }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

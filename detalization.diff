@@ -1,0 +1,39 @@
+﻿diff --git a/app/detalization.tsx b/app/detalization.tsx
+index dd906c3..230ce3f 100644
+--- a/app/detalization.tsx
++++ b/app/detalization.tsx
+@@ -227,6 +227,16 @@ export default function DetalizationScreen() {
+   const [photoUri, setPhotoUri] = useState<string | null>(paramUri ?? null);
+   const [pickingPhoto, setPickingPhoto] = useState(false);
+   const [diamonds, setDiamonds] = useState<number>(() => (globalThis as any).getDiamondBalance?.() ?? 0);
++  const [aiDailyLimit, setAiDailyLimit] = useState<number>(() => (globalThis as any).getAiDailyLimit?.() ?? 15);
++  const [exitConfirmData, setExitConfirmData] = useState<DemoOverlayData>(null);
++
++  useEffect(() => {
++    const interval = setInterval(() => {
++      const fresh = (globalThis as any).getAiDailyLimit?.();
++      if (fresh !== undefined) setAiDailyLimit(fresh);
++    }, 1000);
++    return () => clearInterval(interval);
++  }, []);
+ 
+   const [brightness,  setBrightness]  = useState(1);
+   const [contrast,    setContrast]    = useState(1);
+@@ -412,7 +422,7 @@ export default function DetalizationScreen() {
+         <StatusBar style="light" backgroundColor="#0a0a1a" />
+ 
+         {/* тФАтФА ╨У╨Ы╨Ю╨С╨Р╨Ы╨м╨Э╨л╨Щ ╨е╨Х╨Ф╨Х╨а тФАтФА */}
+-        <GlobalHeader diamonds={diamonds} />
++        <GlobalHeader diamonds={diamonds} aiDailyLimit={aiDailyLimit} />
+ 
+         {/* тФАтФА ╨б╨в╨а╨Ю╨Ъ╨Р ╨Э╨Р╨Ч╨Р╨Ф + ╨Ч╨Р╨У╨Ю╨Ы╨Ю╨Т╨Ю╨Ъ тФАтФА */}
+         <View style={styles.subHeader}>
+@@ -466,7 +476,7 @@ export default function DetalizationScreen() {
+     >
+       <Stack.Screen options={{ headerShown: false }} />
+ 
+-      <GlobalHeader diamonds={diamonds} />
++      <GlobalHeader diamonds={diamonds} aiDailyLimit={aiDailyLimit} />
+       <View style={styles.header}>
+         <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+           <Ionicons name="arrow-back" size={24} color="#f2ca50" />

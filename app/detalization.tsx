@@ -2,7 +2,7 @@ import BottomTabBar from '@/components/BottomTabBar';
 import { DemoOverlay, DemoOverlayData } from '@/components/case-post-actions';
 import GlobalHeader from '@/components/global-header';
 import { executeWithAiLimit } from '@/services/aiRequestService';
-import { uploadMediaToServer } from '@/utils/saveToArchive';
+import { saveToArchive, uploadMediaToServer } from '@/utils/saveToArchive';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -14,6 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     Alert,
+    BackHandler,
     Dimensions,
     Image,
     ImageBackground,
@@ -227,6 +228,32 @@ export default function DetalizationScreen() {
   const [photoUri, setPhotoUri] = useState<string | null>(paramUri ?? null);
   const [pickingPhoto, setPickingPhoto] = useState(false);
   const [diamonds, setDiamonds] = useState<number>(() => (globalThis as any).getDiamondBalance?.() ?? 0);
+  const [aiDailyLimit, setAiDailyLimit] = useState<number>(() => (globalThis as any).getAiDailyLimit?.() ?? 15);
+  const [exitConfirmData, setExitConfirmData] = useState<DemoOverlayData>(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const fresh = (globalThis as any).getAiDailyLimit?.();
+      if (fresh !== undefined) setAiDailyLimit(fresh);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      setExitConfirmData({
+        title: 'Выйти из диагностики?',
+        message: 'Все несохранённые данные будут потеряны.',
+        icon: 'exit-outline',
+        danger: true,
+        confirmText: 'Выйти',
+        onConfirm: () => { setExitConfirmData(null); router.back(); },
+      });
+      return true;
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, []);
 
   const [brightness,  setBrightness]  = useState(1);
   const [contrast,    setContrast]    = useState(1);
@@ -368,6 +395,26 @@ export default function DetalizationScreen() {
         return;
       }
       setOpticalResult(data);
+
+      try {
+        await saveToArchive(
+          'optical_diagnosis',
+          'Оптическая диагностика',
+          {
+            imageUri: imageUrl,
+            textureNotes: data?.summary ?? '',
+            cracksDetected: false,
+            translucentZones: [],
+            viewMode: viewMode,
+            presetName: activePresetName,
+            texture: data?.texture ?? {},
+            transparency: data?.transparency ?? {},
+            macroRelief: data?.macro_relief ?? {},
+          } as any,
+        );
+      } catch (archiveError) {
+        console.error('[runOpticalAnalysis] saveToArchive error:', archiveError);
+      }
     } catch (e) {
       console.error(e);
       Alert.alert('Ошибка', 'Не удалось связаться с сервером');
@@ -412,11 +459,18 @@ export default function DetalizationScreen() {
         <StatusBar style="light" backgroundColor="#0a0a1a" />
 
         {/* ── ГЛОБАЛЬНЫЙ ХЕДЕР ── */}
-        <GlobalHeader diamonds={diamonds} />
+        <GlobalHeader diamonds={diamonds} aiDailyLimit={aiDailyLimit} onBurgerPress={() => (globalThis as any).openDrawer?.()} />
 
         {/* ── СТРОКА НАЗАД + ЗАГОЛОВОК ── */}
         <View style={styles.subHeader}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => setExitConfirmData({
+            title: 'Выйти из диагностики?',
+            message: 'Все несохранённые данные будут потеряны.',
+            icon: 'exit-outline',
+            danger: true,
+            confirmText: 'Выйти',
+            onConfirm: () => { setExitConfirmData(null); router.back(); },
+          })} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={24} color="#f2ca50" />
           </TouchableOpacity>
           <Text style={styles.subHeaderTitle}>Оптическая диагностика</Text>
@@ -466,9 +520,16 @@ export default function DetalizationScreen() {
     >
       <Stack.Screen options={{ headerShown: false }} />
 
-      <GlobalHeader diamonds={diamonds} />
+      <GlobalHeader diamonds={diamonds} aiDailyLimit={aiDailyLimit} onBurgerPress={() => (globalThis as any).openDrawer?.()} />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+        <TouchableOpacity onPress={() => setExitConfirmData({
+          title: 'Выйти из диагностики?',
+          message: 'Все несохранённые данные будут потеряны.',
+          icon: 'exit-outline',
+          danger: true,
+          confirmText: 'Выйти',
+          onConfirm: () => { setExitConfirmData(null); router.back(); },
+        })} style={styles.headerBtn}>
           <Ionicons name="arrow-back" size={24} color="#f2ca50" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Оптическая диагностика</Text>
@@ -808,6 +869,7 @@ export default function DetalizationScreen() {
 
 
       <DemoOverlay data={panoramaHint} onClose={() => setPanoramaHint(null)} />
+      <DemoOverlay data={exitConfirmData} onClose={() => setExitConfirmData(null)} />
       <BottomTabBar />
     </ImageBackground>
   );

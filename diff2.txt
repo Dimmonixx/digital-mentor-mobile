@@ -1,0 +1,83 @@
+﻿diff --git a/app/detalization.tsx b/app/detalization.tsx
+index dd906c3..71059a9 100644
+--- a/app/detalization.tsx
++++ b/app/detalization.tsx
+@@ -15,4 +15,5 @@ import React, { useEffect, useRef, useState } from 'react';
+ import {
+     Alert,
++    BackHandler,
+     Dimensions,
+     Image,
+@@ -228,4 +229,30 @@ export default function DetalizationScreen() {
+   const [pickingPhoto, setPickingPhoto] = useState(false);
+   const [diamonds, setDiamonds] = useState<number>(() => (globalThis as any).getDiamondBalance?.() ?? 0);
++  const [aiDailyLimit, setAiDailyLimit] = useState<number>(() => (globalThis as any).getAiDailyLimit?.() ?? 15);
++  const [exitConfirmData, setExitConfirmData] = useState<DemoOverlayData>(null);
++
++  useEffect(() => {
++    const interval = setInterval(() => {
++      const fresh = (globalThis as any).getAiDailyLimit?.();
++      if (fresh !== undefined) setAiDailyLimit(fresh);
++    }, 1000);
++    return () => clearInterval(interval);
++  }, []);
++
++  useEffect(() => {
++    const onBackPress = () => {
++      setExitConfirmData({
++        title: '╨Т╤Л╨╣╤В╨╕ ╨╕╨╖ ╨┤╨╕╨░╨│╨╜╨╛╤Б╤В╨╕╨║╨╕?',
++        message: '╨Т╤Б╨╡ ╨╜╨╡╤Б╨╛╤Е╤А╨░╨╜╤С╨╜╨╜╤Л╨╡ ╨┤╨░╨╜╨╜╤Л╨╡ ╨▒╤Г╨┤╤Г╤В ╨┐╨╛╤В╨╡╤А╤П╨╜╤Л.',
++        icon: 'exit-outline',
++        danger: true,
++        confirmText: '╨Т╤Л╨╣╤В╨╕',
++        onConfirm: () => { setExitConfirmData(null); router.back(); },
++      });
++      return true;
++    };
++    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
++    return () => subscription.remove();
++  }, []);
+ 
+   const [brightness,  setBrightness]  = useState(1);
+@@ -413,9 +440,16 @@ export default function DetalizationScreen() {
+ 
+         {/* тФАтФА ╨У╨Ы╨Ю╨С╨Р╨Ы╨м╨Э╨л╨Щ ╨е╨Х╨Ф╨Х╨а тФАтФА */}
+-        <GlobalHeader diamonds={diamonds} />
++        <GlobalHeader diamonds={diamonds} aiDailyLimit={aiDailyLimit} />
+ 
+         {/* тФАтФА ╨б╨в╨а╨Ю╨Ъ╨Р ╨Э╨Р╨Ч╨Р╨Ф + ╨Ч╨Р╨У╨Ю╨Ы╨Ю╨Т╨Ю╨Ъ тФАтФА */}
+         <View style={styles.subHeader}>
+-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
++          <TouchableOpacity onPress={() => setExitConfirmData({
++            title: '╨Т╤Л╨╣╤В╨╕ ╨╕╨╖ ╨┤╨╕╨░╨│╨╜╨╛╤Б╤В╨╕╨║╨╕?',
++            message: '╨Т╤Б╨╡ ╨╜╨╡╤Б╨╛╤Е╤А╨░╨╜╤С╨╜╨╜╤Л╨╡ ╨┤╨░╨╜╨╜╤Л╨╡ ╨▒╤Г╨┤╤Г╤В ╨┐╨╛╤В╨╡╤А╤П╨╜╤Л.',
++            icon: 'exit-outline',
++            danger: true,
++            confirmText: '╨Т╤Л╨╣╤В╨╕',
++            onConfirm: () => { setExitConfirmData(null); router.back(); },
++          })} style={styles.backBtn}>
+             <Ionicons name="arrow-back" size={24} color="#f2ca50" />
+           </TouchableOpacity>
+@@ -467,7 +501,14 @@ export default function DetalizationScreen() {
+       <Stack.Screen options={{ headerShown: false }} />
+ 
+-      <GlobalHeader diamonds={diamonds} />
++      <GlobalHeader diamonds={diamonds} aiDailyLimit={aiDailyLimit} />
+       <View style={styles.header}>
+-        <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
++        <TouchableOpacity onPress={() => setExitConfirmData({
++          title: '╨Т╤Л╨╣╤В╨╕ ╨╕╨╖ ╨┤╨╕╨░╨│╨╜╨╛╤Б╤В╨╕╨║╨╕?',
++          message: '╨Т╤Б╨╡ ╨╜╨╡╤Б╨╛╤Е╤А╨░╨╜╤С╨╜╨╜╤Л╨╡ ╨┤╨░╨╜╨╜╤Л╨╡ ╨▒╤Г╨┤╤Г╤В ╨┐╨╛╤В╨╡╤А╤П╨╜╤Л.',
++          icon: 'exit-outline',
++          danger: true,
++          confirmText: '╨Т╤Л╨╣╤В╨╕',
++          onConfirm: () => { setExitConfirmData(null); router.back(); },
++        })} style={styles.headerBtn}>
+           <Ionicons name="arrow-back" size={24} color="#f2ca50" />
+         </TouchableOpacity>
+@@ -809,4 +850,5 @@ export default function DetalizationScreen() {
+ 
+       <DemoOverlay data={panoramaHint} onClose={() => setPanoramaHint(null)} />
++      <DemoOverlay data={exitConfirmData} onClose={() => setExitConfirmData(null)} />
+       <BottomTabBar />
+     </ImageBackground>
